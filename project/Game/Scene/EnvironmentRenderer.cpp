@@ -118,10 +118,13 @@ if (skybox_ && showSkybox_) {
 	}
 }
 
-void EnvironmentRenderer::Draw() {
+void EnvironmentRenderer::DrawBackground() {
 if (skybox_ && showSkybox_) {
 		skybox_->Draw();
 	}
+}
+
+void EnvironmentRenderer::Draw() {
 	
 	if (missileTrail_ && trailObject_) {
 		// trailObject draws the trail

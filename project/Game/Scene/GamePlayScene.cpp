@@ -653,6 +653,15 @@ void GamePlayScene::ResetEditorPreview() {
 		player_->UpdateCamera(camera.get(), targetPos);
 	}
 
+	// ツールバーは UpdateUI() の末尾で処理されるため、次フレームを待たず
+	// 再配置・カメラ更新後にモデルと炎を準備する。両シーン共通の編集処理。
+	if (player_) {
+		player_->UpdateModel(false, false);
+		if (player_->GetBoosterEffect()) {
+			player_->GetBoosterEffect()->UpdateEditorPreview(player_->GetPosition(), player_->GetQuaternion(),
+				static_cast<int>(player_->GetCurrentMode()));
+		}
+	}
 	OutputDebugStringA("[EditorPreview] Reset scene and paused.\n");
 }
 
@@ -1420,6 +1429,13 @@ void GamePlayScene::Update() {
 			// UI がキー入力を捕捉している間は、モデル更新だけを行い入力は渡さない。
 			// 停止中もフリーカメラ用にWVPは更新するが、機体のアニメーションや補間は進めない。
 			player_->UpdateModel(canUseKeyboardInput, shouldUpdateGame);
+		}
+
+		// ゲーム／シミュレーション共通の編集停止中はプレイヤーの状態を動かさず、
+		// スラスターだけを専用プレビューとして更新する。
+		if (!isEditorPreviewPlaying_ && !IsTitleBackgroundMode() && player_->GetBoosterEffect()) {
+			player_->GetBoosterEffect()->UpdateEditorPreview(player_->GetPosition(), player_->GetQuaternion(),
+				static_cast<int>(player_->GetCurrentMode()));
 		}
 
 	}
@@ -2205,21 +2221,31 @@ void GamePlayScene::Update() {
 
 void GamePlayScene::Draw() {
 
-	Object3dCommon::GetInstance()->SetCommonDrawSettings();
 	Camera* renderCamera = isDebugCameraActive_ ? static_cast<Camera*>(debugFlyCamera_.get()) : camera.get();
 	if (!renderCamera) {
 		return;
 	}
+	// 深度を書き込まない炎やパーティクルを、背景で上書きしない。
+	if (environmentRenderer_) {
+		environmentRenderer_->DrawBackground();
+	}
+	Object3dCommon::GetInstance()->SetCommonDrawSettings();
 
 
 	if (player_) {
-		// スラスターのトレイルはカメラ向きの帯として頂点を組み立てるため、
-		// プレイヤー本体と同じ実際の描画カメラを渡す。
-		player_->Draw(renderCamera);
+		// 機体・ノズルは不透明パス。炎は地形の深度が完成してから描く。
+		if (isEditorPreviewPlaying_ && player_->GetBoosterEffect()) {
+			// 編集UIを閉じて再生した際に位置確認用の黄色い球を残さない。
+			player_->GetBoosterEffect()->SetPlacementMarkersVisible(false);
+		}
+		player_->Draw(renderCamera, false);
 	}
 
 	bool isAnimationEditor = IsSimulationMode() && uiManager_ && uiManager_->currentSimulationTarget_ == 5;
 	if (isAnimationEditor) {
+		if (player_) {
+			player_->DrawEffects(renderCamera);
+		}
 
 		Object3dCommon::GetInstance()->SetCommonDrawSettings();
 		if (skeletonLinesObject && skeletonLinesObject->GetModel()) {
@@ -2347,6 +2373,12 @@ void GamePlayScene::Draw() {
 
 	Object3dCommon::GetInstance()->SetEffectDrawSettings();
 	if (environmentRenderer_) environmentRenderer_->Draw();
+
+	// すべての不透明オブジェクトの後に、実際の噴射を加算する。
+	// Z-Test は有効、Z-Write は無効のまま、前景の翼・地形には正しく隠れる。
+	if (player_) {
+		player_->DrawEffects(renderCamera);
+	}
 
 
 	Object3dCommon::GetInstance()->SetEffectDrawSettings();

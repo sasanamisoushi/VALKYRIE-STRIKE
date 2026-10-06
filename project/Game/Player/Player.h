@@ -47,7 +47,9 @@ public:
     void Update(const std::list<std::unique_ptr<Obstacle>> &obstacles, const Vector3 *lockOnTarget = nullptr);
 
     // 描画
-    void Draw(Camera* camera = nullptr);
+    void Draw(Camera* camera = nullptr, bool drawEffects = true);
+    // 不透明な背景・地形の描画後に加算／半透明エフェクトを重ねる。
+    void DrawEffects(Camera* camera);
 
     // 更新だけしてロジックを動かさない処理（シミュレーション時など用）
     // 演出用では入力を読まずにモデル・アニメーションだけ更新できる。
@@ -65,6 +67,7 @@ public:
     Vector3 GetVelocity() const { return velocity_; }
     Quaternion GetQuaternion() const { return quaternion_; }
     Object3d* GetObject3d() const { return object_.get(); }
+    BoosterEffect* GetBoosterEffect() const { return boosterEffect_.get(); }
     Vector3 GetWorldHalfExtents() const;
     float GetCollisionRadius() const;
     OBB GetOBB() const;

@@ -223,7 +223,7 @@ public:
 
 	// トレイル（帯）の初期化と頂点更新関数
 	void InitializeTrail(ModelCommon *modelCommon);
-	void UpdateTrailVertices(const std::vector<VertexData> &vertices);
+	void UpdateTrailVertices(const std::vector<VertexData> &vertices, bool isTriangleStrip = true);
 
 	Vector3 GetHalfExtents() const { return cachedHalfExtents_; }
 	Vector3 GetBoundsCenter() const { return cachedBoundsCenter_; }

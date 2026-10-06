@@ -46,4 +46,6 @@ private:
 	int selectedMissilePresetIndex_[2] = { 0, 0 };
 	std::string missilePresetMessage_;
 	std::string ammoSettingsMessage_;
+	std::string thrusterSettingsMessage_;
+	bool showThrusterPlacementMarkers_ = false;
 };

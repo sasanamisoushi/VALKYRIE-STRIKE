@@ -43,6 +43,12 @@ void Object3dCommon::SetOverlayEffectDrawSettings() {
 	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
+void Object3dCommon::SetThrusterDrawSettings() {
+	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
+	dxCommon_->GetCommandList()->SetPipelineState(thrusterPipelineState_.Get());
+	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
 void Object3dCommon::SetAlphaBlendDrawSettings() {
 	//ルートシグネチャをセットするコマンド
 	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
@@ -67,6 +73,8 @@ void Object3dCommon::LoadShaders() {
 	pixelShaderBlob = dxCommon_->CompileShader(L"resources/shaders/Object3D.PS.hlsl",
 		L"ps_6_0");
 	assert(pixelShaderBlob != nullptr);
+	thrusterPixelShaderBlob = dxCommon_->CompileShader(L"resources/shaders/Thruster.PS.hlsl", L"ps_6_0");
+	assert(thrusterPixelShaderBlob != nullptr);
 
 }
 
@@ -255,6 +263,19 @@ void Object3dCommon::CreateGraphicsPipeline() {
 	effectPipelineState_ = nullptr;
 	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&effectPipelineState_));
 	assert(SUCCEEDED(hr) && "エフェクト用パイプラインの作成に失敗しました。");
+
+	// 閉じた立体の外炎／白熱芯を発光として描く。裏面の二重加算を抑える。
+	graphicsPipelineStateDesc.PS = { thrusterPixelShaderBlob->GetBufferPointer(), thrusterPixelShaderBlob->GetBufferSize() };
+	graphicsPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	// Game View の ImGui 画像合成でも背景を透かさないよう、描画先のαを保つ。
+	graphicsPipelineStateDesc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
+	graphicsPipelineStateDesc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&thrusterPipelineState_));
+	assert(SUCCEEDED(hr) && "スラスター用パイプラインの作成に失敗しました。");
+	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() };
+	graphicsPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	graphicsPipelineStateDesc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	graphicsPipelineStateDesc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
 
 	// 機体のノズル光のように、カメラ角度によらず常に認識させたい発光用。
 	// 深度値は参照も書き込みもしないので、機体・地形に隠れない。

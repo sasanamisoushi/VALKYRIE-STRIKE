@@ -210,6 +210,9 @@
     <ClCompile Include="Game\Player\BoosterEffect.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
+    <ClCompile Include="Game\Player\BoosterEffectSettings.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
     <ClCompile Include="Game\bullet\Missile.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -458,6 +461,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\shaders\object3d.hlsli" />
+    <None Include="resources\shaders\Thruster.PS.hlsl" />
     <None Include="resources\shaders\Particle.PS.hlsl" />
     <None Include="resources\shaders\Particle.VS.hlsl" />
     <None Include="resources\shaders\Sprite.hlsli" />

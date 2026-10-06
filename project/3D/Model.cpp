@@ -1346,14 +1346,14 @@ void Model::InitializeTrail(ModelCommon *modelCommon) {
 	RecalculateBounds();
 }
 
-void Model::UpdateTrailVertices(const std::vector<VertexData> &vertices) {
+void Model::UpdateTrailVertices(const std::vector<VertexData> &vertices, bool isTriangleStrip) {
 	if (vertices.empty()) return;
 
 	// 頂点数が変わったらバッファを作り直す必要があるかチェック
 	bool needRecreate = (modelData.vertices.size() != vertices.size());
 	modelData.vertices = vertices;
 	modelData.isLine = false;
-	modelData.isStrip = true;
+	modelData.isStrip = isTriangleStrip;
 	modelData.isSkinned = false;
 	inputVertexResource = nullptr;
 

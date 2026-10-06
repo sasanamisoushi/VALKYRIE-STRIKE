@@ -19,6 +19,8 @@ public:
 
 	// 常時見せたい発光用。深度テストを行わず、機体や地形の裏でも光を失わない。
 	void SetOverlayEffectDrawSettings();
+	// スラスター用。加算合成＋深度テストあり・深度書き込みなし＋背面カリング。
+	void SetThrusterDrawSettings();
 	
 	//アルファブレンド（半透明）用描画設定
 	void SetAlphaBlendDrawSettings();
@@ -58,12 +60,14 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> effectPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> overlayEffectPipelineState_;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> thrusterPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> alphaBlendPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> linePipelineState_;
 
 	// Shader blobs
 	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob;
 	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob;
+	Microsoft::WRL::ComPtr<IDxcBlob> thrusterPixelShaderBlob;
 
 	Camera *defaultCamera = nullptr;
 };

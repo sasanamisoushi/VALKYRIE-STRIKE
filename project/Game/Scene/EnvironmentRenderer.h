@@ -19,6 +19,8 @@ public:
 	// advanceEffects を false にすると描画用のカメラ行列のみ更新し、環境演出は停止する。
 	void Update(Camera* camera, bool advanceEffects = true);
 	void Draw();
+	// 不透明オブジェクトと半透明エフェクトを描く前に呼ぶ。
+	void DrawBackground();
 
 	Skybox* GetSkybox() const { return skybox_.get(); }
 	bool GetShowSkybox() const { return showSkybox_; }

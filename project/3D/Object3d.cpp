@@ -54,12 +54,12 @@ void Object3d::Initialize(Object3dCommon *object3dCommon) {
 	this->camera = object3dCommon->GetDefaultCamera();
 }
 
-void Object3d::Update() {
+void Object3d::Update(Camera* renderCamera) {
 	if (!object3dCommon || !transformationMatrixData) {
 		return;
 	}
 
-	camera = object3dCommon->GetDefaultCamera();
+	camera = renderCamera ? renderCamera : object3dCommon->GetDefaultCamera();
 
 	//transform.rotate.y += 0.01f;
 

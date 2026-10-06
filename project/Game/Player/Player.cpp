@@ -645,31 +645,32 @@ void Player::Update(const std::list<std::unique_ptr<Obstacle>> &obstacles, const
 		CheckCollision(obstacles);
 	}
 
+	// 変形・回避ロールを含む描画姿勢を先に確定する。
+	UpdateModel();
 	if (boosterEffect_) {
 		auto input = Input::GetInstance();
 		PlayerModeParams& p = modeParams_[static_cast<int>(currentMode_)];
 		float speedVal = Length(velocity_);
 		float speedRatio = speedVal / (std::max)(0.0001f, p.maxMoveSpeed);
 		bool isAccelerating = input->PushAction(PlayerAction::MoveForward);
-		boosterEffect_->Update(position_, quaternion_, static_cast<int>(currentMode_), speedRatio, isAccelerating);
+		boosterEffect_->Update(position_, object_ ? object_->GetQuaternionRotate() : quaternion_,
+			static_cast<int>(currentMode_), speedRatio, isAccelerating);
 	}
-
-    UpdateModel();
 }
 
 void Player::UpdatePresentation(const Vector3& position, const Vector3& eulerRotation,
 	float speed, bool isBoosting) {
 	position_ = position;
 	SetRotation(eulerRotation);
+	// タイトルなどの自動飛行も、機体の最終姿勢と噴射姿勢を揃える。
+	UpdateModel(false);
 
 	if (boosterEffect_) {
 		const PlayerModeParams& params = modeParams_[static_cast<int>(currentMode_)];
 		const float speedRatio = speed / (std::max)(0.0001f, params.maxMoveSpeed);
-		boosterEffect_->Update(position_, quaternion_, static_cast<int>(currentMode_), speedRatio, isBoosting);
+		boosterEffect_->Update(position_, object_ ? object_->GetQuaternionRotate() : quaternion_,
+			static_cast<int>(currentMode_), speedRatio, isBoosting);
 	}
-
-	// タイトルなどの自動飛行演出は、変形・ガードなどのプレイヤー入力を受け付けない。
-	UpdateModel(false);
 }
 
 void Player::UpdateModel(bool allowInput, bool advanceState) {
@@ -872,6 +873,7 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
 			guardBarrierRing_->Update();
 		}
 	}
+
 }
 
 void Player::ApplyBattroidProceduralWalk() {
@@ -956,27 +958,46 @@ void Player::ApplyGuardPose(float blendWeight) {
 	TranslateJointGroup(skeleton_, kLeftHand, { 0.0f, -0.45f * weight, -0.25f * weight });
 }
 
-void Player::Draw(Camera* camera) {
+void Player::Draw(Camera* camera, bool drawEffects) {
 	if (object_) {
+		// Scene のカメラ更新後の行列で、機体と炎を同じフレームに投影する。
+		object_->Update(camera);
 		object_->Draw();
 	}
 	for (const TransformPlayerPart& part : transformParts_) {
 		if (part.object) {
+			part.object->Update(camera);
 			part.object->Draw();
 		}
 	}
+	if (boosterEffect_) {
+		boosterEffect_->RefreshPlacement(object_ ? object_->GetTranslate() : position_,
+			object_ ? object_->GetQuaternionRotate() : quaternion_, static_cast<int>(currentMode_));
+		boosterEffect_->DrawNozzles(camera);
+	}
+	if (drawEffects) {
+		DrawEffects(camera);
+	}
+}
+
+void Player::DrawEffects(Camera* camera) {
 	if (guardScale_ > 0.01f) {
 		Object3dCommon::GetInstance()->SetAlphaBlendDrawSettings();
 		if (guardBarrier_) {
+			guardBarrier_->Update(camera);
 			guardBarrier_->Draw();
 		}
 		Object3dCommon::GetInstance()->SetEffectDrawSettings();
 		if (guardBarrierRing_) {
+			guardBarrierRing_->Update(camera);
 			guardBarrierRing_->Draw();
 		}
 		Object3dCommon::GetInstance()->SetCommonDrawSettings();
 	}
 	if (boosterEffect_) {
+		// 不透明パスで実際に描いた機体の位置・姿勢を、そのまま炎の親変換に使う。
+		boosterEffect_->RefreshPlacement(object_ ? object_->GetTranslate() : position_,
+			object_ ? object_->GetQuaternionRotate() : quaternion_, static_cast<int>(currentMode_));
 		// スラスターだけは加算合成で描く。機体本体の通常描画状態を
 		// 引き継がないことで、半透明の炎が暗く埋もれないようにする。
 		Object3dCommon::GetInstance()->SetEffectDrawSettings();

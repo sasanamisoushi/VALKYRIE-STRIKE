@@ -1,4 +1,6 @@
 #include "Trail.h"
+#include <algorithm>
+#include <cmath>
 
 void Trail::Initialize(int maxPoints) {
 	maxPoints_ = maxPoints;
@@ -13,6 +15,11 @@ void Trail::Update(const Vector3 &currentPos) {
     if (points_.size() > maxPoints_) {
         points_.pop_back();
     }
+}
+
+void Trail::SetOrigin(const Vector3& localOrigin) {
+    points_.clear();
+    points_.push_front(localOrigin);
 }
 
 std::vector<VertexData> Trail::GenerateVertices(Camera *camera, float thickness) {
@@ -100,5 +107,105 @@ std::vector<VertexData> Trail::GenerateVertices(Camera *camera, float thickness)
         vertices.push_back(vRight);
     }
 
+    return vertices;
+}
+
+std::vector<VertexData> Trail::GenerateThrusterVertices(Camera* camera, float thickness,
+    const Vector3& exhaustDirection, float plumeLength, float phase, float intensity,
+    float coreLengthRatio, float glowScale) {
+    (void)camera; // All layers have a circular 3D cross-section; no billboard axes.
+    std::vector<VertexData> vertices;
+    if (points_.empty() || thickness <= 0.0f || plumeLength <= 0.0f) return vertices;
+
+    constexpr int kSegments = 32;
+    constexpr int kSides = 16;
+    constexpr float kPi = 3.14159265359f;
+    const auto safeNormalize = [](Vector3 v) {
+        const float squared = v.x * v.x + v.y * v.y + v.z * v.z;
+        if (squared < 1.0e-8f) return Vector3{ 0.0f, 0.0f, -1.0f };
+        const float inverse = 1.0f / std::sqrt(squared);
+        return Vector3{ v.x * inverse, v.y * inverse, v.z * inverse };
+    };
+    const auto smoothFade = [](float value) {
+        const float x = std::clamp(value, 0.0f, 1.0f);
+        return x * x * (3.0f - 2.0f * x);
+    };
+    const Vector3 axis = safeNormalize(exhaustDirection);
+    const Vector3 origin = points_.front();
+    const Vector3 reference = std::abs(axis.y) < 0.9f
+        ? Vector3{ 0.0f, 1.0f, 0.0f } : Vector3{ 1.0f, 0.0f, 0.0f };
+    const Vector3 normal = safeNormalize(MyMath::Cross(axis, reference));
+    const Vector3 binormal = safeNormalize(MyMath::Cross(axis, normal));
+
+    struct Layer {
+        float radiusScale;
+        float lengthScale;
+        Vector4 emission;
+    };
+    // A white-hot inner volume, pink outer flame, and a faint violet halo.
+    // Each layer tapers to a point: rear views show volume, never a flat end cap.
+    const Layer layers[] = {
+        { 1.90f, 1.04f, { 0.78f, 0.03f, 1.0f, 0.20f * std::clamp(glowScale, 0.0f, 3.0f) } },
+        { 1.00f, 1.00f, { 1.00f, 0.04f, 0.55f, 0.72f } },
+        { 0.46f, std::clamp(coreLengthRatio, 0.2f, 0.8f), { 1.05f, 0.82f, 1.00f, 0.90f } }
+    };
+    vertices.reserve(kSegments * kSides * 6 * 3);
+    intensity = std::clamp(intensity, 0.0f, 1.0f);
+
+    for (const Layer& layer : layers) {
+        // Keep width and length independent when the editor makes a broad, short flame.
+        const float length = (std::max)(plumeLength * layer.lengthScale, 0.01f);
+        const auto radiusAt = [&](float t) {
+            const float profile = 1.45f * std::pow((std::max)(0.0f, std::sin(kPi * t)), 0.35f)
+                * std::pow(1.0f - t, 0.65f);
+            const float flicker = 1.0f + 0.025f * std::sin(phase + t * 19.0f);
+            return thickness * layer.radiusScale * profile * flicker;
+        };
+        const auto makeVertex = [&](float t, int side) {
+            const float angle = 2.0f * kPi * static_cast<float>(side) / kSides;
+            const Vector3 radial = {
+                normal.x * std::cos(angle) + binormal.x * std::sin(angle),
+                normal.y * std::cos(angle) + binormal.y * std::sin(angle),
+                normal.z * std::cos(angle) + binormal.z * std::sin(angle)
+            };
+            const float radius = radiusAt(t);
+            const float waviness = std::sin(phase * 0.8f + t * 12.0f)
+                * thickness * 0.04f * std::sin(kPi * t);
+            const Vector3 center = {
+                origin.x + axis.x * length * t + normal.x * waviness,
+                origin.y + axis.y * length * t + normal.y * waviness,
+                origin.z + axis.z * length * t + normal.z * waviness
+            };
+            // Include the taper slope in the normal, so the rounded rear-facing
+            // surface remains lit by the emissive shader when viewed down the axis.
+            const float tBefore = (std::max)(0.0f, t - 0.005f);
+            const float tAfter = (std::min)(1.0f, t + 0.005f);
+            const float slope = (radiusAt(tAfter) - radiusAt(tBefore)) / (length * (tAfter - tBefore));
+            const Vector3 surfaceNormal = safeNormalize({
+                radial.x - axis.x * slope, radial.y - axis.y * slope, radial.z - axis.z * slope
+            });
+            VertexData v{};
+            v.position = { center.x + radial.x * radius, center.y + radial.y * radius,
+                center.z + radial.z * radius, 1.0f };
+            v.normal = { surfaceNormal.x, surfaceNormal.y, surfaceNormal.z, 0.0f };
+            v.texcoord = { static_cast<float>(side) / kSides, t, 0.0f, 0.0f };
+            const float fade = smoothFade(t / 0.035f) * smoothFade((1.0f - t) / 0.38f)
+                * std::pow(1.0f - t, 0.80f);
+            v.color = { layer.emission.x, layer.emission.y, layer.emission.z,
+                layer.emission.w * intensity * fade };
+            return v;
+        };
+        for (int segment = 0; segment < kSegments; ++segment) {
+            const float t0 = static_cast<float>(segment) / kSegments;
+            const float t1 = static_cast<float>(segment + 1) / kSegments;
+            for (int side = 0; side < kSides; ++side) {
+                const VertexData a = makeVertex(t0, side);
+                const VertexData b = makeVertex(t0, side + 1);
+                const VertexData c = makeVertex(t1, side);
+                const VertexData d = makeVertex(t1, side + 1);
+                vertices.insert(vertices.end(), { a, b, c, b, d, c });
+            }
+        }
+    }
     return vertices;
 }

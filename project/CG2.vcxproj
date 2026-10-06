@@ -227,6 +227,7 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
     <ClCompile Include="Game\Player\Player.cpp" />
     <ClCompile Include="Game\Player\PlayerActionController.cpp" />
     <ClCompile Include="Game\Player\BoosterEffect.cpp" />
+    <ClCompile Include="Game\Player\BoosterEffectSettings.cpp" />
     <ClCompile Include="Game\bullet\Missile.cpp" />
     <ClCompile Include="Game\bullet\MissileManager.cpp" />
     <ClCompile Include="engine\Utility\JsonHelper.cpp" />
@@ -389,6 +390,7 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\shaders\object3d.hlsli" />
+    <None Include="resources\shaders\Thruster.PS.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

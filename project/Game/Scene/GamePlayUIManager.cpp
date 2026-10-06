@@ -730,6 +730,7 @@ void GamePlayUIManager::UpdateUI() {
 			"レベルエディタ",
 			"操作設定",
 			"実行ファイル生成",
+			"スラスター位置",
 		};
 
 		ImGui::SetNextWindowSize(ImVec2(200.0f, 620.0f), ImGuiCond_Once);
@@ -1380,6 +1381,74 @@ void GamePlayUIManager::UpdateUI() {
 				ImGui::Spacing();
 				ImGui::TextWrapped("%s", packageMessage.c_str());
 			}
+		}
+
+		if (currentEngineSettingsTarget_ == 7) {
+			ImGui::Text("スラスターの見た目・取付位置");
+			ImGui::TextWrapped("炎の幅・長さ・明るさと取付位置を調整できます。変更はゲーム画面に即反映します。");
+			ImGui::TextWrapped("ゲーム／シミュレーションの編集停止中も出力65%で噴射を表示します。通常・加速の見え方を切り替えて比較できます。");
+			ImGui::Separator();
+			if (player_ && player_->GetBoosterEffect()) {
+				BoosterEffect* booster = player_->GetBoosterEffect();
+				bool previewAccelerating = booster->GetEditorPreviewAcceleration();
+				if (ImGui::Checkbox("加速状態をプレビュー", &previewAccelerating)) {
+					booster->SetEditorPreviewAcceleration(previewAccelerating);
+				}
+				ImGui::Separator();
+				ImGui::Text("エフェクトの見た目");
+				BoosterEffect::EffectSettings& effect = booster->GetEffectSettings();
+				ImGui::SliderFloat("炎の幅", &effect.widthScale, 0.25f, 6.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("炎の長さ", &effect.lengthScale, 0.25f, 4.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("明るさ", &effect.brightness, 0.1f, 3.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
+				ImGui::SliderFloat("周囲の光", &effect.glowScale, 0.0f, 3.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
+				if (ImGui::TreeNode("加速・白い芯の調整")) {
+					ImGui::SliderFloat("加速時の幅倍率", &effect.boostWidthMultiplier, 1.0f, 2.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
+					ImGui::SliderFloat("加速時の長さ倍率", &effect.boostLengthMultiplier, 1.0f, 2.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
+					ImGui::SliderFloat("白い芯の長さ比率", &effect.coreLengthRatio, 0.2f, 0.8f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+					ImGui::TreePop();
+				}
+				if (ImGui::Button("エフェクトの見た目をリセット", ImVec2(-1.0f, 0.0f))) {
+					booster->ResetEffectSettings();
+				}
+				ImGui::Separator();
+				ImGui::Text("取付位置（機体ローカル・メートル）");
+				ImGui::Checkbox("位置合わせ用マーカー", &showThrusterPlacementMarkers_);
+				booster->SetPlacementMarkersVisible(showThrusterPlacementMarkers_);
+				Vector3& offset = booster->GetPlacementAdjustment();
+				if (ImGui::DragFloat3("位置補正 X・Y・Z", &offset.x, 0.01f, -3.0f, 3.0f, "%.3f m")) {
+					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
+						static_cast<int>(player_->GetCurrentMode()));
+				}
+				ImGui::TextDisabled("+X: 右 / +Y: 上 / +Z: 前方。Yをマイナスにすると下がります。");
+				if (ImGui::Button("位置補正をリセット", ImVec2(-1.0f, 0.0f))) {
+					booster->ResetPlacementAdjustment();
+					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
+						static_cast<int>(player_->GetCurrentMode()));
+				}
+				if (ImGui::Button("スラスター設定を保存", ImVec2(-1.0f, 0.0f))) {
+					thrusterSettingsMessage_ = booster->SaveSettings("resources/vf-15c/thruster_position.json")
+						? "取付位置とエフェクト設定を保存しました。次回起動時にも反映されます。"
+						: "保存できませんでした。resources/vf-15c に書き込み可能か確認してください。";
+				}
+				if (ImGui::Button("保存設定を読み込む", ImVec2(-1.0f, 0.0f))) {
+					if (booster->LoadSettings("resources/vf-15c/thruster_position.json")) {
+						booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
+							static_cast<int>(player_->GetCurrentMode()));
+						thrusterSettingsMessage_ = "取付位置とエフェクト設定を読み込みました。";
+					} else {
+						thrusterSettingsMessage_ = "保存データを読み込めません。先に設定を保存するか、ファイル内容を確認してください。";
+					}
+				}
+				if (!thrusterSettingsMessage_.empty()) {
+					ImGui::TextWrapped("%s", thrusterSettingsMessage_.c_str());
+				}
+				ImGui::TextDisabled("保存先: resources/vf-15c/thruster_position.json");
+			} else {
+				ImGui::TextDisabled("プレイヤーが初期化されていません。");
+			}
+		}
+		if (currentEngineSettingsTarget_ != 7 && player_ && player_->GetBoosterEffect()) {
+			player_->GetBoosterEffect()->SetPlacementMarkersVisible(false);
 		}
 
 		ImGui::End();

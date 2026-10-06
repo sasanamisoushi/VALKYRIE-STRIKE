@@ -45,7 +45,7 @@ public:
 	void Initialize(Object3dCommon *object3dCommon);
 
 	//更新
-	void Update();
+	void Update(Camera* renderCamera = nullptr);
 
 	//描画
 	void Draw();
@@ -78,6 +78,7 @@ public:
 	const Vector3 &GetScale()const { return transform.scale; }
 	const Vector3 &GetRotate()const { return transform.rotate; }
 	const Vector3 &GetTranslate()const { return transform.translate; }
+	const Quaternion& GetQuaternionRotate() const { return quaternionRotate_; }
 	DirectionalLight *GetDirectionalLightData() const { return directionLightData; }
 	Model* GetModel() const { return model; }
 
