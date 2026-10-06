@@ -301,6 +301,13 @@ private:
 	Vector3 titleLaunchStartForward_ = { 0.0f, 0.0f, 1.0f };
 	Vector3 titleLaunchForward_ = { 0.0f, 0.0f, 1.0f };
 
+	// タイトル背景での敵の再出現・画面外進入演出
+	int titleEnemyRespawnTimer_ = 0;
+	bool titleEnemyEntering_ = false;
+	int titleEnemyEnterFrame_ = 0;
+	int titleEnemySpawnSide_ = 1;
+	int titleEnemyCombatTimer_ = 0;
+
 	// JSONファイルが最後に更新された日時を記録する変数
 	std::filesystem::file_time_type lastJsonWriteTime_;
 	Enemy* aimAssistEnemy_ = nullptr;

@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -585,6 +586,11 @@ void GamePlayScene::ReloadSceneJson() {
 			spawn.reinforcementTriggerNames.clear();
 			spawn.remainingReinforcementTriggers.clear();
 		}
+		titleEnemyRespawnTimer_ = 0;
+		titleEnemyEntering_ = false;
+		titleEnemyEnterFrame_ = 0;
+		titleEnemySpawnSide_ = 1;
+		titleEnemyCombatTimer_ = 0;
 	}
 	enemyRespawnTimers_.assign(enemySpawns_.size(), kNoEnemyRespawnTimer);
 
@@ -1542,9 +1548,10 @@ void GamePlayScene::Update() {
 				const Vector3 defeatedPosition = (*it)->GetPosition();
 				const size_t spawnPointIndex = (*it)->GetSpawnPointIndex();
 				if (IsTitleBackgroundMode()) {
-					// タイトル背景でも撃破された敵は残さない。次の VF1 をロックオン対象に切り替える。
+					// タイトル背景でも撃破された敵は残さない。倒した後は画面外から再出現させる。
 					ClearEnemyReferences(it->get());
 					it = enemies_.erase(it);
+					titleEnemyRespawnTimer_ = 45; // 撃破後、約0.75秒後に次の敵を画面外から出現
 					continue;
 				}
 				ClearEnemyReferences(it->get());
@@ -1571,6 +1578,7 @@ void GamePlayScene::Update() {
 		}
 
 		if (IsTitleBackgroundMode() && player_) {
+			// 生存中の敵がいるか確認
 			if (!lockedEnemy_ || lockedEnemy_->IsDead()) {
 				lockedEnemy_ = nullptr;
 				for (const auto& enemy : enemies_) {
@@ -1581,17 +1589,37 @@ void GamePlayScene::Update() {
 				}
 			}
 
+			// 敵がいない場合、リスポーンタイマーをカウントダウンして画面外から出現させる
+			if (!lockedEnemy_) {
+				if (titleEnemyRespawnTimer_ > 0) {
+					--titleEnemyRespawnTimer_;
+				} else {
+					// 新しい敵（VF1）を生成
+					auto newEnemy = std::make_unique<Enemy>();
+					newEnemy->Initialize(player_->GetPosition());
+					enemies_.push_back(std::move(newEnemy));
+					lockedEnemy_ = enemies_.back().get();
+
+					// 画面外からの進入シーケンス開始
+					titleEnemyEntering_ = true;
+					titleEnemyEnterFrame_ = 0;
+					titleEnemySpawnSide_ = -titleEnemySpawnSide_; // 左右交互に出現
+					titleEnemyCombatTimer_ = 0;
+				}
+			}
+
 			if (lockedEnemy_) {
 				// ロックオン対象は常に機体前方を横切らせ、タイトル上でも視認・照準できる距離に保つ。
 				const float time = static_cast<float>(titleBackgroundFrame_) * (1.0f / 60.0f);
 				const Vector3 forward = NormalizeOrVector3(player_->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
 				const Vector3 right = NormalizeOrVector3(MyMath::Cross({ 0.0f, 1.0f, 0.0f }, forward), { 1.0f, 0.0f, 0.0f });
+				const Vector3 up = NormalizeOrVector3(MyMath::Cross(forward, right), { 0.0f, 1.0f, 0.0f });
+
+				// 巡航時の基準目標位置（プレイヤーの前方）
 				Vector3 targetPosition = player_->GetPosition();
 				const float forwardDistance = 25.0f + std::sin(time * 0.7f) * 4.0f;
 				const float lateralDistance = std::sin(time * 1.15f) * 7.0f;
 				targetPosition.x += forward.x * forwardDistance + right.x * lateralDistance;
-				// ロゴは画面上部にあるため、敵は機体より少し低い高度を横切らせる。
-				// 後段のスクリーン座標補正と合わせ、タイトルと重なりにくくする。
 				targetPosition.y -= 1.2f + std::sin(time * 1.6f) * 0.7f;
 				targetPosition.z += forward.z * forwardDistance + right.z * lateralDistance;
 
@@ -1620,6 +1648,52 @@ void GamePlayScene::Update() {
 					}
 				}
 
+				// 画面外進入アニメーション
+				float currentBank = 0.0f;
+				float currentYawOffset = 0.0f;
+				float currentPitch = 0.0f;
+
+				if (titleEnemyEntering_) {
+					constexpr int kEnterDurationFrames = 70; // 約1.16秒でスムーズに進入
+					const float enterT = std::clamp(static_cast<float>(titleEnemyEnterFrame_) / static_cast<float>(kEnterDurationFrames), 0.0f, 1.0f);
+					// Ease-Out Cubic
+					const float ease = 1.0f - std::pow(1.0f - enterT, 3.0f);
+					const float blend = 1.0f - ease;
+
+					// 進入サイド（壁に近すぎる場合は中央側から進入）
+					float sideSign = static_cast<float>(titleEnemySpawnSide_ >= 0 ? 1 : -1);
+					Vector3 candidatePos = player_->GetPosition();
+					candidatePos.x += right.x * (sideSign * 28.0f);
+					candidatePos.y += right.y * (sideSign * 28.0f);
+					candidatePos.z += right.z * (sideSign * 28.0f);
+					if (const auto stageBoundsIt = std::find_if(obstacles_.begin(), obstacles_.end(),
+						[](const std::unique_ptr<Obstacle>& obstacle) { return obstacle && obstacle->IsStageBounds(); });
+						stageBoundsIt != obstacles_.end()) {
+						const Vector3 center = (*stageBoundsIt)->GetPosition();
+						const Vector3 halfExtents = (*stageBoundsIt)->GetWorldHalfExtents();
+						if (std::abs(candidatePos.x - center.x) > halfExtents.x - 5.0f ||
+							std::abs(candidatePos.z - center.z) > halfExtents.z - 5.0f) {
+							sideSign = -sideSign;
+						}
+					}
+
+					// 画面外（横28m、手前12m、上方3.5m）から巡航位置へ合流
+					targetPosition.x += right.x * (sideSign * 28.0f * blend) - forward.x * (12.0f * blend) + up.x * (3.5f * blend);
+					targetPosition.y += right.y * (sideSign * 28.0f * blend) - forward.y * (12.0f * blend) + up.y * (3.5f * blend);
+					targetPosition.z += right.z * (sideSign * 28.0f * blend) - forward.z * (12.0f * blend) + up.z * (3.5f * blend);
+
+					// 旋回バンク・姿勢角
+					currentBank = -sideSign * std::sin(enterT * 3.14159265f) * 0.70f;
+					currentYawOffset = sideSign * (1.0f - enterT) * 0.45f;
+					currentPitch = (1.0f - enterT) * 0.12f;
+
+					if (++titleEnemyEnterFrame_ >= kEnterDurationFrames) {
+						titleEnemyEntering_ = false;
+						titleEnemyCombatTimer_ = 0;
+					}
+				}
+
+				// ステージ範囲内にクランプ
 				if (const auto stageBoundsIt = std::find_if(obstacles_.begin(), obstacles_.end(),
 					[](const std::unique_ptr<Obstacle>& obstacle) {
 						return obstacle && obstacle->IsStageBounds();
@@ -1639,13 +1713,25 @@ void GamePlayScene::Update() {
 				}
 
 				lockedEnemy_->SetPosition(targetPosition);
-				lockedEnemy_->SetRotation({ 0.0f, std::atan2(-forward.x, -forward.z), 0.0f });
+				const float baseYaw = std::atan2(-forward.x, -forward.z);
+				lockedEnemy_->SetRotation({ currentPitch, baseYaw + currentYawOffset, currentBank });
 				lockedEnemy_->UpdateModel();
-				if (missilePresetManager_ && titleBackgroundFrame_ % 90 == 0) {
-					missilePresetManager_->FirePlayerMissile(MissileType::Normal, lockedEnemy_, -0.35f, false);
-				}
-				if (missilePresetManager_ && titleBackgroundFrame_ % 240 == 0) {
-					missilePresetManager_->FirePlayerMissile(MissileType::MissileWithTrail, lockedEnemy_, 0.35f, false);
+
+				// ミサイル発射ロジック（進入完了後に発射）
+				if (!titleEnemyEntering_) {
+					++titleEnemyCombatTimer_;
+					if (missilePresetManager_) {
+						// 進入完了後、テンポよく射撃（25フレーム、60フレーム、以降45フレームごと）
+						const bool shouldFire = (titleEnemyCombatTimer_ == 25 || titleEnemyCombatTimer_ == 60 ||
+							(titleEnemyCombatTimer_ > 60 && (titleEnemyCombatTimer_ - 60) % 45 == 0));
+						if (shouldFire) {
+							// 初弾は確実にホーミング弾、以降も80%以上の高確率でホーミング弾（白煙トレイル付き）を発射
+							const bool isHoming = (titleEnemyCombatTimer_ == 25) || (rand() % 100 < 80);
+							const MissileType type = isHoming ? MissileType::MissileWithTrail : MissileType::Normal;
+							const float offset = (titleEnemyCombatTimer_ <= 40) ? -0.35f : 0.35f;
+							missilePresetManager_->FirePlayerMissile(type, lockedEnemy_, offset, false);
+						}
+					}
 				}
 			}
 		}
