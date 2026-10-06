@@ -76,7 +76,7 @@ void WinApp::Initialize() {
 	//ウインドウプロシージャ
 	wc.lpfnWndProc = WindowProc;
 	//ウインドウクラス名
-	wc.lpszClassName = L"CG2";
+	wc.lpszClassName = L"Valkyrie Strike";
 	//インスタンスハンドル
 	wc.hInstance = GetModuleHandle(nullptr);
 	//カーソル
@@ -101,14 +101,14 @@ void WinApp::Initialize() {
 
 	//ウィンドウの生成
 	wchar_t modulePath[MAX_PATH] = {};
-	std::wstring windowTitle = L"CG2";
+	std::wstring windowTitle = L"VALKYRIE STRIKE";
 	if (GetModuleFileNameW(nullptr, modulePath, MAX_PATH) != 0) {
 		std::wstring exeName = std::filesystem::path(modulePath).stem().wstring();
 		std::transform(exeName.begin(), exeName.end(), exeName.begin(), [](wchar_t c) {
 			return static_cast<wchar_t>(std::towlower(c));
 		});
 		if (exeName.find(L"simulation") != std::wstring::npos) {
-			windowTitle = L"CG2 Simulation";
+			windowTitle = L"VALKYRIE STRIKE Simulation";
 		}
 	}
 	hwnd = CreateWindow(

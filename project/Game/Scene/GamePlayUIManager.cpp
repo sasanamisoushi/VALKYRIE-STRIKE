@@ -146,7 +146,7 @@ namespace {
 			return false;
 		}
 		return std::filesystem::path(modulePath).lexically_normal() ==
-			(projectRoot / "generated" / "outputs" / "Release" / "CG2.exe").lexically_normal();
+			(projectRoot / "generated" / "outputs" / "Release" / "ValkyrieStrike.exe").lexically_normal();
 	}
 }
 #endif

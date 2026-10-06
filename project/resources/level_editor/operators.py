@@ -45,7 +45,7 @@ def _workspace_root_from_blend():
 
 def _default_game_exe_path():
     workspace_root = _workspace_root_from_blend()
-    return os.path.join(workspace_root, "generated", "outputs", "Development", "CG2.exe")
+    return os.path.join(workspace_root, "generated", "outputs", "Development", "ValkyrieStrike.exe")
 
 
 def _default_game_working_dir():

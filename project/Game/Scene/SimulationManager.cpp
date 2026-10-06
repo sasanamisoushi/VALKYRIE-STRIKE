@@ -61,7 +61,7 @@ bool IsCurrentExecutableReleaseBuild() {
 	if (projectRoot.empty()) {
 		return false;
 	}
-	const std::filesystem::path releaseExe = projectRoot / "generated" / "outputs" / "Release" / "CG2.exe";
+	const std::filesystem::path releaseExe = projectRoot / "generated" / "outputs" / "Release" / "ValkyrieStrike.exe";
 	return std::filesystem::path(modulePath).lexically_normal() == releaseExe.lexically_normal();
 }
 }

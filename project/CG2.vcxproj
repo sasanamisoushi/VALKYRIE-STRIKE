@@ -57,6 +57,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <TargetName>ValkyrieStrike</TargetName>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)..\generated\outputs\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)..\generated\obj\$(ProjectName)\$(Configuration)\</IntDir>
@@ -398,7 +401,7 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
   <Target Name="CopyRuntimeFiles" AfterTargets="Build">
     <Copy SourceFiles="$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" DestinationFiles="$(TargetDir)dxcompiler.dll" SkipUnchangedFiles="true" Condition="Exists('$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll')" />
     <Copy SourceFiles="$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" DestinationFiles="$(TargetDir)dxil.dll" SkipUnchangedFiles="true" Condition="Exists('$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll')" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(TargetDir)CG2Simulation.exe" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(TargetDir)ValkyrieStrikeSimulation.exe" SkipUnchangedFiles="true" />
   </Target>
 </Project>
 

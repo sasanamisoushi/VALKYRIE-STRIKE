@@ -65,7 +65,7 @@ namespace {
 			return false;
 		}
 
-		const std::filesystem::path simulationExe = currentExe.parent_path() / L"CG2Simulation.exe";
+		const std::filesystem::path simulationExe = currentExe.parent_path() / L"ValkyrieStrikeSimulation.exe";
 		const std::filesystem::path launchExe = std::filesystem::exists(simulationExe) ? simulationExe : currentExe;
 		const wchar_t *parameters = (launchExe == currentExe) ? L"--simulation" : nullptr;
 		const std::filesystem::path workDir = std::filesystem::current_path();

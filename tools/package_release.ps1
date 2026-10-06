@@ -28,7 +28,7 @@ if (-not $SkipBuild) {
 }
 
 $requiredFiles = @(
-    "CG2.exe",
+    "ValkyrieStrike.exe",
     "dxcompiler.dll",
     "dxil.dll"
 )
@@ -58,9 +58,9 @@ foreach ($file in $requiredFiles) {
 Copy-Item -LiteralPath (Join-Path $buildOutput "resources") -Destination $packagePath -Recurse
 
 @"
-CG2 実行版
+Valkyrie Strike 実行版
 
-CG2.exe をダブルクリックして起動してください。
+ValkyrieStrike.exe をダブルクリックして起動してください。
 Windows 10/11 (x64) 用です。
 "@ | Set-Content -LiteralPath (Join-Path $packagePath "README.txt") -Encoding UTF8
 
