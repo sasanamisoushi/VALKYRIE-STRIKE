@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet("Debug", "Development", "Release")]
     [string]$Configuration = "Release",
@@ -11,7 +11,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $solutionPath = Join-Path $projectRoot "project\\CG2.sln"
 $buildOutput = Join-Path $projectRoot "generated\\outputs\\$Configuration"
 $packageRoot = Join-Path $projectRoot "generated\\packages"
-$packageName = "CG2_Playable"
+$packageName = "ValkyrieStrike_Playable"
 $packagePath = Join-Path $packageRoot $packageName
 $zipPath = Join-Path $packageRoot "$packageName-$Configuration.zip"
 $msbuildPath = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe"
@@ -68,3 +68,4 @@ Compress-Archive -Path (Join-Path $packagePath "*") -DestinationPath $zipPath -C
 
 Write-Host "パッケージを作成しました: $packagePath"
 Write-Host "ZIP を作成しました: $zipPath"
+exit 0

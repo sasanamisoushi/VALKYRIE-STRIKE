@@ -675,10 +675,26 @@ void Player::UpdatePresentation(const Vector3& position, const Vector3& eulerRot
 
 void Player::UpdateModel(bool allowInput, bool advanceState) {
     auto input = Input::GetInstance();
-    if (advanceState && allowInput) {
+    bool modeChanged = false;
+    // 編集停止中も、移動・戦闘処理を進めずに形態だけは確認できるようにする。
+    if (allowInput) {
+        const PlayerMode previousMode = currentMode_;
         if (input->TriggerAction(PlayerAction::TransformFighter)) ChangeMode(PlayerMode::Fighter);
         if (input->TriggerAction(PlayerAction::TransformGerwalk)) ChangeMode(PlayerMode::Gerwalk);
         if (input->TriggerAction(PlayerAction::TransformBattroid)) ChangeMode(PlayerMode::Battroid);
+        modeChanged = previousMode != currentMode_;
+        if (modeChanged && !advanceState) {
+            // 停止中は補間を進めないため、選んだ形態のポーズへ即座にスナップする。
+            if (currentMode_ == PlayerMode::Fighter) {
+                animationTime_ = 0.0f;
+            } else if (currentMode_ == PlayerMode::Gerwalk) {
+                animationTime_ = 1.71f;
+            } else {
+                animationTime_ = kBattroidIdleAnimationTime;
+            }
+            currentDrawScale_ = targetDrawScale_;
+            transformModeBlend_ = 1.0f;
+        }
     }
 
     // Bキーでの既存ガード状態に、左腕のポーズ用ブレンド値を同期する。
@@ -779,7 +795,7 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
 		visualQuaternion = MyMath::Normalize(MyMath::Multiply(
 			quaternion_, MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, rollAngle)));
 	}
-	if (IsTransformPlayerModel() && advanceState) {
+	if (IsTransformPlayerModel() && (advanceState || modeChanged)) {
 		UpdateTransformPlayerModel();
 	} else if (object_) {
 	    object_->SetScale(currentDrawScale_);

@@ -25,6 +25,12 @@ void CheckSettings() {
     }
     BoosterEffect source;
     source.GetPlacementAdjustment() = {0.3f, -0.29f, 0.07f};
+    auto& gerwalkPlacement = source.GetPlacementSettings(1);
+    gerwalkPlacement.positionOffset = {-0.18f, -0.42f, -0.12f};
+    gerwalkPlacement.scale = {0.85f, 1.10f, 0.90f};
+    gerwalkPlacement.rotationDegrees = {12.0f, -18.0f, 4.0f};
+    auto& extraThrusters = source.GetExtraThrusters(2);
+    extraThrusters.push_back({ {0.12f, -0.58f, -0.31f}, {0.75f, 1.15f, 0.80f}, {8.0f, -15.0f, 3.0f} });
     auto& effect = source.GetEffectSettings();
     effect.widthScale = 3.0f;
     effect.lengthScale = 1.4f;
@@ -37,6 +43,15 @@ void CheckSettings() {
     BoosterEffect loaded;
     if (!loaded.LoadSettings(path)) throw std::runtime_error("Settings load failed");
     RequireNear(loaded.GetPlacementAdjustment(), source.GetPlacementAdjustment());
+    const auto& restoredGerwalkPlacement = loaded.GetPlacementSettings(1);
+    RequireNear(restoredGerwalkPlacement.positionOffset, gerwalkPlacement.positionOffset);
+    RequireNear(restoredGerwalkPlacement.scale, gerwalkPlacement.scale);
+    RequireNear(restoredGerwalkPlacement.rotationDegrees, gerwalkPlacement.rotationDegrees);
+    const auto& restoredExtraThrusters = loaded.GetExtraThrusters(2);
+    if (restoredExtraThrusters.size() != 1) throw std::runtime_error("Extra thruster count was not persisted");
+    RequireNear(restoredExtraThrusters[0].position, extraThrusters[0].position);
+    RequireNear(restoredExtraThrusters[0].scale, extraThrusters[0].scale);
+    RequireNear(restoredExtraThrusters[0].rotationDegrees, extraThrusters[0].rotationDegrees);
     const auto& restored = loaded.GetEffectSettings();
     RequireFloat(restored.widthScale, 3.0f);
     RequireFloat(restored.lengthScale, 1.4f);

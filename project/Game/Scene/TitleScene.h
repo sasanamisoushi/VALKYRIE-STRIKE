@@ -46,6 +46,8 @@ private:
 	std::unique_ptr<Sprite> titleSprite;
 	std::unique_ptr<Sprite> menuPanelSprite_;
 	std::unique_ptr<Sprite> menuRowSprite_;
+	// メインメニュー時に右下へ置く、ゲーム内操作一覧。
+	std::unique_ptr<Sprite> titleControlsGuideSprite_;
 	std::array<std::unique_ptr<Sprite>, 8> menuLabelSprites_;
 	std::array<std::unique_ptr<Sprite>, 40> settingMeterSegments_;
 	std::array<std::array<std::unique_ptr<Sprite>, 5>, 2> settingValueDigitSprites_;

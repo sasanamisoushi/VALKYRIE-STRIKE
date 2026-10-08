@@ -69,6 +69,8 @@ void TitleScene::Initialize() {
 	menuPanelSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
 	menuRowSprite_ = std::make_unique<Sprite>();
 	menuRowSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
+	titleControlsGuideSprite_ = std::make_unique<Sprite>();
+	titleControlsGuideSprite_->Initialize(SpriteCommon::GetInstance(), "resources/title_controls.png");
 	for (auto& label : menuLabelSprites_) {
 		label = std::make_unique<Sprite>();
 		label->Initialize(SpriteCommon::GetInstance(), "resources/title_menu_labels.png");
@@ -166,7 +168,7 @@ void TitleScene::Update() {
 		}
 		selectedMenuItem_ = static_cast<MenuItem>(selection);
 
-		if (input->TriggerKey(DIK_RETURN) || input->TriggerKey(DIK_SPACE)) {
+		if (input->TriggerKey(DIK_SPACE)) {
 			switch (selectedMenuItem_) {
 			case MenuItem::Start:
 				BeginLaunchSequence();
@@ -382,11 +384,11 @@ void TitleScene::UpdateSettingsInput() {
 	} else if (selectedSettingsItem_ == SettingsItem::MouseSensitivity && (decrease || increase)) {
 		settings.SetMouseSensitivity(settings.GetMouseSensitivity() + (increase ? 0.0005f : -0.0005f));
 	} else if (selectedSettingsItem_ == SettingsItem::ControlGuide && (decrease || increase ||
-		input->TriggerKey(DIK_RETURN) || input->TriggerKey(DIK_SPACE))) {
+		input->TriggerKey(DIK_SPACE))) {
 		settings.SetControlGuideVisible(!settings.IsControlGuideVisible());
 	}
 
-	if ((input->TriggerKey(DIK_RETURN) || input->TriggerKey(DIK_SPACE)) && selectedSettingsItem_ == SettingsItem::Back) {
+	if (input->TriggerKey(DIK_SPACE) && selectedSettingsItem_ == SettingsItem::Back) {
 		isSettingsOpen_ = false;
 	}
 }
@@ -426,6 +428,20 @@ void TitleScene::Draw() {
 
 	if (flightState_ == TitleFlightState::Cruising) {
 		DrawMenuOverlay(static_cast<float>(WinApp::GetClientWidth()), static_cast<float>(WinApp::GetClientHeight()));
+		// タイトルメニュー専用の選択・決定操作を、選択肢と重ならない右下へ表示する。
+		if (!isSettingsOpen_ && titleControlsGuideSprite_) {
+			constexpr float kGuideWidth = 360.0f;
+			constexpr float kGuideHeight = 206.0f;
+			constexpr float kGuideMargin = 18.0f;
+			titleControlsGuideSprite_->SetPosition({
+				(static_cast<float>(WinApp::GetClientWidth()) - kGuideWidth - kGuideMargin),
+				(static_cast<float>(WinApp::GetClientHeight()) - kGuideHeight - kGuideMargin),
+			});
+			titleControlsGuideSprite_->SetSize({ kGuideWidth, kGuideHeight });
+			titleControlsGuideSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.96f });
+			titleControlsGuideSprite_->Update();
+			titleControlsGuideSprite_->Draw();
+		}
 	}
 }
 

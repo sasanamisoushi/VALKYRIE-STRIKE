@@ -118,7 +118,13 @@ namespace {
 		return {};
 	}
 
-	bool CreateExecutablePackage(bool skipBuild) {
+	std::filesystem::path GetExecutablePackageZipPath() {
+		const std::filesystem::path projectRoot = FindProjectRoot();
+		return projectRoot.empty() ? std::filesystem::path{} :
+			projectRoot / "generated" / "packages" / "ValkyrieStrike_Playable-Release.zip";
+	}
+
+	bool CreateExecutablePackage(bool skipBuild, HANDLE& processHandle) {
 		const std::filesystem::path projectRoot = FindProjectRoot();
 		if (projectRoot.empty()) {
 			return false;
@@ -131,9 +137,35 @@ namespace {
 			parameters += L" -SkipBuild";
 		}
 
-		const HINSTANCE result = ShellExecuteW(
-			nullptr, L"open", L"powershell.exe", parameters.c_str(), projectRoot.c_str(), SW_SHOWNORMAL);
-		return reinterpret_cast<intptr_t>(result) > 32;
+		SHELLEXECUTEINFOW executeInfo{};
+		executeInfo.cbSize = sizeof(executeInfo);
+		executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+		executeInfo.lpVerb = L"open";
+		executeInfo.lpFile = L"powershell.exe";
+		executeInfo.lpParameters = parameters.c_str();
+		executeInfo.lpDirectory = projectRoot.c_str();
+		executeInfo.nShow = SW_SHOWNORMAL;
+		if (!ShellExecuteExW(&executeInfo) || executeInfo.hProcess == nullptr) {
+			return false;
+		}
+
+		processHandle = executeInfo.hProcess;
+		return true;
+	}
+
+	void UpdateExecutablePackageStatus(HANDLE& processHandle, const std::filesystem::path& zipPath,
+		std::string& packageMessage) {
+		if (processHandle == nullptr || WaitForSingleObject(processHandle, 0) == WAIT_TIMEOUT) {
+			return;
+		}
+
+		DWORD exitCode = 1;
+		GetExitCodeProcess(processHandle, &exitCode);
+		CloseHandle(processHandle);
+		processHandle = nullptr;
+		packageMessage = exitCode == 0 && std::filesystem::exists(zipPath)
+			? "ZIP作成が完成しました！ generated/packages/ValkyrieStrike_Playable-Release.zip"
+			: "ZIP作成に失敗しました。PowerShellのエラー内容を確認してください。";
 	}
 
 	bool IsCurrentExecutableReleaseBuild() {
@@ -1357,26 +1389,32 @@ void GamePlayUIManager::UpdateUI() {
 
 		if (currentEngineSettingsTarget_ == 6) {
 			static std::string packageMessage;
+			static HANDLE packageProcess = nullptr;
 			const bool projectFound = !FindProjectRoot().empty();
 			const bool runningRelease = IsCurrentExecutableReleaseBuild();
+			const std::filesystem::path zipPath = GetExecutablePackageZipPath();
+			UpdateExecutablePackageStatus(packageProcess, zipPath, packageMessage);
+			const bool packageCreationRunning = packageProcess != nullptr;
 			ImGui::Text("実行ファイル生成");
-			ImGui::TextWrapped("Release版のCG2.exe、DLL、resourcesをまとめて、配布用ZIPを作成します。");
+			ImGui::TextWrapped("Release版のValkyrieStrike.exe、DLL、resourcesをまとめて、配布用ZIPを作成します。");
 			ImGui::Separator();
 			if (!projectFound) {
 				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.25f, 1.0f), "プロジェクトフォルダーから起動した場合のみ利用できます。");
+			} else if (packageCreationRunning) {
+				ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.25f, 1.0f), "ZIP作成中です。完了までお待ちください。");
 			} else if (runningRelease) {
 				ImGui::TextDisabled("現在Release版を実行中です。ビルドは行わず、現在のRelease版をZIPにします。");
 				if (ImGui::Button("現在のRelease版をZIP作成")) {
-					packageMessage = CreateExecutablePackage(true)
-						? "PowerShellでZIP作成を開始しました。完了後に generated/packages を確認してください。"
+					packageMessage = CreateExecutablePackage(true, packageProcess)
+						? "ZIP作成中です。完了を確認しています。"
 						: "ZIP作成を開始できませんでした。";
 				}
 			} else if (ImGui::Button("ReleaseビルドしてZIP作成")) {
-				packageMessage = CreateExecutablePackage(false)
-					? "PowerShellでReleaseビルドとZIP作成を開始しました。完了後に generated/packages を確認してください。"
+				packageMessage = CreateExecutablePackage(false, packageProcess)
+					? "ReleaseビルドとZIP作成中です。完了を確認しています。"
 					: "実行ファイル生成を開始できませんでした。";
 			}
-			ImGui::TextDisabled("出力先: generated/packages/CG2_Playable-Release.zip");
+			ImGui::TextDisabled("出力先: generated/packages/ValkyrieStrike_Playable-Release.zip");
 			if (!packageMessage.empty()) {
 				ImGui::Spacing();
 				ImGui::TextWrapped("%s", packageMessage.c_str());
@@ -1390,6 +1428,20 @@ void GamePlayUIManager::UpdateUI() {
 			ImGui::Separator();
 			if (player_ && player_->GetBoosterEffect()) {
 				BoosterEffect* booster = player_->GetBoosterEffect();
+				const auto saveAndApplySettings = [this, booster](const char* successMessage) {
+					constexpr const char* kSettingsPath = "resources/vf-15c/thruster_position.json";
+					if (!booster->SaveSettings(kSettingsPath)) {
+						thrusterSettingsMessage_ = "保存できませんでした。resources/vf-15c に書き込み可能か確認してください。";
+						return;
+					}
+					if (!booster->LoadSettings(kSettingsPath)) {
+						thrusterSettingsMessage_ = "保存後の設定を読み込めませんでした。ファイル内容を確認してください。";
+						return;
+					}
+					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
+						static_cast<int>(player_->GetCurrentMode()));
+					thrusterSettingsMessage_ = successMessage;
+				};
 				bool previewAccelerating = booster->GetEditorPreviewAcceleration();
 				if (ImGui::Checkbox("加速状態をプレビュー", &previewAccelerating)) {
 					booster->SetEditorPreviewAcceleration(previewAccelerating);
@@ -1397,38 +1449,100 @@ void GamePlayUIManager::UpdateUI() {
 				ImGui::Separator();
 				ImGui::Text("エフェクトの見た目");
 				BoosterEffect::EffectSettings& effect = booster->GetEffectSettings();
-				ImGui::SliderFloat("炎の幅", &effect.widthScale, 0.25f, 6.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
-				ImGui::SliderFloat("炎の長さ", &effect.lengthScale, 0.25f, 4.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
-				ImGui::SliderFloat("明るさ", &effect.brightness, 0.1f, 3.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
-				ImGui::SliderFloat("周囲の光", &effect.glowScale, 0.0f, 3.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
+				bool saveEffectSettings = false;
+				const auto editEffectSlider = [&saveEffectSettings](const char* label, float* value,
+					float minimum, float maximum, const char* format) {
+					ImGui::SliderFloat(label, value, minimum, maximum, format, ImGuiSliderFlags_AlwaysClamp);
+					// ドラッグ中に毎フレーム書き込まず、操作を終えた時点で保存対象にする。
+					saveEffectSettings |= ImGui::IsItemDeactivatedAfterEdit();
+				};
+				editEffectSlider("炎の幅", &effect.widthScale, 0.25f, 6.0f, "%.2f 倍");
+				editEffectSlider("炎の長さ", &effect.lengthScale, 0.25f, 4.0f, "%.2f 倍");
+				editEffectSlider("明るさ", &effect.brightness, 0.1f, 3.0f, "%.2f 倍");
+				editEffectSlider("周囲の光", &effect.glowScale, 0.0f, 3.0f, "%.2f 倍");
 				if (ImGui::TreeNode("加速・白い芯の調整")) {
-					ImGui::SliderFloat("加速時の幅倍率", &effect.boostWidthMultiplier, 1.0f, 2.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
-					ImGui::SliderFloat("加速時の長さ倍率", &effect.boostLengthMultiplier, 1.0f, 2.0f, "%.2f 倍", ImGuiSliderFlags_AlwaysClamp);
-					ImGui::SliderFloat("白い芯の長さ比率", &effect.coreLengthRatio, 0.2f, 0.8f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+					editEffectSlider("加速時の幅倍率", &effect.boostWidthMultiplier, 1.0f, 2.0f, "%.2f 倍");
+					editEffectSlider("加速時の長さ倍率", &effect.boostLengthMultiplier, 1.0f, 2.0f, "%.2f 倍");
+					editEffectSlider("白い芯の長さ比率", &effect.coreLengthRatio, 0.2f, 0.8f, "%.2f");
 					ImGui::TreePop();
 				}
 				if (ImGui::Button("エフェクトの見た目をリセット", ImVec2(-1.0f, 0.0f))) {
 					booster->ResetEffectSettings();
+					saveEffectSettings = true;
 				}
+				if (saveEffectSettings) {
+					saveAndApplySettings("エフェクト設定を保存して、ただちに反映しました。");
+				}
+				ImGui::TextDisabled("エフェクトの変更は、操作を終えると保存・即時反映されます。");
 				ImGui::Separator();
-				ImGui::Text("取付位置（機体ローカル・メートル）");
+				const int placementMode = static_cast<int>(player_->GetCurrentMode());
+				const char* placementModeName = placementMode == 0 ? "ファイター"
+					: (placementMode == 1 ? "ガウォーク" : "バトロイド");
+				ImGui::Text("取付調整（現在の形態: %s）", placementModeName);
+				ImGui::TextDisabled("形態ごとに位置・サイズ・回転を別々に保存できます。");
 				ImGui::Checkbox("位置合わせ用マーカー", &showThrusterPlacementMarkers_);
 				booster->SetPlacementMarkersVisible(showThrusterPlacementMarkers_);
-				Vector3& offset = booster->GetPlacementAdjustment();
-				if (ImGui::DragFloat3("位置補正 X・Y・Z", &offset.x, 0.01f, -3.0f, 3.0f, "%.3f m")) {
+				BoosterEffect::PlacementSettings& placement = booster->GetPlacementSettings(placementMode);
+				bool placementChanged = false;
+				placementChanged |= ImGui::DragFloat3("位置補正 X・Y・Z", &placement.positionOffset.x,
+					0.01f, -3.0f, 3.0f, "%.3f m");
+				placementChanged |= ImGui::DragFloat3("ノズルサイズ X・Y・Z", &placement.scale.x,
+					0.01f, 0.2f, 3.0f, "%.2f 倍");
+				placementChanged |= ImGui::DragFloat3("ノズル回転 X・Y・Z", &placement.rotationDegrees.x,
+					1.0f, -180.0f, 180.0f, "%.1f 度");
+				if (placementChanged) {
 					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
-						static_cast<int>(player_->GetCurrentMode()));
+						placementMode);
 				}
 				ImGui::TextDisabled("+X: 右 / +Y: 上 / +Z: 前方。Yをマイナスにすると下がります。");
-				if (ImGui::Button("位置補正をリセット", ImVec2(-1.0f, 0.0f))) {
-					booster->ResetPlacementAdjustment();
+				ImGui::TextDisabled("回転は機体ローカル軸、サイズはノズルと噴射炎に反映されます。");
+				if (ImGui::Button("現在の形態の取付調整をリセット", ImVec2(-1.0f, 0.0f))) {
+					booster->ResetPlacementAdjustment(placementMode);
 					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
-						static_cast<int>(player_->GetCurrentMode()));
+						placementMode);
 				}
-				if (ImGui::Button("スラスター設定を保存", ImVec2(-1.0f, 0.0f))) {
-					thrusterSettingsMessage_ = booster->SaveSettings("resources/vf-15c/thruster_position.json")
-						? "取付位置とエフェクト設定を保存しました。次回起動時にも反映されます。"
-						: "保存できませんでした。resources/vf-15c に書き込み可能か確認してください。";
+				ImGui::Separator();
+				ImGui::Text("追加スラスター（現在の形態のみ）");
+				ImGui::TextDisabled("追加したノズルは、位置・サイズ・回転を1基ずつ編集して保存できます。最大8基です。");
+				auto& extraThrusters = booster->GetExtraThrusters(placementMode);
+				bool extraThrusterChanged = false;
+				bool removeExtraThruster = false;
+				size_t extraThrusterToRemove = 0;
+				for (size_t index = 0; index < extraThrusters.size(); ++index) {
+					BoosterEffect::ExtraThrusterSettings& extra = extraThrusters[index];
+					ImGui::PushID(static_cast<int>(index));
+					const std::string title = "追加ノズル " + std::to_string(index + 1);
+					if (ImGui::TreeNode(title.c_str())) {
+						extraThrusterChanged |= ImGui::DragFloat3("位置 X・Y・Z", &extra.position.x,
+							0.01f, -3.0f, 3.0f, "%.3f m");
+						extraThrusterChanged |= ImGui::DragFloat3("サイズ X・Y・Z", &extra.scale.x,
+							0.01f, 0.2f, 3.0f, "%.2f 倍");
+						extraThrusterChanged |= ImGui::DragFloat3("回転 X・Y・Z", &extra.rotationDegrees.x,
+							1.0f, -180.0f, 180.0f, "%.1f 度");
+						if (ImGui::Button("このノズルを削除")) {
+							removeExtraThruster = true;
+							extraThrusterToRemove = index;
+						}
+						ImGui::TreePop();
+					}
+					ImGui::PopID();
+				}
+				if (removeExtraThruster) {
+					booster->RemoveExtraThruster(placementMode, extraThrusterToRemove);
+					extraThrusterChanged = true;
+				}
+				if (ImGui::Button("スラスターを追加", ImVec2(-1.0f, 0.0f))) {
+					if (booster->AddExtraThruster(placementMode)) {
+						extraThrusterChanged = true;
+					} else {
+						thrusterSettingsMessage_ = "追加できるスラスターは1形態につき8基までです。";
+					}
+				}
+				if (extraThrusterChanged) {
+					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(), placementMode);
+				}
+				if (ImGui::Button("位置・エフェクト設定を保存して即時反映", ImVec2(-1.0f, 0.0f))) {
+					saveAndApplySettings("取付位置・追加スラスター・エフェクト設定を保存して、ただちに反映しました。");
 				}
 				if (ImGui::Button("保存設定を読み込む", ImVec2(-1.0f, 0.0f))) {
 					if (booster->LoadSettings("resources/vf-15c/thruster_position.json")) {

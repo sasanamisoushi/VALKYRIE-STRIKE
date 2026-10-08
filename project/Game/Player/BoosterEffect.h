@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <array>
 
 class BoosterEffect {
 public:
@@ -18,13 +19,43 @@ public:
         float boostWidthMultiplier = 1.25f;
         float boostLengthMultiplier = 1.18f;
     };
+    struct PlacementSettings {
+        Vector3 positionOffset = { 0.0f, 0.0f, 0.0f };
+        Vector3 scale = { 1.0f, 1.0f, 1.0f };
+        // 機体ローカル座標系での回転（度）。UI上で編集し、保存も行う。
+        Vector3 rotationDegrees = { 0.0f, 0.0f, 0.0f };
+    };
+    // 既定の左右ノズルとは別に、編集画面から追加できるノズル1基分の設定。
+    // 座標は機体ローカル座標（メートル）、回転は度で保存する。
+    struct ExtraThrusterSettings {
+        Vector3 position = { 0.0f, 0.0f, 0.0f };
+        Vector3 scale = { 1.0f, 1.0f, 1.0f };
+        Vector3 rotationDegrees = { 0.0f, 0.0f, 0.0f };
+    };
     void Initialize();
     void Update(const Vector3& position, const Quaternion& rotation, int playerMode, float speedRatio, bool isAccelerating);
     void UpdateEditorPreview(const Vector3& position, const Quaternion& rotation, int playerMode);
     void DrawNozzles(Camera* camera = nullptr);
     void Draw(Camera* camera);
-    Vector3& GetPlacementAdjustment() { return placementAdjustment_; }
-    void ResetPlacementAdjustment() { placementAdjustment_ = { 0.0f, 0.0f, 0.0f }; }
+    PlacementSettings& GetPlacementSettings(int playerMode) {
+        const size_t modeIndex = playerMode <= 0 ? 0u
+            : (playerMode >= static_cast<int>(placementSettings_.size()) ? placementSettings_.size() - 1u
+                : static_cast<size_t>(playerMode));
+        return placementSettings_[modeIndex];
+    }
+    Vector3& GetPlacementAdjustment(int playerMode = 0) { return GetPlacementSettings(playerMode).positionOffset; }
+    void ResetPlacementAdjustment(int playerMode = 0) { GetPlacementSettings(playerMode) = PlacementSettings{}; }
+    std::vector<ExtraThrusterSettings>& GetExtraThrusters(int playerMode) {
+        const size_t modeIndex = playerMode <= 0 ? 0u
+            : (playerMode >= static_cast<int>(extraThrustersByMode_.size()) ? extraThrustersByMode_.size() - 1u
+                : static_cast<size_t>(playerMode));
+        return extraThrustersByMode_[modeIndex];
+    }
+    const std::vector<ExtraThrusterSettings>& GetExtraThrusters(int playerMode) const {
+        return const_cast<BoosterEffect*>(this)->GetExtraThrusters(playerMode);
+    }
+    bool AddExtraThruster(int playerMode);
+    bool RemoveExtraThruster(int playerMode, size_t index);
     void RefreshPlacement(const Vector3& position, const Quaternion& rotation, int playerMode);
     void SetPlacementMarkersVisible(bool visible) { showPlacementMarkers_ = visible; }
     bool GetEditorPreviewAcceleration() const { return editorPreviewAccelerating_; }
@@ -44,13 +75,18 @@ private:
         Vector3 offset;
         Vector3 nozzleOriginOffset;
         Vector3 exhaustDirection;
+        Vector3 adjustedExhaustDirection;
+        Vector3 placementScale = { 1.0f, 1.0f, 1.0f };
+        bool isExtraThruster = false;
+        size_t extraThrusterIndex = 0;
         Vector4 color;
         float plumeLength = 0.0f;
         float plumeRadius = 0.0f;
     };
 
     std::vector<Burner> burners_;
-    Vector3 placementAdjustment_ = { 0.0f, 0.0f, 0.0f };
+    std::array<PlacementSettings, 3> placementSettings_{};
+    std::array<std::vector<ExtraThrusterSettings>, 3> extraThrustersByMode_{};
     EffectSettings effectSettings_;
     bool showPlacementMarkers_ = false;
     bool editorPreviewAccelerating_ = true;

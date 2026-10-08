@@ -34,7 +34,13 @@ std::filesystem::path FindProjectRoot() {
 	return {};
 }
 
-bool LaunchExecutablePackageCreation(bool skipBuild) {
+std::filesystem::path GetExecutablePackageZipPath() {
+	const std::filesystem::path projectRoot = FindProjectRoot();
+	return projectRoot.empty() ? std::filesystem::path{} :
+		projectRoot / "generated" / "packages" / "ValkyrieStrike_Playable-Release.zip";
+}
+
+bool LaunchExecutablePackageCreation(bool skipBuild, HANDLE& processHandle) {
 	const std::filesystem::path projectRoot = FindProjectRoot();
 	if (projectRoot.empty()) {
 		return false;
@@ -47,9 +53,35 @@ bool LaunchExecutablePackageCreation(bool skipBuild) {
 		parameters += L" -SkipBuild";
 	}
 
-	const HINSTANCE result = ShellExecuteW(
-		nullptr, L"open", L"powershell.exe", parameters.c_str(), projectRoot.c_str(), SW_SHOWNORMAL);
-	return reinterpret_cast<intptr_t>(result) > 32;
+	SHELLEXECUTEINFOW executeInfo{};
+	executeInfo.cbSize = sizeof(executeInfo);
+	executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+	executeInfo.lpVerb = L"open";
+	executeInfo.lpFile = L"powershell.exe";
+	executeInfo.lpParameters = parameters.c_str();
+	executeInfo.lpDirectory = projectRoot.c_str();
+	executeInfo.nShow = SW_SHOWNORMAL;
+	if (!ShellExecuteExW(&executeInfo) || executeInfo.hProcess == nullptr) {
+		return false;
+	}
+
+	processHandle = executeInfo.hProcess;
+	return true;
+}
+
+void UpdateExecutablePackageStatus(HANDLE& processHandle, const std::filesystem::path& zipPath,
+	std::string& packageMessage) {
+	if (processHandle == nullptr || WaitForSingleObject(processHandle, 0) == WAIT_TIMEOUT) {
+		return;
+	}
+
+	DWORD exitCode = 1;
+	GetExitCodeProcess(processHandle, &exitCode);
+	CloseHandle(processHandle);
+	processHandle = nullptr;
+	packageMessage = exitCode == 0 && std::filesystem::exists(zipPath)
+		? "ZIP作成が完成しました！ generated/packages/ValkyrieStrike_Playable-Release.zip"
+		: "ZIP作成に失敗しました。PowerShellのエラー内容を確認してください。";
 }
 
 bool IsCurrentExecutableReleaseBuild() {
@@ -1087,27 +1119,33 @@ void SimulationManager::DrawSimulationScreenUI() {
 		}
 	} else if (scene_->uiManager_->currentSimulationTarget_ == 7) {
 		static std::string packageMessage;
+		static HANDLE packageProcess = nullptr;
 		const bool projectFound = !FindProjectRoot().empty();
 		const bool runningRelease = IsCurrentExecutableReleaseBuild();
+		const std::filesystem::path zipPath = GetExecutablePackageZipPath();
+		UpdateExecutablePackageStatus(packageProcess, zipPath, packageMessage);
+		const bool packageCreationRunning = packageProcess != nullptr;
 		ImGui::Text("実行ファイル生成");
-		ImGui::TextWrapped("Release版の CG2.exe、実行用DLL、resources をまとめ、配布用ZIPを作成します。");
+		ImGui::TextWrapped("Release版のValkyrieStrike.exe、実行用DLL、resourcesをまとめ、配布用ZIPを作成します。");
 		ImGui::Separator();
 		if (!projectFound) {
 			ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.25f, 1.0f), "プロジェクトフォルダー内から起動した場合のみ使用できます。");
+		} else if (packageCreationRunning) {
+			ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.25f, 1.0f), "ZIP作成中です。完了までお待ちください。");
 		} else {
 			if (runningRelease) {
 				ImGui::TextDisabled("現在Release版を実行中のため、実行ファイルを上書きするビルドはできません。");
 				if (ImGui::Button("現在のRelease版をZIP作成")) {
-					packageMessage = LaunchExecutablePackageCreation(true)
-						? "PowerShellでZIP作成を開始しました。完了後、generated/packages を確認してください。"
+					packageMessage = LaunchExecutablePackageCreation(true, packageProcess)
+						? "ZIP作成中です。完了を確認しています。"
 						: "ZIP作成を開始できませんでした。";
 				}
 			} else if (ImGui::Button("ReleaseビルドしてZIP作成")) {
-				packageMessage = LaunchExecutablePackageCreation(false)
-					? "PowerShellでReleaseビルドとZIP作成を開始しました。完了後、generated/packages を確認してください。"
+				packageMessage = LaunchExecutablePackageCreation(false, packageProcess)
+					? "ReleaseビルドとZIP作成中です。完了を確認しています。"
 					: "実行ファイル生成を開始できませんでした。";
 			}
-			ImGui::TextDisabled("出力先: generated/packages/CG2_Playable-Release.zip");
+			ImGui::TextDisabled("出力先: generated/packages/ValkyrieStrike_Playable-Release.zip");
 		}
 		if (!packageMessage.empty()) {
 			ImGui::Spacing();

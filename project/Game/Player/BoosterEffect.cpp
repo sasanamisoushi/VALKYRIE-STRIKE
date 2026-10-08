@@ -3,6 +3,7 @@
 #include "3D/Object3dCommon.h"
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace {
 constexpr float kPlayerModelScale = 0.08f;
@@ -12,6 +13,14 @@ constexpr float kNozzleRearOffset = kPlayerModelScale * 1.02f;
 // the same center offset when converting its attachment point to player-local.
 constexpr Vector3 kVf15cModelCenterOffset = { 0.0f, 5.356f, 0.393f };
 constexpr const char* kThrusterPlacementSettingsPath = "resources/vf-15c/thruster_position.json";
+
+Quaternion MakePlacementRotation(const Vector3& degrees) {
+    constexpr float kDegreesToRadians = 3.14159265359f / 180.0f;
+    const Quaternion pitch = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, degrees.x * kDegreesToRadians);
+    const Quaternion yaw = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, degrees.y * kDegreesToRadians);
+    const Quaternion roll = MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, degrees.z * kDegreesToRadians);
+    return MyMath::Normalize(MyMath::Multiply(MyMath::Multiply(pitch, yaw), roll));
+}
 }
 
 void BoosterEffect::Initialize() {
@@ -54,7 +63,8 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
     const float scale = kPlayerModelScale;
 
     const auto makeBurner = [](const Vector3& offset, const Vector4& color,
-        int trailLength, const char* nozzleModel, const char* trailModel, float modelSide) {
+        int trailLength, const std::string& nozzleModel, const std::string& trailModel, float modelSide,
+        bool isExtraThruster = false, size_t extraThrusterIndex = 0) {
         Burner burner;
         burner.trail = std::make_unique<Trail>();
         burner.trail->Initialize(trailLength);
@@ -75,7 +85,10 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
         // ゲーム内のプレイヤー前方はローカル +Z。三人称カメラはその反対側
         // （-Z、機体後方）に置かれるため、噴射も -Z 側へ伸ばす。
         burner.exhaustDirection = { 0.0f, 0.0f, -1.0f };
+        burner.adjustedExhaustDirection = burner.exhaustDirection;
         burner.color = color;
+        burner.isExtraThruster = isExtraThruster;
+        burner.extraThrusterIndex = extraThrusterIndex;
         return burner;
     };
 
@@ -88,12 +101,26 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
         };
         burners_.push_back(makeBurner({ -fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", -1.0f));
         burners_.push_back(makeBurner({  fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", 1.0f));
-    } else if (playerMode == 1) { // Gerwalk: 脚部後方の左右ノズル
-        burners_.push_back(makeBurner({ -1.5f * scale, -3.5f * scale, -1.5f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", -1.0f));
-        burners_.push_back(makeBurner({  1.5f * scale, -3.5f * scale, -1.5f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", 1.0f));
-    } else { // Battroid: 背部の左右ノズル
-        burners_.push_back(makeBurner({ -0.8f * scale, 1.5f * scale, -2.0f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", -1.0f));
-        burners_.push_back(makeBurner({  0.8f * scale, 1.5f * scale, -2.0f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", 1.0f));
+    } else if (playerMode == 1) { // Gerwalk: 脚部のふくらはぎ後方・左右ノズル
+        burners_.push_back(makeBurner({ -2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", -1.0f));
+        burners_.push_back(makeBurner({  2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", 1.0f));
+    } else { // Battroid: 脚部のふくらはぎ後方・左右ノズル
+        burners_.push_back(makeBurner({ -1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", -1.0f));
+        burners_.push_back(makeBurner({  1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", 1.0f));
+    }
+
+    // 追加ノズルは各形態ごとに独立して持つ。炎の頂点を共有しないよう、
+    // 1基ごとに専用トレイルモデルを用意する。
+    const size_t modeIndex = playerMode <= 0 ? 0u : (playerMode >= 3 ? 2u : static_cast<size_t>(playerMode));
+    ModelManager* modelManager = ModelManager::GetInstance();
+    const auto& extraThrusters = extraThrustersByMode_[modeIndex];
+    for (size_t index = 0; index < extraThrusters.size(); ++index) {
+        const bool isRight = index % 2 != 0;
+        const std::string trailModel = "PlayerThrusterTrailExtra_" + std::to_string(modeIndex) + "_" + std::to_string(index);
+        modelManager->CreateTrailModel(trailModel);
+        burners_.push_back(makeBurner({ 0.0f, 0.0f, 0.0f }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12,
+            isRight ? "vf-15c/thruster_right.obj" : "vf-15c/thruster_left.obj", trailModel,
+            isRight ? 1.0f : -1.0f, true, index));
     }
 }
 
@@ -103,11 +130,25 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
     }
 
     const Matrix4x4 rotationMatrix = MyMath::MakeRotateMatrix(rotation);
+    const PlacementSettings& placement = GetPlacementSettings(playerMode);
+    const size_t modeIndex = playerMode <= 0 ? 0u : (playerMode >= 3 ? 2u : static_cast<size_t>(playerMode));
     for (auto& burner : burners_) {
+        PlacementSettings burnerPlacement = placement;
+        Vector3 baseOffset = burner.offset;
+        if (burner.isExtraThruster && burner.extraThrusterIndex < extraThrustersByMode_[modeIndex].size()) {
+            const ExtraThrusterSettings& extra = extraThrustersByMode_[modeIndex][burner.extraThrusterIndex];
+            // 追加ノズルは既定ノズル全体の補正とは分け、各基を個別に配置できる。
+            burnerPlacement.positionOffset = extra.position;
+            burnerPlacement.scale = extra.scale;
+            burnerPlacement.rotationDegrees = extra.rotationDegrees;
+            baseOffset = { 0.0f, 0.0f, 0.0f };
+        }
+        const Quaternion placementRotation = MakePlacementRotation(burnerPlacement.rotationDegrees);
+        const Quaternion nozzleRotation = MyMath::Normalize(MyMath::Multiply(placementRotation, rotation));
         const Vector3 adjustedOffset = {
-            burner.offset.x + placementAdjustment_.x,
-            burner.offset.y + placementAdjustment_.y,
-            burner.offset.z + placementAdjustment_.z
+            baseOffset.x + burnerPlacement.positionOffset.x,
+            baseOffset.y + burnerPlacement.positionOffset.y,
+            baseOffset.z + burnerPlacement.positionOffset.z
         };
         const Vector3 worldOffset = MyMath::Transform(adjustedOffset, rotationMatrix);
         const Vector3 modelTranslation = MyMath::Transform(
@@ -118,8 +159,9 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
         if (burner.nozzleObject) {
             burner.nozzleObject->SetTranslate({ position.x + modelTranslation.x,
                 position.y + modelTranslation.y, position.z + modelTranslation.z });
-            burner.nozzleObject->SetScale({ kPlayerModelScale, kPlayerModelScale, kPlayerModelScale });
-            burner.nozzleObject->SetQuaternionRotate(rotation);
+            burner.nozzleObject->SetScale({ kPlayerModelScale * burnerPlacement.scale.x,
+                kPlayerModelScale * burnerPlacement.scale.y, kPlayerModelScale * burnerPlacement.scale.z });
+            burner.nozzleObject->SetQuaternionRotate(nozzleRotation);
         }
         if (burner.positionMarkerObject) {
             burner.positionMarkerObject->SetTranslate({ position.x + worldOffset.x,
@@ -127,11 +169,13 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
             burner.positionMarkerObject->SetScale({ 0.045f, 0.045f, 0.045f });
         }
         if (burner.trail && burner.trailObject) {
-            // 炎は機体ローカルで生成し、ノズルと同じ最終姿勢でワールドへ変換する。
+            // 炎は機体ローカルで生成し、取付回転を排気方向へ反映する。
+            burner.adjustedExhaustDirection = MyMath::RotateVector(burner.exhaustDirection, placementRotation);
+            burner.placementScale = burnerPlacement.scale;
             const Vector3 localExit = {
-                adjustedOffset.x + burner.exhaustDirection.x * kNozzleRearOffset,
-                adjustedOffset.y + burner.exhaustDirection.y * kNozzleRearOffset,
-                adjustedOffset.z + burner.exhaustDirection.z * kNozzleRearOffset
+                adjustedOffset.x + burner.adjustedExhaustDirection.x * kNozzleRearOffset,
+                adjustedOffset.y + burner.adjustedExhaustDirection.y * kNozzleRearOffset,
+                adjustedOffset.z + burner.adjustedExhaustDirection.z * kNozzleRearOffset
             };
             burner.trail->SetOrigin(localExit);
             burner.trailObject->SetTranslate(position);
@@ -139,6 +183,30 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
             burner.trailObject->SetQuaternionRotate(rotation);
         }
     }
+}
+
+bool BoosterEffect::AddExtraThruster(int playerMode) {
+    constexpr size_t kMaxExtraThrustersPerMode = 8;
+    std::vector<ExtraThrusterSettings>& extraThrusters = GetExtraThrusters(playerMode);
+    if (extraThrusters.size() >= kMaxExtraThrustersPerMode) {
+        return false;
+    }
+    // 左右に追加しやすいよう、追加するたびに初期X座標を交互にする。
+    ExtraThrusterSettings extra;
+    extra.position = { extraThrusters.size() % 2 == 0 ? -0.20f : 0.20f, -0.25f, -0.15f };
+    extraThrusters.push_back(extra);
+    lastMode_ = -1;
+    return true;
+}
+
+bool BoosterEffect::RemoveExtraThruster(int playerMode, size_t index) {
+    std::vector<ExtraThrusterSettings>& extraThrusters = GetExtraThrusters(playerMode);
+    if (index >= extraThrusters.size()) {
+        return false;
+    }
+    extraThrusters.erase(extraThrusters.begin() + static_cast<std::ptrdiff_t>(index));
+    lastMode_ = -1;
+    return true;
 }
 
 void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, int playerMode, float speedRatio, bool isAccelerating) {
@@ -206,9 +274,13 @@ void BoosterEffect::Draw(Camera* camera) {
     object3dCommon->SetThrusterDrawSettings();
     for (auto& burner : burners_) {
         if (burner.trail && burner.trailObject && burner.trailObject->GetModel()) {
+            const float plumeScale = std::clamp(
+                (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
+                0.2f, 3.0f);
             std::vector<VertexData> trailVertices = burner.trail->GenerateThrusterVertices(
-                camera, burner.plumeRadius * effectSettings_.widthScale, burner.exhaustDirection,
-                burner.plumeLength * effectSettings_.lengthScale, time_, burner.color.w,
+                camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
+                burner.adjustedExhaustDirection,
+                burner.plumeLength * effectSettings_.lengthScale * plumeScale, time_, burner.color.w,
                 effectSettings_.coreLengthRatio, effectSettings_.glowScale);
 
             // 頂点の発光色を保ち、材質には明るさの倍率だけを掛ける。

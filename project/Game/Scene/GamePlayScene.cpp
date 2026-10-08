@@ -947,7 +947,7 @@ void GamePlayScene::Update() {
 				Input::GetInstance()->TriggerKey(DIK_S)) {
 				isPauseTitleSelected_ = !isPauseTitleSelected_;
 			}
-			if (Input::GetInstance()->TriggerKey(DIK_RETURN)) {
+			if (Input::GetInstance()->TriggerKey(DIK_SPACE)) {
 				if (isPauseTitleSelected_) {
 					SceneManager::GetInstance()->ChangeScene("TITLE");
 					return;
@@ -2909,7 +2909,7 @@ void GamePlayScene::DrawPauseOverlay(float screenWidth, float screenHeight) {
 	if (false && ImGuiManager::IsVisible() && ImGui::GetCurrentContext()) {
 		ImDrawList* drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
 		const char* title = "PAUSED";
-		const char* guide = "UP / DOWN : SELECT     ENTER : CONFIRM";
+		const char* guide = "UP / DOWN : SELECT     SPACE : CONFIRM";
 		const char* resume = isPauseTitleSelected_ ? "  RESUME GAME" : "> RESUME GAME";
 		const char* returnToTitle = isPauseTitleSelected_ ? "> RETURN TO TITLE" : "  RETURN TO TITLE";
 		const ImVec2 titleSize = ImGui::CalcTextSize(title);
