@@ -13,6 +13,91 @@ constexpr size_t kMaxExtraThrustersPerMode = 8;
 nlohmann::json ToJson(const Vector3& value) {
     return { value.x, value.y, value.z };
 }
+
+Vector3 ClampVector3(const Vector3& value, float minimum, float maximum) {
+    return {
+        std::clamp(value.x, minimum, maximum),
+        std::clamp(value.y, minimum, maximum),
+        std::clamp(value.z, minimum, maximum),
+    };
+}
+}
+
+size_t BoosterEffect::ToModeIndex(int playerMode) {
+    return playerMode <= 0 ? 0u : (playerMode >= 3 ? 2u : static_cast<size_t>(playerMode));
+}
+
+const BoosterEffect::PlacementSettings& BoosterEffect::GetPlacementSettings(int playerMode) const {
+    return placementSettings_[ToModeIndex(playerMode)];
+}
+
+void BoosterEffect::SetPlacementSettings(int playerMode, const PlacementSettings& settings) {
+    PlacementSettings validated = settings;
+    validated.positionOffset = ClampVector3(validated.positionOffset, -3.0f, 3.0f);
+    validated.scale = ClampVector3(validated.scale, 0.2f, 3.0f);
+    validated.rotationDegrees = ClampVector3(validated.rotationDegrees, -180.0f, 180.0f);
+    placementSettings_[ToModeIndex(playerMode)] = validated;
+}
+
+Vector3 BoosterEffect::GetPlacementAdjustment(int playerMode) const {
+    return GetPlacementSettings(playerMode).positionOffset;
+}
+
+void BoosterEffect::ResetPlacementAdjustment(int playerMode) {
+    placementSettings_[ToModeIndex(playerMode)] = PlacementSettings{};
+}
+
+const std::vector<BoosterEffect::ExtraThrusterSettings>& BoosterEffect::GetExtraThrusters(int playerMode) const {
+    return extraThrustersByMode_[ToModeIndex(playerMode)];
+}
+
+bool BoosterEffect::SetExtraThrusterSettings(int playerMode, size_t index, const ExtraThrusterSettings& settings) {
+    std::vector<ExtraThrusterSettings>& extraThrusters = extraThrustersByMode_[ToModeIndex(playerMode)];
+    if (index >= extraThrusters.size()) return false;
+
+    ExtraThrusterSettings validated = settings;
+    validated.position = ClampVector3(validated.position, -3.0f, 3.0f);
+    validated.scale = ClampVector3(validated.scale, 0.2f, 3.0f);
+    validated.rotationDegrees = ClampVector3(validated.rotationDegrees, -180.0f, 180.0f);
+    extraThrusters[index] = validated;
+    return true;
+}
+
+bool BoosterEffect::AddExtraThruster(int playerMode) {
+    constexpr size_t kMaxExtraThrustersPerMode = 8;
+    std::vector<ExtraThrusterSettings>& extraThrusters = extraThrustersByMode_[ToModeIndex(playerMode)];
+    if (extraThrusters.size() >= kMaxExtraThrustersPerMode) return false;
+
+    ExtraThrusterSettings extra;
+    extra.position = { extraThrusters.size() % 2 == 0 ? -0.20f : 0.20f, -0.25f, -0.15f };
+    extraThrusters.push_back(extra);
+    lastMode_ = -1;
+    return true;
+}
+
+bool BoosterEffect::RemoveExtraThruster(int playerMode, size_t index) {
+    std::vector<ExtraThrusterSettings>& extraThrusters = extraThrustersByMode_[ToModeIndex(playerMode)];
+    if (index >= extraThrusters.size()) return false;
+
+    extraThrusters.erase(extraThrusters.begin() + static_cast<std::ptrdiff_t>(index));
+    lastMode_ = -1;
+    return true;
+}
+
+void BoosterEffect::SetEffectSettings(const EffectSettings& settings) {
+    EffectSettings validated = settings;
+    validated.widthScale = std::clamp(validated.widthScale, 0.25f, 6.0f);
+    validated.lengthScale = std::clamp(validated.lengthScale, 0.25f, 4.0f);
+    validated.brightness = std::clamp(validated.brightness, 0.1f, 3.0f);
+    validated.glowScale = std::clamp(validated.glowScale, 0.0f, 3.0f);
+    validated.coreLengthRatio = std::clamp(validated.coreLengthRatio, 0.2f, 0.8f);
+    validated.boostWidthMultiplier = std::clamp(validated.boostWidthMultiplier, 1.0f, 2.0f);
+    validated.boostLengthMultiplier = std::clamp(validated.boostLengthMultiplier, 1.0f, 2.0f);
+    effectSettings_ = validated;
+}
+
+void BoosterEffect::ResetEffectSettings() {
+    SetEffectSettings(EffectSettings{});
 }
 
 bool BoosterEffect::SaveSettings(const std::string& filePath) const {

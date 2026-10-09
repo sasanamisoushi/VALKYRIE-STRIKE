@@ -37,31 +37,21 @@ public:
     void UpdateEditorPreview(const Vector3& position, const Quaternion& rotation, int playerMode);
     void DrawNozzles(Camera* camera = nullptr);
     void Draw(Camera* camera);
-    PlacementSettings& GetPlacementSettings(int playerMode) {
-        const size_t modeIndex = playerMode <= 0 ? 0u
-            : (playerMode >= static_cast<int>(placementSettings_.size()) ? placementSettings_.size() - 1u
-                : static_cast<size_t>(playerMode));
-        return placementSettings_[modeIndex];
-    }
-    Vector3& GetPlacementAdjustment(int playerMode = 0) { return GetPlacementSettings(playerMode).positionOffset; }
-    void ResetPlacementAdjustment(int playerMode = 0) { GetPlacementSettings(playerMode) = PlacementSettings{}; }
-    std::vector<ExtraThrusterSettings>& GetExtraThrusters(int playerMode) {
-        const size_t modeIndex = playerMode <= 0 ? 0u
-            : (playerMode >= static_cast<int>(extraThrustersByMode_.size()) ? extraThrustersByMode_.size() - 1u
-                : static_cast<size_t>(playerMode));
-        return extraThrustersByMode_[modeIndex];
-    }
-    const std::vector<ExtraThrusterSettings>& GetExtraThrusters(int playerMode) const {
-        return const_cast<BoosterEffect*>(this)->GetExtraThrusters(playerMode);
-    }
+    const PlacementSettings& GetPlacementSettings(int playerMode) const;
+    void SetPlacementSettings(int playerMode, const PlacementSettings& settings);
+    Vector3 GetPlacementAdjustment(int playerMode = 0) const;
+    void ResetPlacementAdjustment(int playerMode = 0);
+    const std::vector<ExtraThrusterSettings>& GetExtraThrusters(int playerMode) const;
+    bool SetExtraThrusterSettings(int playerMode, size_t index, const ExtraThrusterSettings& settings);
     bool AddExtraThruster(int playerMode);
     bool RemoveExtraThruster(int playerMode, size_t index);
     void RefreshPlacement(const Vector3& position, const Quaternion& rotation, int playerMode);
     void SetPlacementMarkersVisible(bool visible) { showPlacementMarkers_ = visible; }
     bool GetEditorPreviewAcceleration() const { return editorPreviewAccelerating_; }
     void SetEditorPreviewAcceleration(bool accelerating) { editorPreviewAccelerating_ = accelerating; }
-    EffectSettings& GetEffectSettings() { return effectSettings_; }
-    void ResetEffectSettings() { effectSettings_ = EffectSettings{}; }
+    const EffectSettings& GetEffectSettings() const { return effectSettings_; }
+    void SetEffectSettings(const EffectSettings& settings);
+    void ResetEffectSettings();
     bool SaveSettings(const std::string& filePath) const;
     bool LoadSettings(const std::string& filePath);
 
@@ -94,5 +84,6 @@ private:
     int lastMode_ = -1;
     float time_ = 0.0f;
 
+    static size_t ToModeIndex(int playerMode);
     void SetupBurnersForMode(int playerMode);
 };

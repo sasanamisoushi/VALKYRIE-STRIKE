@@ -609,13 +609,14 @@ void GamePlayUIManager::UpdateUI() {
 										   (mode == PlayerMode::Gerwalk) ? "ガウォーク (2キー)" : "バトロイド (3キー)";
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.5f, 1.0f), "現在の形態: %s", modeName);
 					
-					PlayerModeParams& p = player_->GetModeParams(mode);
+					PlayerModeParams p = player_->GetModeParams(mode);
 					ImGui::SliderFloat("最大移動速度", &p.maxMoveSpeed, 0.01f, 1.0f);
 					ImGui::SliderFloat("移動加速度", &p.moveAcceleration, 0.001f, 0.1f);
 					ImGui::SliderFloat("移動減衰", &p.moveDamping, 0.1f, 1.0f);
 					ImGui::SliderFloat("ピッチ回転速度", &p.pitchSpeed, 0.001f, 0.1f);
 					ImGui::SliderFloat("ヨー回転速度", &p.yawSpeed, 0.001f, 0.1f);
 					ImGui::SliderFloat("ロール回転速度", &p.rollSpeed, 0.001f, 0.1f);
+					player_->SetModeParams(mode, p);
 				} else {
 					ImGui::Text("プレイヤーが初期化されていません。");
 				}
@@ -1448,11 +1449,12 @@ void GamePlayUIManager::UpdateUI() {
 				}
 				ImGui::Separator();
 				ImGui::Text("エフェクトの見た目");
-				BoosterEffect::EffectSettings& effect = booster->GetEffectSettings();
+				BoosterEffect::EffectSettings effect = booster->GetEffectSettings();
+				bool effectChanged = false;
 				bool saveEffectSettings = false;
-				const auto editEffectSlider = [&saveEffectSettings](const char* label, float* value,
+				const auto editEffectSlider = [&effectChanged, &saveEffectSettings](const char* label, float* value,
 					float minimum, float maximum, const char* format) {
-					ImGui::SliderFloat(label, value, minimum, maximum, format, ImGuiSliderFlags_AlwaysClamp);
+					effectChanged |= ImGui::SliderFloat(label, value, minimum, maximum, format, ImGuiSliderFlags_AlwaysClamp);
 					// ドラッグ中に毎フレーム書き込まず、操作を終えた時点で保存対象にする。
 					saveEffectSettings |= ImGui::IsItemDeactivatedAfterEdit();
 				};
@@ -1465,6 +1467,9 @@ void GamePlayUIManager::UpdateUI() {
 					editEffectSlider("加速時の長さ倍率", &effect.boostLengthMultiplier, 1.0f, 2.0f, "%.2f 倍");
 					editEffectSlider("白い芯の長さ比率", &effect.coreLengthRatio, 0.2f, 0.8f, "%.2f");
 					ImGui::TreePop();
+				}
+				if (effectChanged) {
+					booster->SetEffectSettings(effect);
 				}
 				if (ImGui::Button("エフェクトの見た目をリセット", ImVec2(-1.0f, 0.0f))) {
 					booster->ResetEffectSettings();
@@ -1482,7 +1487,7 @@ void GamePlayUIManager::UpdateUI() {
 				ImGui::TextDisabled("形態ごとに位置・サイズ・回転を別々に保存できます。");
 				ImGui::Checkbox("位置合わせ用マーカー", &showThrusterPlacementMarkers_);
 				booster->SetPlacementMarkersVisible(showThrusterPlacementMarkers_);
-				BoosterEffect::PlacementSettings& placement = booster->GetPlacementSettings(placementMode);
+				BoosterEffect::PlacementSettings placement = booster->GetPlacementSettings(placementMode);
 				bool placementChanged = false;
 				placementChanged |= ImGui::DragFloat3("位置補正 X・Y・Z", &placement.positionOffset.x,
 					0.01f, -3.0f, 3.0f, "%.3f m");
@@ -1491,6 +1496,7 @@ void GamePlayUIManager::UpdateUI() {
 				placementChanged |= ImGui::DragFloat3("ノズル回転 X・Y・Z", &placement.rotationDegrees.x,
 					1.0f, -180.0f, 180.0f, "%.1f 度");
 				if (placementChanged) {
+					booster->SetPlacementSettings(placementMode, placement);
 					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
 						placementMode);
 				}
@@ -1504,20 +1510,21 @@ void GamePlayUIManager::UpdateUI() {
 				ImGui::Separator();
 				ImGui::Text("追加スラスター（現在の形態のみ）");
 				ImGui::TextDisabled("追加したノズルは、位置・サイズ・回転を1基ずつ編集して保存できます。最大8基です。");
-				auto& extraThrusters = booster->GetExtraThrusters(placementMode);
+				const auto& extraThrusters = booster->GetExtraThrusters(placementMode);
 				bool extraThrusterChanged = false;
 				bool removeExtraThruster = false;
 				size_t extraThrusterToRemove = 0;
 				for (size_t index = 0; index < extraThrusters.size(); ++index) {
-					BoosterEffect::ExtraThrusterSettings& extra = extraThrusters[index];
+					BoosterEffect::ExtraThrusterSettings extra = extraThrusters[index];
+					bool extraChanged = false;
 					ImGui::PushID(static_cast<int>(index));
 					const std::string title = "追加ノズル " + std::to_string(index + 1);
 					if (ImGui::TreeNode(title.c_str())) {
-						extraThrusterChanged |= ImGui::DragFloat3("位置 X・Y・Z", &extra.position.x,
+						extraChanged |= ImGui::DragFloat3("位置 X・Y・Z", &extra.position.x,
 							0.01f, -3.0f, 3.0f, "%.3f m");
-						extraThrusterChanged |= ImGui::DragFloat3("サイズ X・Y・Z", &extra.scale.x,
+						extraChanged |= ImGui::DragFloat3("サイズ X・Y・Z", &extra.scale.x,
 							0.01f, 0.2f, 3.0f, "%.2f 倍");
-						extraThrusterChanged |= ImGui::DragFloat3("回転 X・Y・Z", &extra.rotationDegrees.x,
+						extraChanged |= ImGui::DragFloat3("回転 X・Y・Z", &extra.rotationDegrees.x,
 							1.0f, -180.0f, 180.0f, "%.1f 度");
 						if (ImGui::Button("このノズルを削除")) {
 							removeExtraThruster = true;
@@ -1526,6 +1533,10 @@ void GamePlayUIManager::UpdateUI() {
 						ImGui::TreePop();
 					}
 					ImGui::PopID();
+					if (extraChanged) {
+						booster->SetExtraThrusterSettings(placementMode, index, extra);
+						extraThrusterChanged = true;
+					}
 				}
 				if (removeExtraThruster) {
 					booster->RemoveExtraThruster(placementMode, extraThrusterToRemove);

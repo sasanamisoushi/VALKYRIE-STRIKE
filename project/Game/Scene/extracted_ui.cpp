@@ -84,7 +84,9 @@ bool GamePlayScene::ApplySimulationAction(const std::string &filePath, const std
 		if (playerData.contains("modeParams") && playerData["modeParams"].is_array()) {
 			const json &modeParams = playerData["modeParams"];
 			for (int modeIndex = 0; modeIndex < 3 && modeIndex < static_cast<int>(modeParams.size()); ++modeIndex) {
-				ApplyPlayerModeParamsFromJson(modeParams[modeIndex], player_->GetModeParams(static_cast<PlayerMode>(modeIndex)));
+				PlayerModeParams params = player_->GetModeParams(static_cast<PlayerMode>(modeIndex));
+				ApplyPlayerModeParamsFromJson(modeParams[modeIndex], params);
+				player_->SetModeParams(static_cast<PlayerMode>(modeIndex), params);
 			}
 		}
 
@@ -550,13 +552,14 @@ void GamePlayScene::DrawSimulationScreenUI() {
 								   (mode == PlayerMode::Gerwalk) ? "ガウォーク (2キー)" : "バトロイド (3キー)";
 			ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.5f, 1.0f), "現在の形態: %s", modeName);
 			
-			PlayerModeParams& p = player_->GetModeParams(mode);
+			PlayerModeParams p = player_->GetModeParams(mode);
 			ImGui::SliderFloat("最大移動速度", &p.maxMoveSpeed, 0.01f, 1.0f);
 			ImGui::SliderFloat("移動加速度", &p.moveAcceleration, 0.001f, 0.1f);
 			ImGui::SliderFloat("移動減衰", &p.moveDamping, 0.1f, 1.0f);
 			ImGui::SliderFloat("ピッチ回転速度", &p.pitchSpeed, 0.001f, 0.1f);
 			ImGui::SliderFloat("ヨー回転速度", &p.yawSpeed, 0.001f, 0.1f);
 			ImGui::SliderFloat("ロール回転速度", &p.rollSpeed, 0.001f, 0.1f);
+			player_->SetModeParams(mode, p);
 
 			ImGui::Separator();
 			ImGui::Text("アニメーションデバッグ");
@@ -689,13 +692,14 @@ void GamePlayScene::UpdateUI() {
 										   (mode == PlayerMode::Gerwalk) ? "ガウォーク (2キー)" : "バトロイド (3キー)";
 					ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.5f, 1.0f), "現在の形態: %s", modeName);
 					
-					PlayerModeParams& p = player_->GetModeParams(mode);
+					PlayerModeParams p = player_->GetModeParams(mode);
 					ImGui::SliderFloat("最大移動速度", &p.maxMoveSpeed, 0.01f, 1.0f);
 					ImGui::SliderFloat("移動加速度", &p.moveAcceleration, 0.001f, 0.1f);
 					ImGui::SliderFloat("移動減衰", &p.moveDamping, 0.1f, 1.0f);
 					ImGui::SliderFloat("ピッチ回転速度", &p.pitchSpeed, 0.001f, 0.1f);
 					ImGui::SliderFloat("ヨー回転速度", &p.yawSpeed, 0.001f, 0.1f);
 					ImGui::SliderFloat("ロール回転速度", &p.rollSpeed, 0.001f, 0.1f);
+					player_->SetModeParams(mode, p);
 				} else {
 					ImGui::Text("プレイヤーが初期化されていません。");
 				}

@@ -434,6 +434,20 @@ void Player::ChangeMode(PlayerMode newMode) {
     }
 }
 
+void Player::SetModeParams(PlayerMode mode, const PlayerModeParams& params) {
+	PlayerModeParams validated = params;
+	validated.maxMoveSpeed = std::clamp(validated.maxMoveSpeed, 0.01f, 1.0f);
+	validated.moveAcceleration = std::clamp(validated.moveAcceleration, 0.001f, 0.1f);
+	validated.moveDamping = std::clamp(validated.moveDamping, 0.1f, 1.0f);
+	validated.pitchSpeed = std::clamp(validated.pitchSpeed, 0.001f, 0.1f);
+	validated.yawSpeed = std::clamp(validated.yawSpeed, 0.001f, 0.1f);
+	validated.rollSpeed = std::clamp(validated.rollSpeed, 0.001f, 0.1f);
+	validated.maxMultiLock = std::clamp(validated.maxMultiLock, 1, 12);
+	validated.lockOnAngleDot = std::clamp(validated.lockOnAngleDot, -1.0f, 1.0f);
+	validated.maxLockOnDistance = std::clamp(validated.maxLockOnDistance, 1.0f, 1000.0f);
+	modeParams_[static_cast<int>(mode)] = validated;
+}
+
 bool Player::IsTransformPlayerModel() const {
 	return IsTransformPlayerModelName(modelName_);
 }

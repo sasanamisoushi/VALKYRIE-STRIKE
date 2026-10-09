@@ -66,7 +66,7 @@ public:
     Vector3 GetPosition() const { return position_; }
     Vector3 GetVelocity() const { return velocity_; }
     Quaternion GetQuaternion() const { return quaternion_; }
-    Object3d* GetObject3d() const { return object_.get(); }
+    const Object3d* GetObject3d() const { return object_.get(); }
     BoosterEffect* GetBoosterEffect() const { return boosterEffect_.get(); }
     Vector3 GetWorldHalfExtents() const;
     float GetCollisionRadius() const;
@@ -123,14 +123,11 @@ public:
     OBB GetMeleeHitbox() const;
     int GetMeleeDamage() const { return 50; } // 近接攻撃の大ダメージ
 
-    void Move(bool rotationLocked = false); // 移動と回転の処理
-    void CheckCollision(const std::list<std::unique_ptr<Obstacle>> &obstacles); // 当たり判定の処理
-    void UpdateLockOnRotation(const Vector3& targetPos); // ロックオン時の強制回転
-
     // モード関連
     void ChangeMode(PlayerMode newMode);
     PlayerMode GetCurrentMode() const { return currentMode_; }
-    PlayerModeParams& GetModeParams(PlayerMode mode) { return modeParams_[static_cast<int>(mode)]; }
+    const PlayerModeParams& GetModeParams(PlayerMode mode) const { return modeParams_[static_cast<int>(mode)]; }
+    void SetModeParams(PlayerMode mode, const PlayerModeParams& params);
 
     // アニメーション関連デバッグ用ゲッターセッター
     float GetAnimationTime() const { return animationTime_; }
@@ -142,7 +139,6 @@ public:
     void SetAnimDebugActive(bool active) { isAnimDebugActive_ = active; }
 
     const Skeleton& GetSkeleton() const { return skeleton_; }
-    Skeleton& GetSkeleton() { return skeleton_; }
 
     void SetOverrideAnimation(const Animation* animation) { overrideAnimation_ = animation; }
     const Animation* GetOverrideAnimation() const { return overrideAnimation_; }
@@ -153,6 +149,13 @@ public:
 private:
     friend class PlayerMovementController;
     friend class PlayerActionController;
+
+    // Update() からのみ使う内部の更新手順。外部の Scene や UI から
+    // プレイヤーの状態を途中で変更できないよう、公開 API には含めない。
+    void Move(bool rotationLocked = false);
+    void CheckCollision(const std::list<std::unique_ptr<Obstacle>>& obstacles);
+    void UpdateLockOnRotation(const Vector3& targetPos);
+
     void ApplyBattroidProceduralWalk();
     void ApplyGuardPose(float blendWeight);
     void InitializeTransformPlayerModel();

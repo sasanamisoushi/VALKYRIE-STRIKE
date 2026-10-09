@@ -21,6 +21,7 @@ Quaternion MakePlacementRotation(const Vector3& degrees) {
     const Quaternion roll = MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, degrees.z * kDegreesToRadians);
     return MyMath::Normalize(MyMath::Multiply(MyMath::Multiply(pitch, yaw), roll));
 }
+
 }
 
 void BoosterEffect::Initialize() {
@@ -183,30 +184,6 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
             burner.trailObject->SetQuaternionRotate(rotation);
         }
     }
-}
-
-bool BoosterEffect::AddExtraThruster(int playerMode) {
-    constexpr size_t kMaxExtraThrustersPerMode = 8;
-    std::vector<ExtraThrusterSettings>& extraThrusters = GetExtraThrusters(playerMode);
-    if (extraThrusters.size() >= kMaxExtraThrustersPerMode) {
-        return false;
-    }
-    // 左右に追加しやすいよう、追加するたびに初期X座標を交互にする。
-    ExtraThrusterSettings extra;
-    extra.position = { extraThrusters.size() % 2 == 0 ? -0.20f : 0.20f, -0.25f, -0.15f };
-    extraThrusters.push_back(extra);
-    lastMode_ = -1;
-    return true;
-}
-
-bool BoosterEffect::RemoveExtraThruster(int playerMode, size_t index) {
-    std::vector<ExtraThrusterSettings>& extraThrusters = GetExtraThrusters(playerMode);
-    if (index >= extraThrusters.size()) {
-        return false;
-    }
-    extraThrusters.erase(extraThrusters.begin() + static_cast<std::ptrdiff_t>(index));
-    lastMode_ = -1;
-    return true;
 }
 
 void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, int playerMode, float speedRatio, bool isAccelerating) {
