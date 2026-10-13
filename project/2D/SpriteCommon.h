@@ -16,6 +16,8 @@ public:
 
 	//共通描画設定
 	void SetCommonPipelineState();
+	// 発光エフェクト用。描画済みの色へソース色を加算する。
+	void SetAdditivePipelineState();
 
 private:
 
@@ -40,6 +42,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
 
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> additivePipelineState_;
 
 	// InputLayout
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};

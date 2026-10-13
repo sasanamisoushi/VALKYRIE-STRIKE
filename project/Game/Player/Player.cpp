@@ -1651,7 +1651,11 @@ void Player::CheckCollision(const std::list<std::unique_ptr<Obstacle>> &obstacle
 			// 地底抜け・埋まり防止：足元の地形の最高標高を特定し、潜り込んでいたら足元が地上にピッタリ乗る高さに即時補正する
 			float maxTerrainY = -99999.0f;
 			bool foundTerrain = false;
-			for (const auto& tri : triangles) {
+			Sphere terrainSample{};
+			terrainSample.center = position_;
+			terrainSample.radius = 0.25f;
+			for (const size_t triangleIndex : obstacle->GetNearbyWorldTriangleIndices(terrainSample)) {
+				const Triangle& tri = triangles[triangleIndex];
 				if (std::abs(tri.normal.y) > 0.15f) {
 					float triY = 0.0f;
 					if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], position_.x, position_.z, triY)) {
@@ -1681,7 +1685,8 @@ void Player::CheckCollision(const std::list<std::unique_ptr<Obstacle>> &obstacle
 			}
 
 			for (auto& playerSphere : playerSpheres) {
-				for (const auto& tri : triangles) {
+				for (const size_t triangleIndex : obstacle->GetNearbyWorldTriangleIndices(playerSphere)) {
+					const Triangle& tri = triangles[triangleIndex];
 					float minX = tri.p[0].x;
 					if (tri.p[1].x < minX) minX = tri.p[1].x;
 					if (tri.p[2].x < minX) minX = tri.p[2].x;

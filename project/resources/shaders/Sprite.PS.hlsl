@@ -32,7 +32,14 @@ PixelShaderOutput main(VertexShaderOutput input)
     
     // テクスチャのUV座標変換
     float4 transformedUV = mul(float32_t4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
-    float32_t4 textureColor = gTexture.Sample(gSampler, input.texcoord);
+	// 回転でテクスチャ矩形の外へ出た場所を、サンプラーのWrapで反対側から
+	// 引き戻さない。雲リングの四隅に矩形状の写り込みが出るのを防ぐ。
+	if (transformedUV.x < 0.0f || transformedUV.x > 1.0f ||
+		transformedUV.y < 0.0f || transformedUV.y > 1.0f)
+	{
+		discard;
+	}
+    float32_t4 textureColor = gTexture.Sample(gSampler, transformedUV.xy);
     
     // スプライトは2Dなので、光の計算はせずに「そのままの色」を画面に出す
     output.color = gMaterial.color * textureColor;

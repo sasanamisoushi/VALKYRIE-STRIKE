@@ -57,7 +57,8 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
             OBB obsOBB = obstacle->GetOBB(); if (!MyMath::IsCollision(bulletSphere, obsOBB)) { continue; } if (obstacle->IsUseMeshCollider()) {
                 const std::vector<Triangle>& triangles = obstacle->GetWorldTriangles();
                 Vector3 pushVector;
-                for (const auto& tri : triangles) {
+                for (const size_t triangleIndex : obstacle->GetNearbyWorldTriangleIndices(bulletSphere)) {
+                    const Triangle& tri = triangles[triangleIndex];
                     float minX = tri.p[0].x;
                     if (tri.p[1].x < minX) minX = tri.p[1].x;
                     if (tri.p[2].x < minX) minX = tri.p[2].x;

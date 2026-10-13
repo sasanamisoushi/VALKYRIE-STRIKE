@@ -97,6 +97,8 @@ public:
 	void SetTextureLeftTop(const Vector2 &textureLeftTop) { this->textureLeftTop = textureLeftTop; }
 	//テクスチャ切り出しサイズ
 	void SetTextureSize(const Vector2 &textureSize) { this->textureSize = textureSize; }
+	// ピクセルシェーダーで適用するUV変換。回転やスクロールをスプライト本体の形状と分離できる。
+	void SetUVTransform(const Matrix4x4& uvTransform) { materialData->uvTransform = uvTransform; }
 
 private:
 	SpriteCommon *spriteCommon=nullptr;

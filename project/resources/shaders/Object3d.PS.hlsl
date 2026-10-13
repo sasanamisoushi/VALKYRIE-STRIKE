@@ -71,7 +71,10 @@ PixelShaderOutput main(VertexShaderOutput input)
         
     float3 diffuse = gMaterial.color.rgb * textureColor.rgb * input.color.rgb * gDirectionalLight.color.rgb * cos * gDirectionalLight.intensity;
         
-    float3 specular = gDirectionalLight.color.rgb * gDirectionalLight.intensity * specularPow * float3(1.0f, 1.0f, 1.0f);
+    // shininess が 0 以下のモデルは、スペキュラーハイライトを使わない。
+    float3 specular = gMaterial.shininess > 0.0f
+        ? gDirectionalLight.color.rgb * gDirectionalLight.intensity * specularPow
+        : float3(0.0f, 0.0f, 0.0f);
         
     output.color.rgb = diffuse + specular;
         if (gEnvMapParam.enable != 0) // ONのときだけ実行

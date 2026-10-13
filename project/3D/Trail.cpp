@@ -110,6 +110,99 @@ std::vector<VertexData> Trail::GenerateVertices(Camera *camera, float thickness)
     return vertices;
 }
 
+std::vector<VertexData> Trail::GenerateRibbonVertices(Camera* camera, float thickness,
+    const Vector4& headColor, float intensity) {
+    std::vector<VertexData> vertices;
+    if (!camera || points_.size() < 2 || thickness <= 0.0f || intensity <= 0.001f) {
+        return vertices;
+    }
+
+    const Vector3 cameraPosition = camera->GetTranslate();
+    const auto lengthSquared = [](const Vector3& value) {
+        return value.x * value.x + value.y * value.y + value.z * value.z;
+    };
+    const auto normalizeOr = [&](const Vector3& value, const Vector3& fallback) {
+        const float squared = lengthSquared(value);
+        if (squared <= 0.000001f) {
+            return fallback;
+        }
+        const float inverseLength = 1.0f / std::sqrt(squared);
+        return Vector3{ value.x * inverseLength, value.y * inverseLength, value.z * inverseLength };
+    };
+
+    vertices.reserve(points_.size() * 2);
+    for (size_t index = 0; index < points_.size(); ++index) {
+        Vector3 direction{};
+        if (index + 1 < points_.size()) {
+            direction = {
+                points_[index].x - points_[index + 1].x,
+                points_[index].y - points_[index + 1].y,
+                points_[index].z - points_[index + 1].z
+            };
+        }
+        if (lengthSquared(direction) <= 0.000001f && index > 0) {
+            direction = {
+                points_[index - 1].x - points_[index].x,
+                points_[index - 1].y - points_[index].y,
+                points_[index - 1].z - points_[index].z
+            };
+        }
+        direction = normalizeOr(direction, { 0.0f, 0.0f, 1.0f });
+
+        const Vector3 toCamera = normalizeOr({
+            cameraPosition.x - points_[index].x,
+            cameraPosition.y - points_[index].y,
+            cameraPosition.z - points_[index].z
+        }, { 0.0f, 1.0f, 0.0f });
+        Vector3 right = MyMath::Cross(direction, toCamera);
+        if (lengthSquared(right) <= 0.000001f) {
+            right = MyMath::Cross(direction, { 0.0f, 1.0f, 0.0f });
+        }
+        if (lengthSquared(right) <= 0.000001f) {
+            right = MyMath::Cross(direction, { 1.0f, 0.0f, 0.0f });
+        }
+        right = normalizeOr(right, { 1.0f, 0.0f, 0.0f });
+
+        const float progress = 1.0f - static_cast<float>(index) /
+            static_cast<float>(points_.size() - 1);
+        // ノズル側を太く、軌跡の末端を糸のように細くして速度線に見せる。
+        const float halfWidth = thickness * (0.10f + 0.90f * progress);
+        const float fade = std::pow(progress, 0.62f) *
+            (progress <= 0.001f ? 0.0f : 1.0f);
+        const float colorScale = 0.30f + 0.70f * progress;
+        const Vector4 color = {
+            headColor.x * colorScale,
+            headColor.y * colorScale,
+            headColor.z * colorScale,
+            headColor.w * intensity * fade
+        };
+
+        VertexData left{};
+        left.position = {
+            points_[index].x - right.x * halfWidth,
+            points_[index].y - right.y * halfWidth,
+            points_[index].z - right.z * halfWidth,
+            1.0f
+        };
+        left.normal = { toCamera.x, toCamera.y, toCamera.z, 0.0f };
+        left.texcoord = { 0.0f, 1.0f - progress, 0.0f, 0.0f };
+        left.color = color;
+
+        VertexData rightVertex = left;
+        rightVertex.position = {
+            points_[index].x + right.x * halfWidth,
+            points_[index].y + right.y * halfWidth,
+            points_[index].z + right.z * halfWidth,
+            1.0f
+        };
+        rightVertex.texcoord.x = 1.0f;
+        vertices.push_back(left);
+        vertices.push_back(rightVertex);
+    }
+
+    return vertices;
+}
+
 std::vector<VertexData> Trail::GenerateThrusterVertices(Camera* camera, float thickness,
     const Vector3& exhaustDirection, float plumeLength, float phase, float intensity,
     float coreLengthRatio, float glowScale) {

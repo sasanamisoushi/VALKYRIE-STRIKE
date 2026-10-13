@@ -40,6 +40,28 @@ namespace {
 	constexpr int kSpecialAttackDurationFrames = 180;
 	constexpr int kSpecialAttackFireIntervalFrames = 6;
 	constexpr int kBossMaxActiveMinions = 6;
+
+	float SmoothStep01(float value) {
+		value = std::clamp(value, 0.0f, 1.0f);
+		return value * value * (3.0f - 2.0f * value);
+	}
+
+	Vector3 CalculateTitleLaunchCameraShake(float progress, int frame) {
+		// 機体が加速するほど、エンジンの振動が少しずつカメラへ伝わる。
+		const float acceleration = SmoothStep01((progress - 0.20f) / 0.54f);
+		const float engineAmplitude = 0.025f + acceleration * 0.115f;
+
+		// フォールドが開く瞬間だけは、短く強い衝撃を追加する。
+		const float impactProgress = std::clamp(1.0f - std::abs(progress - 0.77f) / 0.15f, 0.0f, 1.0f);
+		const float impactAmplitude = impactProgress * impactProgress * 0.36f;
+		const float time = static_cast<float>(frame);
+
+		return {
+			std::sin(time * 2.17f) * engineAmplitude + std::sin(time * 5.71f) * impactAmplitude,
+			std::cos(time * 2.83f + 0.7f) * engineAmplitude * 0.62f + std::cos(time * 7.13f) * impactAmplitude * 0.58f,
+			std::sin(time * 3.41f + 1.4f) * engineAmplitude * 0.30f - impactAmplitude * 0.22f,
+		};
+	}
 }
 
 
@@ -1326,12 +1348,6 @@ void GamePlayScene::Update() {
 			});
 			player_->UpdatePresentation(position, { -0.05f, yaw, roll }, 2.2f, true);
 
-			// 地形の近くを抜けるタイミングだけ、薄い霧を散らして速度感を補う。
-			if (environmentRenderer_ && titleLaunchFrame_ % 12 == 0) {
-				environmentRenderer_->GetParticleManager()->Emit(
-					"smoke", position, 2, { 0.72f, 0.80f, 0.88f, 0.11f },
-					0.035f, 0.015f, 3.8f, 1.4f, 1.6f, 2.8f, 7.0f);
-			}
 			++titleLaunchFrame_;
 		} else if (IsTitleBackgroundMode()) {
 			// StageBounds 内を「直線 + 壁際のUターン」で周回する。
@@ -1400,12 +1416,6 @@ void GamePlayScene::Update() {
 			const float pitch = horizontalSpeed > 0.0001f ? -std::atan2(velocity.y, horizontalSpeed) : 0.0f;
 			player_->SetVelocity(velocity);
 			player_->UpdatePresentation(position, { pitch, yaw, roll }, (std::max)(0.9f, horizontalSpeed * 7.0f), true);
-			// タイトル地形にうっすら漂う霧。低頻度で少量だけ発生させ、視界を遮らない。
-			if (environmentRenderer_ && titleBackgroundFrame_ % 18 == 0) {
-				environmentRenderer_->GetParticleManager()->Emit(
-					"smoke", position, 1, { 0.70f, 0.78f, 0.86f, 0.07f },
-					0.018f, 0.008f, 4.8f, 1.6f, 2.5f, 4.0f, 9.0f);
-			}
 		} else if (updateSelectedPlayer) {
 			if (introBoostFrames_ > 0) {
 				const float progress = 1.0f - static_cast<float>(introBoostFrames_) /
@@ -1985,10 +1995,30 @@ void GamePlayScene::Update() {
 			if (IsTitleBackgroundMode()) {
 				// 出撃中もタイトル時と同じ追従カメラを使い、地形と飛行方向を連続させる。
 				// タイトル背景でも機体を見失わないよう、通常のプレイヤー追従カメラを使う。
-				// 視野角だけを緩やかに変化させ、飛行演出の速度感は維持する。
+				// 待機中は緩やかに揺らし、出撃時はワープに吸い込まれるよう視野角を一気に広げる。
 				const float time = static_cast<float>(titleBackgroundFrame_) * (1.0f / 60.0f);
 				player_->UpdateCamera(camera.get(), nullptr, false);
-				camera->SetFovY(0.60f + std::sin(time * 0.55f) * 0.035f);
+				if (titleLaunchActive_) {
+					constexpr int kTitleLaunchDurationFrames = 84;
+					const float launchProgress = std::clamp(
+						static_cast<float>(titleLaunchFrame_) / static_cast<float>(kTitleLaunchDurationFrames),
+						0.0f, 1.0f);
+					const float fovProgress = std::clamp((launchProgress - 0.16f) / 0.62f, 0.0f, 1.0f);
+					const float easedProgress = fovProgress * fovProgress * (3.0f - 2.0f * fovProgress);
+					const float impactProgress = std::clamp(
+						1.0f - std::abs(launchProgress - 0.77f) / 0.15f, 0.0f, 1.0f);
+					// 衝撃と同時にわずかに視野を押し広げ、加速の重さを強調する。
+					camera->SetFovY(0.60f + easedProgress * 0.62f + impactProgress * impactProgress * 0.09f);
+					const Vector3 shake = CalculateTitleLaunchCameraShake(launchProgress, titleLaunchFrame_);
+					const Vector3 basePosition = camera->GetTranslate();
+					camera->SetTranslate({
+						basePosition.x + shake.x,
+						basePosition.y + shake.y,
+						basePosition.z + shake.z,
+					});
+				} else {
+					camera->SetFovY(0.60f + std::sin(time * 0.55f) * 0.035f);
+				}
 			} else {
 				Vector3* targetPos = nullptr;
 				Vector3 enemyPos;

@@ -19,6 +19,11 @@ public:
     // カメラの情報を元に、常にカメラの方を向く「板ポリゴンの頂点リスト」を生成する
     std::vector<VertexData> GenerateVertices(Camera *camera, float thickness);
 
+    // 加速時のスラスター用。ワールド座標の履歴から、先端が明るく尾が細くなる
+    // 加算合成向けの発光リボンを生成する。
+    std::vector<VertexData> GenerateRibbonVertices(Camera* camera, float thickness,
+        const Vector4& headColor, float intensity = 1.0f);
+
     // 推進炎用。排気方向へ伸びる、視点に依存しない立体チューブを生成する。
     std::vector<VertexData> GenerateThrusterVertices(Camera *camera, float thickness,
         const Vector3& exhaustDirection, float plumeLength, float phase = 0.0f, float intensity = 1.0f,

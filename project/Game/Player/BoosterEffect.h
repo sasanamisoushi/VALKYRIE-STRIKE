@@ -59,6 +59,9 @@ private:
     struct Burner {
         std::unique_ptr<Trail> trail;
         std::unique_ptr<Object3d> trailObject;
+        // 機体の移動履歴を残す、細い発光リボン。立体の噴射炎とは別レイヤー。
+        std::unique_ptr<Trail> ribbonTrail;
+        std::unique_ptr<Object3d> ribbonObject;
         // 左右別の実モデルを機体へ固定し、その後端から噴射する。
         std::unique_ptr<Object3d> nozzleObject;
         std::unique_ptr<Object3d> positionMarkerObject;
@@ -72,6 +75,9 @@ private:
         Vector4 color;
         float plumeLength = 0.0f;
         float plumeRadius = 0.0f;
+        float ribbonIntensity = 0.0f;
+        Vector3 lastRibbonWorldExit = { 0.0f, 0.0f, 0.0f };
+        bool hasRibbonOrigin = false;
     };
 
     std::vector<Burner> burners_;

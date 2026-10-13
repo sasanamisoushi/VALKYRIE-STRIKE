@@ -18,6 +18,15 @@
 
 namespace {
 	constexpr int kLaunchDurationFrames = 84;
+	// START GAME 決定後も、タイトルUIを約0.33秒だけ残して自然に消す。
+	constexpr int kLaunchUiFadeFrames = 20;
+
+	Matrix4x4 MakeCenteredUVRotation(float radians) {
+		const Matrix4x4 moveToCenter = MyMath::MakeTranslateMatrix({ -0.5f, -0.5f, 0.0f });
+		const Matrix4x4 rotate = MyMath::MakeRotateZMatrix(radians);
+		const Matrix4x4 moveBack = MyMath::MakeTranslateMatrix({ 0.5f, 0.5f, 0.0f });
+		return MyMath::Multiply(MyMath::Multiply(moveToCenter, rotate), moveBack);
+	}
 
 	bool LaunchSimulationExecutable() {
 		wchar_t modulePath[MAX_PATH] = {};
@@ -87,20 +96,32 @@ void TitleScene::Initialize() {
 	}
 	for (auto& streak : foldStreakSprites_) {
 		streak = std::make_unique<Sprite>();
-		// 透明縁を持つ発光円。各粒子を重ねて、太い紫の渦を作る。
-		streak->Initialize(SpriteCommon::GetInstance(), "resources/circle2.png");
+		// 丸い発光球ではなく、透明な雲・霧ノイズの断片を重ねて空間のねじれを作る。
+		streak->Initialize(SpriteCommon::GetInstance(), "resources/fold_cloud_noise.png");
 		streak->SetAnchorPoint({ 0.5f, 0.5f });
 	}
 	foldVeilSprite_ = std::make_unique<Sprite>();
 	foldVeilSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
+	foldDepthSprite_ = std::make_unique<Sprite>();
+	foldDepthSprite_->Initialize(SpriteCommon::GetInstance(), "resources/circle2.png");
+	foldDepthSprite_->SetAnchorPoint({ 0.5f, 0.5f });
+	foldPurpleCoreSprite_ = std::make_unique<Sprite>();
+	foldPurpleCoreSprite_->Initialize(SpriteCommon::GetInstance(), "resources/circle2.png");
+	foldPurpleCoreSprite_->SetAnchorPoint({ 0.5f, 0.5f });
 	foldCoreSprite_ = std::make_unique<Sprite>();
-	foldCoreSprite_->Initialize(SpriteCommon::GetInstance(), "resources/circle2.png");
+	foldCoreSprite_->Initialize(SpriteCommon::GetInstance(), "resources/fold_cloud_noise.png");
 	foldCoreSprite_->SetAnchorPoint({ 0.5f, 0.5f });
 	foldBeamSprite_ = std::make_unique<Sprite>();
 	foldBeamSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
 	foldBeamSprite_->SetAnchorPoint({ 0.5f, 0.5f });
 	foldFlashSprite_ = std::make_unique<Sprite>();
 	foldFlashSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
+	warpCloudRearSprite_ = std::make_unique<Sprite>();
+	warpCloudRearSprite_->Initialize(SpriteCommon::GetInstance(), "resources/warp_cloud_ring.png");
+	warpCloudRearSprite_->SetAnchorPoint({ 0.5f, 0.5f });
+	warpCloudFrontSprite_ = std::make_unique<Sprite>();
+	warpCloudFrontSprite_->Initialize(SpriteCommon::GetInstance(), "resources/warp_cloud_ring.png");
+	warpCloudFrontSprite_->SetAnchorPoint({ 0.5f, 0.5f });
 
 	// 本編と同じプレイヤー機を、タイトルでは入力なしの自動飛行として見せる。
 	titlePlayer_ = std::make_unique<Player>();
@@ -141,12 +162,20 @@ void TitleScene::Update() {
 			UpdateGameplayBackground();
 			const float launchProgress = static_cast<float>(launchFrame_) /
 				static_cast<float>(kLaunchDurationFrames);
+			// フォールド航法光が収束し始めるのに合わせ、中心から外へ流れる残像を強める。
+			// 最後の白フラッシュでシーンの作り直しを自然に隠す。
+			if (PostEffect::GetInstance() && GameSettings::GetInstance().IsFoldTransitionEnabled()) {
+				const float blurProgress = std::clamp((launchProgress - 0.18f) / 0.60f, 0.0f, 1.0f);
+				const float easedProgress = blurProgress * blurProgress * (3.0f - 2.0f * blurProgress);
+				PostEffect::GetInstance()->SetRadialBlur(1.5f + easedProgress * 12.5f);
+			}
 			// フォールド開始後だけ背景を少し沈め、航法光を読み取りやすくする。
 			launchFadeAlpha_ = GameSettings::GetInstance().IsFoldTransitionEnabled()
 				? std::clamp((launchProgress - 0.24f) * 0.26f, 0.0f, 0.16f)
 				: 0.0f;
 			if (++launchFrame_ >= kLaunchDurationFrames) {
-				GameStartTransition::Begin({ gameplayBackground_->GetTitleLaunchForward(), 0.78f, 54 });
+				// 演出の白フラッシュが収束した時点で、プレイヤー操作をすぐに返す。
+				GameStartTransition::Begin({ gameplayBackground_->GetTitleLaunchForward(), 0.0f, 0 });
 				SceneManager::GetInstance()->ChangeScene("GAMEPLAY");
 			}
 		} else {
@@ -314,6 +343,11 @@ void TitleScene::UpdateTitleFlight() {
 	} else {
 		const float progress = std::clamp(
 			static_cast<float>(launchFrame_) / static_cast<float>(kLaunchDurationFrames), 0.0f, 1.0f);
+		if (PostEffect::GetInstance() && GameSettings::GetInstance().IsFoldTransitionEnabled()) {
+			const float blurProgress = std::clamp((progress - 0.18f) / 0.60f, 0.0f, 1.0f);
+			const float easedProgress = blurProgress * blurProgress * (3.0f - 2.0f * blurProgress);
+			PostEffect::GetInstance()->SetRadialBlur(1.5f + easedProgress * 12.5f);
+		}
 		const float acceleration = progress * progress;
 		speed = 0.18f + acceleration * 1.35f;
 		position = {
@@ -333,7 +367,8 @@ void TitleScene::UpdateTitleFlight() {
 		isBoosting = true;
 
 		if (++launchFrame_ >= kLaunchDurationFrames) {
-			GameStartTransition::Begin({ { 0.0f, 0.0f, 1.0f }, 0.78f, 54 });
+			// 専用飛行デモから開始する場合も、自動ブーストで入力を奪わない。
+			GameStartTransition::Begin({ { 0.0f, 0.0f, 1.0f }, 0.0f, 0 });
 			SceneManager::GetInstance()->ChangeScene("GAMEPLAY");
 		}
 	}
@@ -403,6 +438,10 @@ void TitleScene::Draw() {
 	}
 
 	SpriteCommon::GetInstance()->SetCommonPipelineState();
+	const float launchUiAlpha = flightState_ == TitleFlightState::Launching
+		? std::clamp(1.0f - static_cast<float>(launchFrame_) / static_cast<float>(kLaunchUiFadeFrames), 0.0f, 1.0f)
+		: 1.0f;
+	const bool isLaunchUiVisible = flightState_ == TitleFlightState::Launching && launchUiAlpha > 0.0f;
 	// 背景の飛行演出を見せるため、待機中は暗幕を半透明にする。
 	if (menuPanelSprite_) {
 		menuPanelSprite_->SetPosition({ 0.0f, 0.0f });
@@ -411,23 +450,29 @@ void TitleScene::Draw() {
 			static_cast<float>(WinApp::GetClientHeight())
 		});
 		const float panelAlpha = flightState_ == TitleFlightState::Launching
-			? launchFadeAlpha_
+			? (std::max)(launchUiAlpha * 0.48f, launchFadeAlpha_)
 			: (isSettingsOpen_ ? 0.88f : 0.48f);
 		menuPanelSprite_->SetColor({ 0.0f, 0.0f, 0.0f, panelAlpha });
 		menuPanelSprite_->Update();
 		menuPanelSprite_->Draw();
 	}
-	if (titleSprite && !isSettingsOpen_ && flightState_ == TitleFlightState::Cruising) {
+	if (titleSprite && !isSettingsOpen_ &&
+		(flightState_ == TitleFlightState::Cruising || isLaunchUiVisible)) {
+		titleSprite->SetColor({ 1.0f, 1.0f, 1.0f, launchUiAlpha });
+		titleSprite->Update();
 		titleSprite->Draw();
 	}
 	if (flightState_ == TitleFlightState::Launching && GameSettings::GetInstance().IsFoldTransitionEnabled()) {
+		DrawWarpCloudLayers(
+			static_cast<float>(WinApp::GetClientWidth()),
+			static_cast<float>(WinApp::GetClientHeight()));
 		DrawFoldTransition(
 			static_cast<float>(WinApp::GetClientWidth()),
 			static_cast<float>(WinApp::GetClientHeight()));
 	}
 
-	if (flightState_ == TitleFlightState::Cruising) {
-		DrawMenuOverlay(static_cast<float>(WinApp::GetClientWidth()), static_cast<float>(WinApp::GetClientHeight()));
+	if (flightState_ == TitleFlightState::Cruising || isLaunchUiVisible) {
+		DrawMenuOverlay(static_cast<float>(WinApp::GetClientWidth()), static_cast<float>(WinApp::GetClientHeight()), launchUiAlpha);
 		// タイトルメニュー専用の選択・決定操作を、選択肢と重ならない右下へ表示する。
 		if (!isSettingsOpen_ && titleControlsGuideSprite_) {
 			constexpr float kGuideWidth = 360.0f;
@@ -438,15 +483,59 @@ void TitleScene::Draw() {
 				(static_cast<float>(WinApp::GetClientHeight()) - kGuideHeight - kGuideMargin),
 			});
 			titleControlsGuideSprite_->SetSize({ kGuideWidth, kGuideHeight });
-			titleControlsGuideSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.96f });
+			titleControlsGuideSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.96f * launchUiAlpha });
 			titleControlsGuideSprite_->Update();
 			titleControlsGuideSprite_->Draw();
 		}
 	}
 }
 
+void TitleScene::DrawWarpCloudLayers(float screenWidth, float screenHeight) {
+	if (!warpCloudRearSprite_ || !warpCloudFrontSprite_) {
+		return;
+	}
+
+	const float progress = std::clamp(
+		static_cast<float>(launchFrame_) / static_cast<float>(kLaunchDurationFrames), 0.0f, 1.0f);
+	const float rampIn = std::clamp((progress - 0.12f) / 0.28f, 0.0f, 1.0f);
+	const float rampOut = 1.0f - std::clamp((progress - 0.76f) / 0.22f, 0.0f, 1.0f);
+	const float visibility = rampIn * rampIn * (3.0f - 2.0f * rampIn) * rampOut;
+	if (visibility <= 0.001f) {
+		return;
+	}
+
+	const float centerX = screenWidth * 0.50f;
+	const float centerY = screenHeight * 0.47f;
+	const float minDimension = (std::min)(screenWidth, screenHeight);
+	const float rearProgress = std::clamp((progress - 0.10f) / 0.82f, 0.0f, 1.0f);
+	const float frontProgress = std::clamp((progress - 0.24f) / 0.66f, 0.0f, 1.0f);
+
+	auto prepareRing = [&](Sprite* ring, float size, float uvRotation, const Vector4& color) {
+		ring->SetPosition({ centerX, centerY });
+		ring->SetSize({ size, size });
+		ring->SetRotation(0.0f);
+		ring->SetUVTransform(MakeCenteredUVRotation(uvRotation));
+		ring->SetColor(color);
+		ring->Update();
+	};
+
+	// 奥はゆっくり時計回り、手前は速く反時計回りに動かし、同じ雲でも別の渦に見せる。
+	prepareRing(warpCloudRearSprite_.get(), minDimension * (0.52f + rearProgress * 1.12f),
+		-progress * 3.4f, { 0.24f, 0.72f, 1.0f, visibility * 0.36f });
+	prepareRing(warpCloudFrontSprite_.get(), minDimension * (0.30f + frontProgress * 1.48f),
+		progress * 5.8f + std::sin(progress * 12.0f) * 0.16f,
+		{ 0.58f, 0.94f, 1.0f, visibility * 0.46f });
+
+	SpriteCommon::GetInstance()->SetAdditivePipelineState();
+	warpCloudRearSprite_->Draw();
+	warpCloudFrontSprite_->Draw();
+	// この後に描くフォールド粒子とUIは、従来のアルファ合成へ戻す。
+	SpriteCommon::GetInstance()->SetCommonPipelineState();
+}
+
 void TitleScene::DrawFoldTransition(float screenWidth, float screenHeight) {
-	if (!foldVeilSprite_ || !foldCoreSprite_ || !foldBeamSprite_ || !foldFlashSprite_) {
+	if (!foldVeilSprite_ || !foldDepthSprite_ || !foldPurpleCoreSprite_ || !foldCoreSprite_ ||
+		!foldBeamSprite_ || !foldFlashSprite_) {
 		return;
 	}
 
@@ -469,6 +558,30 @@ void TitleScene::DrawFoldTransition(float screenWidth, float screenHeight) {
 	foldVeilSprite_->Update();
 	foldVeilSprite_->Draw();
 
+	// 雲と光が吸い込まれる先に、深い青と紫の核を先に描く。
+	// 最後の白フラッシュ直前までだけ残すことで、平面的な光ではなくトンネルの奥行きを作る。
+	const float depthProgress = std::clamp((progress - 0.26f) / 0.42f, 0.0f, 1.0f);
+	const float depthEase = depthProgress * depthProgress * (3.0f - 2.0f * depthProgress);
+	const float depthFade = 1.0f - std::clamp((progress - 0.72f) / 0.20f, 0.0f, 1.0f);
+	const float depthAlpha = depthEase * depthFade;
+	const float apertureSize = 38.0f + maxRadius * (0.12f + depthEase * 0.20f);
+	foldDepthSprite_->SetPosition({ centerX, centerY });
+	foldDepthSprite_->SetSize({ apertureSize * 1.20f, apertureSize * 1.20f });
+	foldDepthSprite_->SetRotation(-progress * 0.7f);
+	foldDepthSprite_->SetColor({ 0.015f, 0.055f, 0.26f, depthAlpha * 0.70f });
+	foldDepthSprite_->Update();
+	foldDepthSprite_->Draw();
+
+	foldPurpleCoreSprite_->SetPosition({ centerX, centerY });
+	foldPurpleCoreSprite_->SetSize({ apertureSize * 0.76f, apertureSize * 0.76f });
+	foldPurpleCoreSprite_->SetRotation(progress * 1.1f);
+	foldPurpleCoreSprite_->SetColor({ 0.16f, 0.025f, 0.34f, depthAlpha * 0.62f });
+	foldPurpleCoreSprite_->Update();
+	foldPurpleCoreSprite_->Draw();
+
+	// 白い円テクスチャは通常アルファ合成だと縁の暗い半透明画素まで重なる。
+	// 加算合成にして光成分だけを重ね、黒い輪郭を出さない。
+	SpriteCommon::GetInstance()->SetAdditivePipelineState();
 	for (size_t i = 0; i < foldStreakSprites_.size(); ++i) {
 		Sprite* particle = foldStreakSprites_[i].get();
 		if (!particle) {
@@ -488,25 +601,37 @@ void TitleScene::DrawFoldTransition(float screenWidth, float screenHeight) {
 		const float curl = std::cos(wavePhase * 1.31f) * maxRadius * 0.052f * radialSeed;
 		const float x = centerX + std::cos(angle) * radius - std::sin(angle) * curl;
 		const float y = centerY + std::sin(angle) * radius + std::cos(angle) * curl;
-		const float diameter = 38.0f + radialSeed * 82.0f + std::sin(wavePhase * 1.9f) * 9.0f;
+		// spiralIndex だけでは同じ大きさが等間隔に繰り返されるため、粒ごとに
+		// 決定的な揺らぎを加え、雲の粒子として自然な大小を作る。
+		const float randomSeed = std::fmod(std::sin((static_cast<float>(i) + 1.0f) * 91.173f) * 43758.5453f, 1.0f);
+		const float normalizedRandom = randomSeed < 0.0f ? randomSeed + 1.0f : randomSeed;
+		const float diameter = (31.0f + radialSeed * 104.0f + std::sin(wavePhase * 1.9f) * 14.0f) *
+			(0.58f + normalizedRandom * 0.94f);
 		const float cyanVariation = 0.28f + std::fmod(spiralIndex * 0.11f, 0.24f);
+		const float aspectSeed = std::fmod(std::sin((static_cast<float>(i) + 3.0f) * 47.417f) * 12515.873f, 1.0f);
+		const float normalizedAspect = aspectSeed < 0.0f ? aspectSeed + 1.0f : aspectSeed;
+		// 粒を接線方向へ流し、横幅と縦幅を別々にして雲の塊に見せる。
+		const float widthScale = 0.76f + normalizedAspect * 0.82f;
+		const float heightScale = 0.38f + (1.0f - normalizedAspect) * 0.56f;
 		particle->SetPosition({ x, y });
-		particle->SetSize({ diameter, diameter });
-		particle->SetRotation(0.0f);
+		particle->SetSize({ diameter * widthScale, diameter * heightScale });
+		particle->SetRotation(angle + 1.57079633f + std::sin(wavePhase) * 0.24f);
 		particle->SetColor({ cyanVariation, 0.72f + radialSeed * 0.24f, 1.0f,
-			streakAlpha * (0.22f + radialSeed * 0.22f) });
+			streakAlpha * (0.14f + normalizedRandom * 0.19f + radialSeed * 0.16f) });
 		particle->Update();
 		particle->Draw();
 	}
 
 	// 核と水平ビームを最後に重ね、太い光のうねりが一点へ収束しているように見せる。
-	const float coreSize = 54.0f + streakProgress * (screenHeight * 0.17f);
+	const float coreSize = 54.0f + streakProgress * (screenHeight * 0.22f);
 	foldCoreSprite_->SetPosition({ centerX, centerY });
-	foldCoreSprite_->SetSize({ coreSize, coreSize });
-	foldCoreSprite_->SetRotation(progress * 2.2f);
-	foldCoreSprite_->SetColor({ 0.76f, 1.0f, 1.0f, streakAlpha * 0.76f });
+	foldCoreSprite_->SetSize({ coreSize * 1.42f, coreSize * 0.74f });
+	foldCoreSprite_->SetRotation(-progress * 3.4f);
+	foldCoreSprite_->SetColor({ 0.70f, 0.96f, 1.0f, streakAlpha * 0.68f });
 	foldCoreSprite_->Update();
 	foldCoreSprite_->Draw();
+	// ビームとフラッシュは透明度で制御する従来のアルファ合成へ戻す。
+	SpriteCommon::GetInstance()->SetCommonPipelineState();
 
 	foldBeamSprite_->SetPosition({ centerX, centerY });
 	foldBeamSprite_->SetSize({ screenWidth * (0.08f + streakProgress * 1.04f), 2.0f + streakProgress * 11.0f });
@@ -529,7 +654,7 @@ void TitleScene::DrawFoldTransition(float screenWidth, float screenHeight) {
 	foldFlashSprite_->Draw();
 }
 
-void TitleScene::DrawMenuOverlay(float screenWidth, float screenHeight) {
+void TitleScene::DrawMenuOverlay(float screenWidth, float screenHeight, float opacity) {
 	if (!menuPanelSprite_ || !menuRowSprite_) {
 		return;
 	}
@@ -562,7 +687,7 @@ void TitleScene::DrawMenuOverlay(float screenWidth, float screenHeight) {
 		label->SetTextureSize({ region.width, region.height });
 		label->SetPosition({ centerX - targetWidth * 0.5f, topY });
 		label->SetSize({ targetWidth, targetHeight });
-		label->SetColor({ 1.0f, 1.0f, 1.0f, alpha });
+		label->SetColor({ 1.0f, 1.0f, 1.0f, alpha * opacity });
 		label->Update();
 		label->Draw();
 	};

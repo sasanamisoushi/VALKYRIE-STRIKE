@@ -148,9 +148,10 @@ void GroundEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletMan
         UpdateAttackAI(playerPos, bulletManager);
     }
 
-    // 3. 当たり判定（障害物押し出し＆地面接地強制吸着）
+    // 3. 当たり判定（障害物押し出し）
+    // UpdateGroundMovement() 内で地形への接地まで済ませているため、ここで
+    // 全く同じ地形検索をもう一度行わない。
     CheckCollision(obstacles);
-    SnapToGround(obstacles);
 
     // 4. モデルの更新
     UpdateModel();
@@ -173,11 +174,15 @@ void GroundEnemy::UpdateGroundMovement(const Vector3 &playerPos, const std::list
 
         if (obs->IsUseMeshCollider()) {
             const auto& triangles = obs->GetWorldTriangles();
+            // XZ の検索範囲は接地判定と球メッシュ判定で共通。空間グリッドの
+            // 候補を一度だけ取り出して使い回し、地上敵が増えた際のCPU負荷を抑える。
+            const auto& nearbyTriangleIndices = obs->GetNearbyWorldTriangleIndices(enemySphere);
 
             // 地底抜け防止＆埋まり防止：足元の地形の最高標高を特定し、身体が埋まらない高さ(footOffset)に保つ
             float maxTerrainY = -99999.0f;
             bool foundTerrain = false;
-            for (const auto& tri : triangles) {
+            for (const size_t triangleIndex : nearbyTriangleIndices) {
+                const Triangle& tri = triangles[triangleIndex];
                 if (std::abs(tri.normal.y) > 0.2f) {
                     float triY = 0.0f;
                     if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], position_.x, position_.z, triY)) {
@@ -199,7 +204,8 @@ void GroundEnemy::UpdateGroundMovement(const Vector3 &playerPos, const std::list
                 hitGroundThisFrame = true;
             }
 
-            for (const auto& tri : triangles) {
+            for (const size_t triangleIndex : nearbyTriangleIndices) {
+                const Triangle& tri = triangles[triangleIndex];
                 Vector3 pushVector;
                 if (MyMath::IsCollision(enemySphere, tri, pushVector)) {
                     if (std::abs(tri.normal.y) > 0.3f) {
@@ -298,6 +304,47 @@ void GroundEnemy::UpdateGroundMovement(const Vector3 &playerPos, const std::list
     // 水平位置の更新（地上・空中問わず velocity_ を適用）
     position_.x += velocity_.x;
     position_.z += velocity_.z;
+
+    // 上の接地判定は横移動「前」の座標を使っている。ここで移動先の地表を
+    // 改めてサンプリングして足元を合わせることで、起伏のある地形でも
+    // 1フレーム遅れで地面を抜けたり、斜面の下へ潜ったりしないようにする。
+    // 飛び蹴りの跳躍中だけは着地させず、空中軌道を維持する。
+    const bool isAirborneAttack = attackSubState_ == GroundAttackState::Melee &&
+        (meleePhase_ == MeleePhase::Rising || meleePhase_ == MeleePhase::Falling);
+    if (!isAirborneAttack) {
+        Sphere terrainProbe{};
+        terrainProbe.center = position_;
+        terrainProbe.radius = (std::max)(0.5f, (std::max)(scale_.x, scale_.z));
+
+        float groundHeight = -99999.0f;
+        bool foundGroundAtDestination = false;
+        for (const auto& obs : obstacles) {
+            if (!obs || obs->IsStageBounds() || !obs->IsCollisionEnabled() || !obs->IsUseMeshCollider()) {
+                continue;
+            }
+
+            const auto& triangles = obs->GetWorldTriangles();
+            for (const size_t triangleIndex : obs->GetNearbyWorldTriangleIndices(terrainProbe)) {
+                const Triangle& tri = triangles[triangleIndex];
+                if (std::abs(tri.normal.y) <= 0.1f) {
+                    continue;
+                }
+
+                float terrainY = 0.0f;
+                if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], position_.x, position_.z, terrainY) && terrainY > groundHeight) {
+                    groundHeight = terrainY;
+                    foundGroundAtDestination = true;
+                }
+            }
+        }
+
+        if (foundGroundAtDestination) {
+            groundY_ = groundHeight;
+            position_.y = groundY_ + GetFootOffset();
+            velocityY_ = 0.0f;
+            isGrounded_ = true;
+        }
+    }
 
     // 通常移動時はジャンプせず、地上での走行・旋回のみ行う（近接攻撃時にのみジャンプ飛び蹴りを実行する）
 }
@@ -466,7 +513,11 @@ void GroundEnemy::SnapToGround(const std::list<std::unique_ptr<Obstacle>> &obsta
 
         if (obs->IsUseMeshCollider()) {
             const auto& triangles = obs->GetWorldTriangles();
-            for (const auto& tri : triangles) {
+            Sphere terrainSample{};
+            terrainSample.center = position_;
+            terrainSample.radius = 0.25f;
+            for (const size_t triangleIndex : obs->GetNearbyWorldTriangleIndices(terrainSample)) {
+                const Triangle& tri = triangles[triangleIndex];
                 if (std::abs(tri.normal.y) > 0.1f) {
                     float triY = 0.0f;
                     if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], position_.x, position_.z, triY)) {
@@ -492,7 +543,12 @@ void GroundEnemy::SnapToGround(const std::list<std::unique_ptr<Obstacle>> &obsta
             for (const auto &obs : obstacles) {
                 if (!obs || obs->IsStageBounds() || !obs->IsCollisionEnabled()) continue;
                 if (obs->IsUseMeshCollider()) {
-                    for (const auto& tri : obs->GetWorldTriangles()) {
+                    const auto& triangles = obs->GetWorldTriangles();
+                    Sphere terrainSample{};
+                    terrainSample.center = { sampleX, position_.y, sampleZ };
+                    terrainSample.radius = 0.25f;
+                    for (const size_t triangleIndex : obs->GetNearbyWorldTriangleIndices(terrainSample)) {
+                        const Triangle& tri = triangles[triangleIndex];
                         if (std::abs(tri.normal.y) > 0.1f) {
                             float triY = 0.0f;
                             if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], sampleX, sampleZ, triY)) {
@@ -509,12 +565,38 @@ void GroundEnemy::SnapToGround(const std::list<std::unique_ptr<Obstacle>> &obsta
         }
     }
 
+    // 近傍グリッドは通常時の高速な検索用。スポーン地点が地形の内部に
+    // 入っている場合でも、ここで地表を見失って Y=0 に落とさないよう、
+    // 生成時だけ全三角形を使う最終フォールバックを行う。
+    // SnapToGround() はスポーン時／リスポーン時にしか呼ばれないため、
+    // この低頻度の検索はフレーム負荷には影響しない。
+    if (!foundGround) {
+        for (const auto& obs : obstacles) {
+            if (!obs || obs->IsStageBounds() || !obs->IsCollisionEnabled() || !obs->IsUseMeshCollider()) {
+                continue;
+            }
+
+            for (const Triangle& tri : obs->GetWorldTriangles()) {
+                if (std::abs(tri.normal.y) <= 0.1f) {
+                    continue;
+                }
+
+                float triY = 0.0f;
+                if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], position_.x, position_.z, triY) && triY > maxGroundY) {
+                    maxGroundY = triY;
+                    foundGround = true;
+                }
+            }
+        }
+    }
+
     const float footOffset = GetFootOffset();
     if (foundGround) {
         position_.y = maxGroundY + footOffset;
     } else {
-        // 地表のデフォルト標高（Y = 0.0f）に安全着地
-        position_.y = 0.0f + footOffset;
+        // 地形の外などで地表が存在しない場合も、Y=0へ強制移動させず、
+        // 配置データの高さを維持する。これにより地形の下へ落下しない。
+        position_.y = (std::max)(position_.y, footOffset);
     }
 
     velocityY_ = 0.0f;

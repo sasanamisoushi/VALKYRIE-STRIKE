@@ -52,6 +52,17 @@ void Obstacle::Initialize(const std::string& modelName, const Vector3& position,
         object_->SetModel("ObstacleBox");
     }
 
+    // 地形は鏡面反射・環境マップを持たないマットなマテリアルとして描画する。
+    const bool isTerrainModel =
+        modelName.find("Terrain") != std::string::npos ||
+        modelName.find("terrain") != std::string::npos;
+    if (isTerrainModel) {
+        object_->SetEnvironmentMapEnabled(false);
+        if (Model* terrainModel = object_->GetModel()) {
+            terrainModel->SetShininess(0.0f);
+        }
+    }
+
     position_ = position;
     rotation_ = rotation;
     scale_ = scale;
@@ -73,7 +84,9 @@ void Obstacle::Update() {
 }
 
 void Obstacle::Draw() {
-    if (!object_) {
+    // StageBounds は移動範囲とスポーン判定専用の不可視コライダー。
+    // ここを描画すると、タイトル・ゲーム画面の両方に水色の枠線が出てしまう。
+    if (!object_ || isStageBounds_) {
         return;
     }
     object_->Draw();

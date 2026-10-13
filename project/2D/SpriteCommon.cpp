@@ -26,6 +26,12 @@ void SpriteCommon::SetCommonPipelineState() {
 	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
+void SpriteCommon::SetAdditivePipelineState() {
+	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
+	dxCommon_->GetCommandList()->SetPipelineState(additivePipelineState_.Get());
+	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
 void SpriteCommon::LoadShaders() {
 	//Shaderをコンパイルする
 	vertexShaderBlob = dxCommon_->CompileShader(L"resources/shaders/Sprite.VS.hlsl",
@@ -185,5 +191,20 @@ void SpriteCommon::CreateGraphicsPipeline() {
 	pipelineState_ = nullptr;
 	HRESULT hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
 		IID_PPV_ARGS(&pipelineState_));
+	assert(SUCCEEDED(hr));
+
+	// 透明度を係数にしつつ、既に描かれた画面の色へ発光色を足すパイプライン。
+	// 通常UI用のアルファ合成とは分け、呼び出し側が必要なときだけ選べるようにする。
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC additivePipelineDesc = graphicsPipelineStateDesc;
+	auto& additiveBlend = additivePipelineDesc.BlendState.RenderTarget[0];
+	additiveBlend.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	additiveBlend.DestBlend = D3D12_BLEND_ONE;
+	additiveBlend.BlendOp = D3D12_BLEND_OP_ADD;
+	additiveBlend.SrcBlendAlpha = D3D12_BLEND_ONE;
+	additiveBlend.DestBlendAlpha = D3D12_BLEND_ONE;
+	additiveBlend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	additivePipelineState_ = nullptr;
+	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&additivePipelineDesc,
+		IID_PPV_ARGS(&additivePipelineState_));
 	assert(SUCCEEDED(hr));
 }

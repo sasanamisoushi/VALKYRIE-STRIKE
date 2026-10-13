@@ -19,6 +19,11 @@ public:
         param_.vignetteSoftness = softness;
         param_.blurIntensity = blurIntensity;
     }
+    // 画面中心へ向かうサンプリングで、画面外へ引き伸ばされるように見せる放射状ブラー。
+    void SetRadialBlur(float intensity) {
+        param_.effectType = 9;
+        param_.blurIntensity = intensity;
+    }
 
     // パラメータをまとめた構造体（HLSLと並びを合わせる）
     struct PostEffectParam {

@@ -33,7 +33,7 @@ private:
 		Count
 	};
 
-	void DrawMenuOverlay(float screenWidth, float screenHeight);
+	void DrawMenuOverlay(float screenWidth, float screenHeight, float opacity = 1.0f);
 	void UpdateSettingsInput();
 	void UpdateTitleFlight();
 	void BeginLaunchSequence();
@@ -41,6 +41,7 @@ private:
 	void UpdateGameplayBackground();
 	void DrawBackgroundModeImGui();
 	void DrawFoldTransition(float screenWidth, float screenHeight);
+	void DrawWarpCloudLayers(float screenWidth, float screenHeight);
 	std::unique_ptr<Camera> camera;
 
 	std::unique_ptr<Sprite> titleSprite;
@@ -54,9 +55,15 @@ private:
 	// START GAME 後にフレームごとに生成する、中心へ吸い込まれるフォールド粒子・核・ビーム。
 	std::array<std::unique_ptr<Sprite>, 240> foldStreakSprites_;
 	std::unique_ptr<Sprite> foldVeilSprite_;
+	// 奥へ落ち込む穴を作る、深い青と紫の二重核。
+	std::unique_ptr<Sprite> foldDepthSprite_;
+	std::unique_ptr<Sprite> foldPurpleCoreSprite_;
 	std::unique_ptr<Sprite> foldCoreSprite_;
 	std::unique_ptr<Sprite> foldBeamSprite_;
 	std::unique_ptr<Sprite> foldFlashSprite_;
+	// 同じ雲リングを奥・手前で逆回転させる、フォールド開始直前の加算合成レイヤー。
+	std::unique_ptr<Sprite> warpCloudRearSprite_;
+	std::unique_ptr<Sprite> warpCloudFrontSprite_;
 
 	std::unique_ptr<Player> titlePlayer_;
 	std::unique_ptr<GamePlayScene> gameplayBackground_;

@@ -67,7 +67,8 @@ private:
 
     // メッシュコライダー用キャッシュ
     std::vector<Triangle> worldTriangles_;
-    static constexpr int kMeshGridDimension = 16;
+    // 高密度な地形でも近傍検索が十分に絞り込まれるよう、32 x 32 の空間グリッドを使う。
+    static constexpr int kMeshGridDimension = 32;
     std::array<std::vector<size_t>, kMeshGridDimension * kMeshGridDimension> meshTriangleGrid_;
     std::vector<size_t> allTriangleIndices_;
     mutable std::vector<size_t> nearbyTriangleIndices_;

@@ -214,6 +214,13 @@ public:
 		}
 	}
 
+	// 0以下を指定すると、マテリアルのスペキュラーハイライトを描画しない。
+	void SetShininess(float shininess) {
+		if (materialData) {
+			materialData->shininess = shininess;
+		}
+	}
+
 	// スキニング
 	bool Skinning(SkinCluster& skinCluster);
 

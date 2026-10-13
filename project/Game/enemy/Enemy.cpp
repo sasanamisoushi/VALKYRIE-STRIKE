@@ -577,6 +577,14 @@ void Enemy::CheckCollision(const std::list<std::unique_ptr<Obstacle>> &obstacles
             continue;
         }
 
+        // 地形は巨大なOBBではなく三角形メッシュで接地・衝突を処理する。
+        // ここで地形全体の箱に対して再度押し出すと、地表へ補正した地上敵を
+        // 箱の裏側（地面の下）まで移動させ、ロックオン表示だけが残る原因になる。
+        // StageBounds はメッシュ設定に関係なく範囲制限として処理を継続する。
+        if (!obstacle->IsStageBounds() && obstacle->IsUseMeshCollider()) {
+            continue;
+        }
+
         const OBB obsOBB = obstacle->GetOBB();
         const Vector3 diff = {
             enemyOBB.center.x - obsOBB.center.x,
