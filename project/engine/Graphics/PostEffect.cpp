@@ -158,7 +158,7 @@ void PostEffect::DrawImGui() {
 
     // エフェクト選択
     const char *items[] = { "Normal", "Grayscale", "Invert", "Sepia",
-        "Vignette", "3x3 Box Filter", "5x5 Box Filter", "Gaussian Blur", "Edge Detection", "Radial Blur", "Dissolve","Random Noise", "Vignette Smoothing", "Fold Wave (Glitch/Chroma)" };
+        "Vignette", "3x3 Box Filter", "5x5 Box Filter", "Gaussian Blur", "Edge Detection", "Radial Blur", "Dissolve","Random Noise", "Vignette Smoothing", "Fold Wave (Glitch/Chroma)", "System Shutdown (CRT)" };
     ImGui::Combo("Type", &param_.effectType, items, IM_ARRAYSIZE(items));
 
     ImGui::Separator();
@@ -197,6 +197,11 @@ void PostEffect::DrawImGui() {
         // ノイズ画像を切り替えるメニュー
         const char *noiseItems[] = { "noise0.png", "noise1.png" };
         ImGui::Combo("Noise Texture", &noiseIndex_, noiseItems, IM_ARRAYSIZE(noiseItems));
+    }
+    else if (param_.effectType == 14) { // System Shutdown (CRT)
+        ImGui::Text("System Shutdown Parameters");
+        ImGui::SliderFloat("Progress", &param_.dissolveThreshold, 0.0f, 1.0f);
+        ImGui::SliderFloat("Glitch Strength", &param_.blurIntensity, 0.0f, 1.0f);
     }
     ImGui::End();
 #endif

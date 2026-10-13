@@ -126,6 +126,7 @@ void TitleScene::Initialize() {
 	// 本編と同じプレイヤー機を、タイトルでは入力なしの自動飛行として見せる。
 	titlePlayer_ = std::make_unique<Player>();
 	titlePlayer_->Initialize("vf-15c/scene.gltf");
+	titlePlayer_->SetBoosterRibbonTrailEnabled(false);
 	launchSoundData_ = AudioManager::GetInstance()->LoadWave("resources/Alarm01.wav");
 
 	selectedMenuItem_ = MenuItem::Start;
@@ -135,6 +136,12 @@ void TitleScene::Initialize() {
 	titleFlightFrame_ = 0;
 	launchFrame_ = 0;
 	launchFadeAlpha_ = 0.0f;
+	if (isPendingFadeIn_) {
+		titleFadeInAlpha_ = 1.0f;
+		isPendingFadeIn_ = false;
+	} else {
+		titleFadeInAlpha_ = 0.0f;
+	}
 	// 起動直後のタイトル背景は、専用の飛行デモではなく本編のプレイ背景にする。
 	backgroundMode_ = BackgroundMode::GameplayBackground;
 	gameplayBackground_ = std::make_unique<GamePlayScene>(GamePlayScene::Mode::TitleBackground);
@@ -184,10 +191,21 @@ void TitleScene::Update() {
 		return;
 	}
 
+	if (titleFadeInAlpha_ > 0.0f) {
+		constexpr float kFadeSpeed = 1.0f / 22.0f; // 約0.36秒でスッと明転
+		titleFadeInAlpha_ -= kFadeSpeed;
+		if (titleFadeInAlpha_ <= 0.0f) {
+			titleFadeInAlpha_ = 0.0f;
+		}
+	}
+
 	Input* input = Input::GetInstance();
+	const bool canAcceptInput = (titleFadeInAlpha_ <= 0.15f);
 	if (isSettingsOpen_) {
-		UpdateSettingsInput();
-	} else {
+		if (canAcceptInput) {
+			UpdateSettingsInput();
+		}
+	} else if (canAcceptInput) {
 		const int itemCount = static_cast<int>(MenuItem::Count);
 		int selection = static_cast<int>(selectedMenuItem_);
 		if (input->TriggerKey(DIK_UP) || input->TriggerKey(DIK_W)) {
@@ -246,6 +264,9 @@ void TitleScene::ToggleBackgroundMode() {
 			gameplayBackground_.reset();
 		}
 		backgroundMode_ = BackgroundMode::FlightDemo;
+		if (titlePlayer_) {
+			titlePlayer_->SetBoosterRibbonTrailEnabled(false);
+		}
 		Object3dCommon::GetInstance()->SetDefaultCamera(camera.get());
 		UpdateTitleFlight();
 	}
@@ -487,6 +508,18 @@ void TitleScene::Draw() {
 			titleControlsGuideSprite_->Update();
 			titleControlsGuideSprite_->Draw();
 		}
+	}
+
+	// シャットダウン遷移から戻った際の黒からのフェードイン
+	if (titleFadeInAlpha_ > 0.0f && menuPanelSprite_) {
+		menuPanelSprite_->SetPosition({ 0.0f, 0.0f });
+		menuPanelSprite_->SetSize({
+			static_cast<float>(WinApp::GetClientWidth()),
+			static_cast<float>(WinApp::GetClientHeight())
+		});
+		menuPanelSprite_->SetColor({ 0.0f, 0.0f, 0.0f, titleFadeInAlpha_ });
+		menuPanelSprite_->Update();
+		menuPanelSprite_->Draw();
 	}
 }
 

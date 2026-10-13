@@ -65,6 +65,7 @@ public:
 	// タイトル背景の地形を残したまま出撃演出へ移行する。
 	void BeginTitleLaunch();
 	Vector3 GetTitleLaunchForward() const { return titleLaunchForward_; }
+	Player* GetPlayer() const { return player_.get(); }
 
 	// UIの更新
 
@@ -259,6 +260,13 @@ private:
 	bool isPaused_ = false;
 	// false: ゲームに戻る / true: タイトルに戻る
 	bool isPauseTitleSelected_ = false;
+	// ポーズメニューからの通信切断・システムシャットダウン遷移演出
+	void StartReturnToTitleTransition();
+	void UpdateReturnToTitleTransition();
+	void DrawReturnToTitleOverlay(float screenWidth, float screenHeight);
+	bool isAbortingToTitle_ = false;
+	int abortToTitleTimer_ = 0;
+	static constexpr int kAbortToTitleDurationFrames = 38;
 
 
 	// 障害物

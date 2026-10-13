@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "3D/Object3d.h"
 #include "3D/Trail.h"
 #include "engine/math/MyMath.h"
@@ -49,6 +49,10 @@ public:
     void SetPlacementMarkersVisible(bool visible) { showPlacementMarkers_ = visible; }
     bool GetEditorPreviewAcceleration() const { return editorPreviewAccelerating_; }
     void SetEditorPreviewAcceleration(bool accelerating) { editorPreviewAccelerating_ = accelerating; }
+    void SetRibbonTrailEnabled(bool enabled) { ribbonTrailEnabled_ = enabled; }
+    bool IsRibbonTrailEnabled() const { return ribbonTrailEnabled_; }
+    void SetThrusterPlumeEnabled(bool enabled) { thrusterPlumeEnabled_ = enabled; }
+    bool IsThrusterPlumeEnabled() const { return thrusterPlumeEnabled_; }
     const EffectSettings& GetEffectSettings() const { return effectSettings_; }
     void SetEffectSettings(const EffectSettings& settings);
     void ResetEffectSettings();
@@ -86,6 +90,8 @@ private:
     EffectSettings effectSettings_;
     bool showPlacementMarkers_ = false;
     bool editorPreviewAccelerating_ = true;
+    bool ribbonTrailEnabled_ = true;
+    bool thrusterPlumeEnabled_ = true;
     float accelerationBlend_ = 0.0f;
     int lastMode_ = -1;
     float time_ = 0.0f;

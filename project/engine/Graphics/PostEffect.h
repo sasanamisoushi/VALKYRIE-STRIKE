@@ -24,6 +24,12 @@ public:
         param_.effectType = 9;
         param_.blurIntensity = intensity;
     }
+    // 通信切断・システムシャットダウン（ブラウン管テレビ電源OFFとグリッチ）
+    void SetSystemShutdown(float progress, float glitchIntensity) {
+        param_.effectType = 14;
+        param_.dissolveThreshold = progress;
+        param_.blurIntensity = glitchIntensity;
+    }
 
     // パラメータをまとめた構造体（HLSLと並びを合わせる）
     struct PostEffectParam {

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "engine/Camera/Camera.h"
 #include "3D/Object3d.h"
 #include "Game/base/BaseScene.h"
@@ -18,7 +18,11 @@ public:
 	void Update() override;
 
 	void Draw() override;
+	// ポーズ等の中断遷移からタイトルへ戻った時のフェードイン制御
+	static void SetPendingFadeIn(bool pending) { isPendingFadeIn_ = pending; }
 private:
+	static inline bool isPendingFadeIn_ = false;
+	float titleFadeInAlpha_ = 0.0f;
 	enum class MenuItem {
 		Start,
 		Settings,

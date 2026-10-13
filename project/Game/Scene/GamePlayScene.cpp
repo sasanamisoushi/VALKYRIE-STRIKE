@@ -21,6 +21,7 @@
 #include "Game/editor/EditorReceiver.h"
 #include "Game/enemy/Boss.h"
 #include "Game/base/GameSettings.h"
+#include "Game/Scene/TitleScene.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -415,11 +416,16 @@ void GamePlayScene::Initialize() {
 	gameOverTimer_ = 0;
 	isPaused_ = false;
 	isPauseTitleSelected_ = false;
+	isAbortingToTitle_ = false;
+	abortToTitleTimer_ = 0;
 	// 通常のゲーム起動では、編集ツールの再生ボタンを押さなくても最初から操作できる。
 	// シミュレーション専用起動だけは下で停止状態にする。
 	isEditorPreviewPlaying_ = !IsSimulationMode();
 
 	ReloadSceneJson();
+	if (IsTitleBackgroundMode() && player_) {
+		player_->SetBoosterRibbonTrailEnabled(false);
+	}
 	if (!IsSimulationMode() && !IsTitleBackgroundMode()) {
 		GameStartTransitionData titleTransition;
 		if (GameStartTransition::Consume(titleTransition) && player_) {
@@ -955,6 +961,12 @@ void GamePlayScene::Update() {
 	const bool canUseKeyboardInput = !IsTitleBackgroundMode() && !IsImGuiKeyboardCaptureActive();
 	const bool canUseMouseInput = !IsTitleBackgroundMode() && !IsImGuiMouseCaptureActive();
 	const bool canUsePlayerInput = canUseKeyboardInput && canUseMouseInput;
+	// ポーズメニューからの通信切断・システムシャットダウン演出進行中
+	if (isAbortingToTitle_) {
+		UpdateReturnToTitleTransition();
+		return;
+	}
+
 	if (!IsSimulationMode() && !IsTitleBackgroundMode() && !isGameOver_ && canUseKeyboardInput) {
 		if (Input::GetInstance()->TriggerKey(DIK_ESCAPE)) {
 			// Esc はいつでも素早くゲームへ戻れるショートカットにする。
@@ -971,7 +983,7 @@ void GamePlayScene::Update() {
 			}
 			if (Input::GetInstance()->TriggerKey(DIK_SPACE)) {
 				if (isPauseTitleSelected_) {
-					SceneManager::GetInstance()->ChangeScene("TITLE");
+					StartReturnToTitleTransition();
 					return;
 				}
 				isPaused_ = false;
@@ -1415,7 +1427,7 @@ void GamePlayScene::Update() {
 			const float yaw = std::atan2(velocity.x, velocity.z);
 			const float pitch = horizontalSpeed > 0.0001f ? -std::atan2(velocity.y, horizontalSpeed) : 0.0f;
 			player_->SetVelocity(velocity);
-			player_->UpdatePresentation(position, { pitch, yaw, roll }, (std::max)(0.9f, horizontalSpeed * 7.0f), true);
+			player_->UpdatePresentation(position, { pitch, yaw, roll }, (std::max)(0.9f, horizontalSpeed * 7.0f), false);
 		} else if (updateSelectedPlayer) {
 			if (introBoostFrames_ > 0) {
 				const float progress = 1.0f - static_cast<float>(introBoostFrames_) /
@@ -2735,7 +2747,7 @@ void GamePlayScene::DrawOverlay() {
 	// ImGui の有無に関係なく、実行ファイルのゲーム画面にも操作方法を出す。
 	if (!isPaused_ && !isGameOver_ && GameSettings::GetInstance().IsControlGuideVisible() && controlsGuideSprite_) {
 		controlsGuideSprite_->SetPosition({ 18.0f, 18.0f });
-		controlsGuideSprite_->SetSize({ 320.0f, 213.0f });
+		controlsGuideSprite_->SetSize({ 400.0f, 255.0f });
 		controlsGuideSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.96f });
 		controlsGuideSprite_->Update();
 		controlsGuideSprite_->Draw();
@@ -2801,7 +2813,7 @@ void GamePlayScene::DrawOverlay() {
 			const ImU32 guideLabelColor = IM_COL32(158, 207, 226, 245);
 			const ImU32 guideKeyColor = IM_COL32(244, 250, 255, 255);
 			constexpr float kGuideFontSize = 14.0f;
-			hudText->AddText(nullptr, 16.0f, toGameView(kGuideX + 14.0f, kGuideY + 10.0f), guideTitleColor, "CONTROLS");
+			hudText->AddText(nullptr, 16.0f, toGameView(kGuideX + 14.0f, kGuideY + 10.0f), guideTitleColor, "操作方法");
 			const ImVec2 modeSize = ImGui::CalcTextSize(modeName);
 			hudText->AddText(nullptr, kGuideFontSize, toGameView(kGuideX + kGuideWidth - 18.0f - modeSize.x, kGuideY + 12.0f), guideModeColor, modeName);
 
@@ -2809,14 +2821,14 @@ void GamePlayScene::DrawOverlay() {
 				hudText->AddText(nullptr, kGuideFontSize, toGameView(kGuideX + 16.0f, y), guideLabelColor, label);
 				hudText->AddText(nullptr, kGuideFontSize, toGameView(kGuideX + 170.0f, y), guideKeyColor, key);
 			};
-			drawGuideRow(kGuideY + 54.0f, "MOVE", "W / S");
-			drawGuideRow(kGuideY + 76.0f, "UP / DOWN", "SPACE / SHIFT");
-			drawGuideRow(kGuideY + 98.0f, "LATERAL", lateralKey);
-			drawGuideRow(kGuideY + 124.0f, "GUN FIRE", "LEFT MOUSE");
-			drawGuideRow(kGuideY + 146.0f, "MISSILE LOCK", "HOLD RIGHT MOUSE");
-			drawGuideRow(kGuideY + 168.0f, "LOCK / RELEASE", "TAB / X");
-			drawGuideRow(kGuideY + 190.0f, "TRANSFORM", "1 / 2 / 3");
-			drawGuideRow(kGuideY + 212.0f, "PAUSE", "ESC");
+			drawGuideRow(kGuideY + 54.0f, "前進 / 後退", "W / S");
+			drawGuideRow(kGuideY + 76.0f, "上昇 / 下降", "SPACE / SHIFT");
+			drawGuideRow(kGuideY + 98.0f, "左右移動", lateralKey);
+			drawGuideRow(kGuideY + 124.0f, "機銃発射", "左クリック");
+			drawGuideRow(kGuideY + 146.0f, "ミサイル照準", "右クリック長押し");
+			drawGuideRow(kGuideY + 168.0f, "ロック / 解除", "TAB / X");
+			drawGuideRow(kGuideY + 190.0f, "変形", "1 / 2 / 3");
+			drawGuideRow(kGuideY + 212.0f, "一時停止", "ESC");
 		}
 	}
 #endif
@@ -2874,6 +2886,11 @@ void GamePlayScene::DrawOverlay() {
 }
 
 void GamePlayScene::DrawPauseOverlay(float screenWidth, float screenHeight) {
+	if (isAbortingToTitle_) {
+		DrawReturnToTitleOverlay(screenWidth, screenHeight);
+		return;
+	}
+
 	if (!isPaused_ || !pauseOverlaySprite_ || !pausePanelSprite_) {
 		return;
 	}
@@ -2965,6 +2982,163 @@ void GamePlayScene::DrawPauseOverlay(float screenWidth, float screenHeight) {
 			IM_COL32(185, 220, 240, 255), "ESC : RESUME");
 	}
 #endif
+}
+
+void GamePlayScene::StartReturnToTitleTransition() {
+	if (isAbortingToTitle_) {
+		return;
+	}
+	isAbortingToTitle_ = true;
+	abortToTitleTimer_ = 0;
+
+	// 通信切断: BGMやボイスの音量を即座に落として通信途絶感を出す
+	if (pVoice1) {
+		pVoice1->SetVolume(0.0f);
+	}
+	if (pVoice2) {
+		pVoice2->SetVolume(0.0f);
+	}
+	if (pSongVoice) {
+		pSongVoice->SetVolume(0.0f);
+	}
+
+	// ポストエフェクトを即座に通信切断・シャットダウン初期状態（ノイズ・走査線）に切り替え
+	if (PostEffect::GetInstance()) {
+		PostEffect::GetInstance()->SetSystemShutdown(0.0f, 1.0f);
+	}
+}
+
+void GamePlayScene::UpdateReturnToTitleTransition() {
+	abortToTitleTimer_++;
+	const float progress = std::clamp(
+		static_cast<float>(abortToTitleTimer_) / static_cast<float>(kAbortToTitleDurationFrames),
+		0.0f, 1.0f);
+
+	float glitchIntensity = 1.0f;
+	if (progress > 0.85f) {
+		glitchIntensity = std::clamp((1.0f - progress) / 0.15f, 0.0f, 1.0f);
+	}
+
+	if (PostEffect::GetInstance()) {
+		PostEffect::GetInstance()->SetSystemShutdown(progress, glitchIntensity);
+	}
+
+	if (abortToTitleTimer_ >= kAbortToTitleDurationFrames) {
+		// 完全暗転到達 -> ポストエフェクトを戻し、タイトル画面へ遷移
+		if (PostEffect::GetInstance()) {
+			PostEffect::GetInstance()->SetEffectType(0);
+		}
+		TitleScene::SetPendingFadeIn(true);
+		SceneManager::GetInstance()->ChangeScene("TITLE");
+		return;
+	}
+}
+
+void GamePlayScene::DrawReturnToTitleOverlay(float screenWidth, float screenHeight) {
+	if (!pauseOverlaySprite_ || !pausePanelSprite_) {
+		return;
+	}
+
+	const float progress = std::clamp(
+		static_cast<float>(abortToTitleTimer_) / static_cast<float>(kAbortToTitleDurationFrames),
+		0.0f, 1.0f);
+
+	auto drawBox = [&](float x, float y, float w, float h, const Vector4& color) {
+		if (w <= 0.0f || h <= 0.0f) return;
+		pausePanelSprite_->SetPosition({ x, y });
+		pausePanelSprite_->SetSize({ w, h });
+		pausePanelSprite_->SetColor(color);
+		pausePanelSprite_->Update();
+		pausePanelSprite_->Draw();
+	};
+
+	// 1. 完全暗転フェーズ (progress >= 0.95)
+	if (progress >= 0.95f) {
+		drawBox(0.0f, 0.0f, screenWidth, screenHeight, { 0.0f, 0.0f, 0.0f, 1.0f });
+		return;
+	}
+
+	// 2. ブロックノイズ・走査線バーストフェーズ (progress < 0.28)
+	// SFらしさを強調する通信切断フラッシュ＆デジタルグリッチ帯
+	if (progress < 0.28f) {
+		const float burstT = progress / 0.28f;
+		const float alpha = (1.0f - burstT * 0.4f);
+		// ランダムなグリッチ帯（疑似乱数で毎フレーム位置を変動）
+		for (int i = 0; i < 7; ++i) {
+			float seed = static_cast<float>((abortToTitleTimer_ * 17 + i * 37) % 100) / 100.0f;
+			float bandY = seed * screenHeight;
+			float bandH = 3.0f + static_cast<float>((abortToTitleTimer_ * 7 + i * 19) % 20);
+			float bandW = screenWidth * (0.35f + 0.65f * static_cast<float>((i * 13) % 10) / 10.0f);
+			float bandX = static_cast<float>((abortToTitleTimer_ * 29 + i * 47) % static_cast<int>((std::max)(screenWidth - bandW, 1.0f)));
+			Vector4 bandCol = (i % 2 == 0)
+				? Vector4{ 0.05f, 0.85f, 1.0f, 0.45f * alpha } // シアン
+				: Vector4{ 1.0f, 0.25f, 0.15f, 0.35f * alpha }; // 警告レッド
+			drawBox(bandX, bandY, bandW, bandH, bandCol);
+		}
+	}
+
+	// 3. ブラウン管テレビ電源OFF（CRT Collapse）
+	// progress 0.18 ～ 0.74 : 上下から中央に向かって急速に潰れる（Vertical Collapse）
+	// progress 0.72 ～ 0.94 : 水平の細い発光線が左右から中央へ「プツッ」と収束（Horizontal Pinch / Snap）
+	const float centerY = screenHeight * 0.5f;
+	const float centerX = screenWidth * 0.5f;
+
+	// 上下開口度
+	const float vProgress = std::clamp((progress - 0.18f) / 0.54f, 0.0f, 1.0f);
+	const float vOpen = (std::max)(std::pow(1.0f - vProgress, 2.5f), 0.003f);
+	const float halfH = screenHeight * 0.5f * vOpen;
+
+	// 左右開口度
+	const float hProgress = std::clamp((progress - 0.72f) / 0.22f, 0.0f, 1.0f);
+	const float hOpen = std::pow(1.0f - hProgress, 3.0f);
+	const float halfW = screenWidth * 0.5f * hOpen;
+
+	// 上下ブラックシャッター (黒ベタ塗り)
+	const float topShutterHeight = (std::max)(centerY - halfH, 0.0f);
+	if (topShutterHeight > 0.0f) {
+		drawBox(0.0f, 0.0f, screenWidth, topShutterHeight, { 0.0f, 0.0f, 0.0f, 1.0f });
+	}
+	const float bottomShutterY = centerY + halfH;
+	const float bottomShutterHeight = screenHeight - bottomShutterY;
+	if (bottomShutterHeight > 0.0f) {
+		drawBox(0.0f, bottomShutterY, screenWidth, bottomShutterHeight, { 0.0f, 0.0f, 0.0f, 1.0f });
+	}
+
+	// 左右ブラックシャッター（水平収束中）
+	if (hProgress > 0.0f) {
+		const float leftShutterW = (std::max)(centerX - halfW, 0.0f);
+		if (leftShutterW > 0.0f) {
+			drawBox(0.0f, centerY - halfH, leftShutterW, halfH * 2.0f, { 0.0f, 0.0f, 0.0f, 1.0f });
+		}
+		const float rightShutterX = centerX + halfW;
+		const float rightShutterW = screenWidth - rightShutterX;
+		if (rightShutterW > 0.0f) {
+			drawBox(rightShutterX, centerY - halfH, rightShutterW, halfH * 2.0f, { 0.0f, 0.0f, 0.0f, 1.0f });
+		}
+	}
+
+	// ブラウン管の上下境界・中央ビームの白熱・シアン発光線
+	if (vProgress > 0.05f && progress < 0.94f) {
+		const float lineAlpha = (std::min)(vProgress * 1.5f, 1.0f) * (1.0f - std::clamp((progress - 0.90f) / 0.04f, 0.0f, 1.0f));
+		const float currentLineWidth = (hProgress > 0.0f) ? halfW * 2.0f : screenWidth;
+		const float currentLineX = (hProgress > 0.0f) ? (centerX - halfW) : 0.0f;
+
+		// 外側のシアン発光ハロー
+		drawBox(currentLineX, centerY - 3.5f, currentLineWidth, 7.0f, { 0.2f, 0.8f, 1.0f, 0.65f * lineAlpha });
+		// 中心部の強烈なホワイトコア線（電子ビーム集束）
+		drawBox(currentLineX, centerY - 1.0f, currentLineWidth, 2.0f, { 1.0f, 1.0f, 1.0f, 0.95f * lineAlpha });
+
+		// 水平収束時の中心光点（「プツッ」と消える最後の閃光）
+		if (hProgress > 0.5f) {
+			const float sparkProgress = (hProgress - 0.5f) / 0.5f;
+			const float sparkSize = (1.0f - sparkProgress) * 16.0f + 4.0f;
+			const float sparkAlpha = (1.0f - sparkProgress) * lineAlpha;
+			drawBox(centerX - sparkSize * 0.5f, centerY - sparkSize * 0.5f, sparkSize, sparkSize,
+				{ 1.0f, 1.0f, 1.0f, sparkAlpha });
+			drawBox(centerX - sparkSize, centerY - sparkSize, sparkSize * 2.0f, sparkSize * 2.0f,
+				{ 0.2f, 0.85f, 1.0f, 0.5f * sparkAlpha });
+		}
+	}
 }
 
 void GamePlayScene::DrawRadar() {

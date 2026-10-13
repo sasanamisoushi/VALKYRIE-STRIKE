@@ -241,7 +241,7 @@ void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, 
         * (1.0f + accelerationBlend_ * (effectSettings_.boostWidthMultiplier - 1.0f));
     const float targetAlpha = std::clamp(0.40f + cappedSpeedRatio * 0.40f
         + accelerationBlend_ * 0.18f, 0.0f, 0.92f);
-    const float targetRibbonIntensity = cappedSpeedRatio <= 0.06f ? 0.0f : std::clamp(
+    const float targetRibbonIntensity = (!ribbonTrailEnabled_ || cappedSpeedRatio <= 0.06f) ? 0.0f : std::clamp(
         0.18f + cappedSpeedRatio * 0.72f + accelerationBlend_ * 0.20f, 0.0f, 1.0f);
 
     for (auto& burner : burners_) {
@@ -251,7 +251,12 @@ void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, 
         burner.plumeRadius = burner.plumeRadius > 0.0f
             ? burner.plumeRadius + (targetRadius - burner.plumeRadius) * 0.25f : targetRadius;
         burner.color.w += (targetAlpha - burner.color.w) * 0.25f;
-        burner.ribbonIntensity += (targetRibbonIntensity - burner.ribbonIntensity) * 0.20f;
+        burner.ribbonIntensity = ribbonTrailEnabled_
+            ? burner.ribbonIntensity + (targetRibbonIntensity - burner.ribbonIntensity) * 0.20f
+            : 0.0f;
+        if (!ribbonTrailEnabled_) {
+            burner.hasRibbonOrigin = false;
+        }
     }
     RefreshPlacement(position, rotation, playerMode);
 }
@@ -289,51 +294,55 @@ void BoosterEffect::Draw(Camera* camera) {
     }
 
     // 噴射炎は加算合成しつつ、機体・地形との前後関係を守る。
-    object3dCommon->SetThrusterDrawSettings();
-    for (auto& burner : burners_) {
-        if (burner.trail && burner.trailObject && burner.trailObject->GetModel()) {
-            const float plumeScale = std::clamp(
-                (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
-                0.2f, 3.0f);
-            std::vector<VertexData> trailVertices = burner.trail->GenerateThrusterVertices(
-                camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
-                burner.adjustedExhaustDirection,
-                burner.plumeLength * effectSettings_.lengthScale * plumeScale, time_, burner.color.w,
-                effectSettings_.coreLengthRatio, effectSettings_.glowScale);
+    if (thrusterPlumeEnabled_) {
+        object3dCommon->SetThrusterDrawSettings();
+        for (auto& burner : burners_) {
+            if (burner.trail && burner.trailObject && burner.trailObject->GetModel()) {
+                const float plumeScale = std::clamp(
+                    (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
+                    0.2f, 3.0f);
+                std::vector<VertexData> trailVertices = burner.trail->GenerateThrusterVertices(
+                    camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
+                    burner.adjustedExhaustDirection,
+                    burner.plumeLength * effectSettings_.lengthScale * plumeScale, time_, burner.color.w,
+                    effectSettings_.coreLengthRatio, effectSettings_.glowScale);
 
-            // 頂点の発光色を保ち、材質には明るさの倍率だけを掛ける。
-            const float brightness = effectSettings_.brightness;
-            burner.trailObject->GetModel()->SetColor({ brightness, brightness, brightness, 1.0f });
-            
-            burner.trailObject->GetModel()->UpdateTrailVertices(trailVertices, false);
-            burner.trailObject->Update(camera);
-            
-            burner.trailObject->Draw();
+                // 頂点の発光色を保ち、材質には明るさの倍率だけを掛ける。
+                const float brightness = effectSettings_.brightness;
+                burner.trailObject->GetModel()->SetColor({ brightness, brightness, brightness, 1.0f });
+                
+                burner.trailObject->GetModel()->UpdateTrailVertices(trailVertices, false);
+                burner.trailObject->Update(camera);
+                
+                burner.trailObject->Draw();
+            }
         }
     }
 
     // 立体の炎の後ろへ、実際のノズル移動履歴から作った光の速度線を重ねる。
     // カメラ正面を向く帯なので、急旋回時でも細いラインとして視認できる。
-    object3dCommon->SetEffectDrawSettings();
-    for (auto& burner : burners_) {
-        if (!burner.ribbonTrail || !burner.ribbonObject || !burner.ribbonObject->GetModel() ||
-            burner.ribbonIntensity <= 0.02f) {
-            continue;
+    if (ribbonTrailEnabled_) {
+        object3dCommon->SetEffectDrawSettings();
+        for (auto& burner : burners_) {
+            if (!burner.ribbonTrail || !burner.ribbonObject || !burner.ribbonObject->GetModel() ||
+                burner.ribbonIntensity <= 0.02f) {
+                continue;
+            }
+            const float plumeScale = std::clamp(
+                (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
+                0.2f, 3.0f);
+            const float ribbonWidth = (0.030f + 0.075f * burner.ribbonIntensity) *
+                effectSettings_.widthScale * plumeScale;
+            std::vector<VertexData> ribbonVertices = burner.ribbonTrail->GenerateRibbonVertices(
+                camera, ribbonWidth, { 0.42f, 0.82f, 1.35f, 0.82f }, burner.ribbonIntensity);
+            if (ribbonVertices.empty()) {
+                continue;
+            }
+            burner.ribbonObject->GetModel()->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+            burner.ribbonObject->GetModel()->UpdateTrailVertices(ribbonVertices, true);
+            burner.ribbonObject->Update(camera);
+            burner.ribbonObject->Draw();
         }
-        const float plumeScale = std::clamp(
-            (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
-            0.2f, 3.0f);
-        const float ribbonWidth = (0.030f + 0.075f * burner.ribbonIntensity) *
-            effectSettings_.widthScale * plumeScale;
-        std::vector<VertexData> ribbonVertices = burner.ribbonTrail->GenerateRibbonVertices(
-            camera, ribbonWidth, { 0.42f, 0.82f, 1.35f, 0.82f }, burner.ribbonIntensity);
-        if (ribbonVertices.empty()) {
-            continue;
-        }
-        burner.ribbonObject->GetModel()->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
-        burner.ribbonObject->GetModel()->UpdateTrailVertices(ribbonVertices, true);
-        burner.ribbonObject->Update(camera);
-        burner.ribbonObject->Draw();
     }
     object3dCommon->SetEffectDrawSettings();
 }

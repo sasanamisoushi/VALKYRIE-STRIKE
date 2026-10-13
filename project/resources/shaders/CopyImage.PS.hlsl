@@ -363,6 +363,101 @@ PixelShaderOutput main(VertexShaderOutput input)
         
         output.color = finalColor;
     }
+    else if (effectType == 14)
+    {
+        // 14: 通信切断・システムシャットダウン (SF CRT Shutdown & Glitch)
+        // dissolveThreshold: シャットダウン進行度 (0.0: 切断開始 ～ 1.0: 完全暗転)
+        // blurIntensity: グリッチ・走査線強度 (0.0 ～ 1.0)
+        float progress = saturate(dissolveThreshold);
+        float glitchStrength = saturate(blurIntensity);
+
+        // 1. 完全暗転フェーズ (0.96以上)
+        if (progress >= 0.96f)
+        {
+            output.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+            return output;
+        }
+
+        float2 uv = input.texcoord;
+
+        // 2. ブロックノイズと水平スライスグリッチ
+        // ランダムな水平帯ごとにUVをずらす
+        float sliceY = floor(uv.y * 36.0f);
+        float sliceNoise = rand(float2(sliceY, floor(time * 24.0f)));
+        float blockTrigger = step(0.60f - glitchStrength * 0.35f, sliceNoise);
+        float hShift = (rand(float2(sliceNoise, time * 15.0f)) - 0.5f) * 0.12f * blockTrigger * glitchStrength;
+        uv.x += hShift;
+
+        // 微小な走査ジッター
+        uv.x += (rand(float2(time * 60.0f, uv.y)) - 0.5f) * 0.015f * glitchStrength;
+
+        // 3. ブラウン管テレビ電源OFF（CRT Collapse）
+        // progress: 0.00 ～ 0.20 : 通信切断グリッチ先行（画面全体でノイズ・走査線が走る）
+        // progress: 0.20 ～ 0.75 : 上下から中央に向かって急速に潰れる（Vertical Collapse）
+        // progress: 0.75 ～ 0.94 : 水平の細い発光線が左右から中央へ「プツッ」と収束（Horizontal Pinch / Snap）
+        // progress: 0.94 ～ 1.00 : 中心の光点が消えて真っ暗（Fade to Black）
+
+        float vProgress = saturate((progress - 0.18f) / 0.55f);
+        // 上下開口度 (1.0 -> 0.003)
+        // キレのあるイージング (昔のテレビ特有のシュッと中央へ吸い込まれる挙動)
+        float vOpen = pow(1.0f - vProgress, 2.5f);
+        vOpen = max(vOpen, 0.003f);
+
+        float hProgress = saturate((progress - 0.72f) / 0.22f);
+        // 左右開口度 (1.0 -> 0.0)
+        float hOpen = pow(1.0f - hProgress, 3.0f);
+
+        float distY = abs(uv.y - 0.5f);
+        float distX = abs(uv.x - 0.5f);
+
+        // 範囲外は真っ暗（上下・左右のブラックシャッター）
+        if (distY > vOpen * 0.5f || (vProgress > 0.96f && distX > hOpen * 0.5f))
+        {
+            output.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+            return output;
+        }
+
+        // 潰れた画面内部のUV（上下方向へ圧縮マッピング、中央付近の画像が凝縮）
+        float2 crtUv = uv;
+        if (vProgress > 0.0f)
+        {
+            crtUv.y = 0.5f + (uv.y - 0.5f) / max(vOpen, 0.005f) * 0.5f;
+            crtUv.y = saturate(crtUv.y);
+        }
+
+        // 4. 色収差 (RGB Split)
+        float splitAmount = (0.012f + 0.025f * vProgress) * glitchStrength;
+        float r = gTexture.Sample(gSampler, crtUv + float2(splitAmount, 0.0f)).r;
+        float g = gTexture.Sample(gSampler, crtUv).g;
+        float b = gTexture.Sample(gSampler, crtUv - float2(splitAmount, 0.0f)).b;
+        float4 baseCol = float4(r, g, b, 1.0f);
+
+        // 5. 走査線（スキャンライン）
+        float scanline = sin(uv.y * 720.0f + time * 30.0f) * (0.15f + 0.25f * glitchStrength);
+        baseCol.rgb -= scanline;
+
+        // 6. 白黒・RGB粒子ノイズ
+        float grain = (rand(uv + float2(time * 33.0f, time * 77.0f)) - 0.5f) * 0.22f * glitchStrength;
+        baseCol.rgb += grain;
+
+        // 7. ブラウン管蛍光体集中（中央線に近づくほど高輝度・ホワイト/シアン化）
+        float phosphorIntensity = 1.0f + (1.0f - vOpen) * 2.8f;
+        float edgeGlow = smoothstep(0.0f, 1.0f, 1.0f - (distY / (vOpen * 0.5f + 1e-5f)));
+        float lineCore = pow(edgeGlow, 3.5f) * vProgress * 2.0f;
+
+        baseCol.rgb *= phosphorIntensity;
+        baseCol.rgb += float3(0.4f, 0.85f, 1.0f) * lineCore;
+
+        // 水平収束フェーズ（左右から点へ消える瞬間）
+        if (hProgress > 0.0f)
+        {
+            float pointGlow = saturate(1.0f - distX / (hOpen * 0.5f + 1e-5f));
+            baseCol.rgb += float3(1.0f, 1.0f, 1.0f) * pow(pointGlow, 2.0f) * 2.5f;
+            baseCol.rgb *= (1.0f - saturate((progress - 0.92f) / 0.04f));
+        }
+
+        output.color = float4(baseCol.rgb, 1.0f);
+    }
     else
     {
         // 0: ノーマル（そのまま）
