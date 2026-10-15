@@ -394,6 +394,7 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
   <ItemGroup>
     <None Include="resources\shaders\object3d.hlsli" />
     <None Include="resources\shaders\Thruster.PS.hlsl" />
+    <None Include="resources\shaders\RibbonTrail.PS.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

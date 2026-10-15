@@ -73,6 +73,7 @@ private:
         Vector3 nozzleOriginOffset;
         Vector3 exhaustDirection;
         Vector3 adjustedExhaustDirection;
+        Vector3 worldExhaustDirection = { 0.0f, 0.0f, -1.0f };
         Vector3 placementScale = { 1.0f, 1.0f, 1.0f };
         bool isExtraThruster = false;
         size_t extraThrusterIndex = 0;
@@ -80,6 +81,9 @@ private:
         float plumeLength = 0.0f;
         float plumeRadius = 0.0f;
         float ribbonIntensity = 0.0f;
+        // 1本のリボンの先頭2点。ノズル口→炎の先端→遅延した履歴として接続する。
+        Vector3 ribbonNozzleWorldPosition = { 0.0f, 0.0f, 0.0f };
+        Vector3 ribbonHeadWorldPosition = { 0.0f, 0.0f, 0.0f };
         Vector3 lastRibbonWorldExit = { 0.0f, 0.0f, 0.0f };
         bool hasRibbonOrigin = false;
     };

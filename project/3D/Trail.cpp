@@ -111,9 +111,11 @@ std::vector<VertexData> Trail::GenerateVertices(Camera *camera, float thickness)
 }
 
 std::vector<VertexData> Trail::GenerateRibbonVertices(Camera* camera, float thickness,
-    const Vector4& headColor, float intensity) {
+    const Vector4& headColor, const Vector3& nozzleExhaustDirection,
+    const Vector3& nozzlePosition, const Vector3& plumeTipPosition,
+    float intensity, float maxLength, float coreFadeLength) {
     std::vector<VertexData> vertices;
-    if (!camera || points_.size() < 2 || thickness <= 0.0f || intensity <= 0.001f) {
+    if (!camera || points_.empty() || thickness <= 0.0f || intensity <= 0.001f) {
         return vertices;
     }
 
@@ -130,29 +132,190 @@ std::vector<VertexData> Trail::GenerateRibbonVertices(Camera* camera, float thic
         return Vector3{ value.x * inverseLength, value.y * inverseLength, value.z * inverseLength };
     };
 
-    vertices.reserve(points_.size() * 2);
-    for (size_t index = 0; index < points_.size(); ++index) {
+    // 炎と光跡を一本にする。ノズル口から炎の先端へ進み、そこから遅延した
+    // 移動履歴へ連続させるため、すべてを一つのリボンの制御点にする。
+    std::vector<Vector3> sourcePoints;
+    sourcePoints.reserve(points_.size() + 2);
+    sourcePoints.push_back(nozzlePosition);
+    if (lengthSquared({
+            plumeTipPosition.x - sourcePoints.back().x,
+            plumeTipPosition.y - sourcePoints.back().y,
+            plumeTipPosition.z - sourcePoints.back().z }) > 0.00000001f) {
+        sourcePoints.push_back(plumeTipPosition);
+    }
+    for (const Vector3& point : points_) {
+        if (lengthSquared({
+                point.x - sourcePoints.back().x,
+                point.y - sourcePoints.back().y,
+                point.z - sourcePoints.back().z }) > 0.00000001f) {
+            sourcePoints.push_back(point);
+        }
+    }
+    if (sourcePoints.size() < 2) return vertices;
+
+    // The history is sampled once per frame, so simply joining the points makes
+    // a hard V-shaped corner when the player turns sharply.  Resample a cubic
+    // Catmull-Rom spline first; every original history point remains a control
+    // point, but the rendered ribbon rounds the transition between them.
+    const auto catmullRom = [](const Vector3& p0, const Vector3& p1,
+        const Vector3& p2, const Vector3& p3, float t) {
+        const float t2 = t * t;
+        const float t3 = t2 * t;
+        return Vector3{
+            0.5f * ((2.0f * p1.x) + (-p0.x + p2.x) * t +
+                (2.0f * p0.x - 5.0f * p1.x + 4.0f * p2.x - p3.x) * t2 +
+                (-p0.x + 3.0f * p1.x - 3.0f * p2.x + p3.x) * t3),
+            0.5f * ((2.0f * p1.y) + (-p0.y + p2.y) * t +
+                (2.0f * p0.y - 5.0f * p1.y + 4.0f * p2.y - p3.y) * t2 +
+                (-p0.y + 3.0f * p1.y - 3.0f * p2.y + p3.y) * t3),
+            0.5f * ((2.0f * p1.z) + (-p0.z + p2.z) * t +
+                (2.0f * p0.z - 5.0f * p1.z + 4.0f * p2.z - p3.z) * t2 +
+                (-p0.z + 3.0f * p1.z - 3.0f * p2.z + p3.z) * t3)
+        };
+    };
+    const auto cubicHermite = [](const Vector3& start, const Vector3& end,
+        const Vector3& startTangent, const Vector3& endTangent, float t) {
+        const float t2 = t * t;
+        const float t3 = t2 * t;
+        const float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+        const float h10 = t3 - 2.0f * t2 + t;
+        const float h01 = -2.0f * t3 + 3.0f * t2;
+        const float h11 = t3 - t2;
+        return Vector3{
+            h00 * start.x + h10 * startTangent.x + h01 * end.x + h11 * endTangent.x,
+            h00 * start.y + h10 * startTangent.y + h01 * end.y + h11 * endTangent.y,
+            h00 * start.z + h10 * startTangent.z + h01 * end.z + h11 * endTangent.z
+        };
+    };
+    std::vector<Vector3> curvePoints;
+    curvePoints.reserve(sourcePoints.size() * 4);
+    const auto appendPoint = [&](const Vector3& point) {
+        if (curvePoints.empty() || lengthSquared({
+                point.x - curvePoints.back().x,
+                point.y - curvePoints.back().y,
+                point.z - curvePoints.back().z }) > 0.00000001f) {
+            curvePoints.push_back(point);
+        }
+    };
+    for (size_t segment = 0; segment + 1 < sourcePoints.size(); ++segment) {
+        const Vector3& p0 = sourcePoints[segment == 0 ? 0 : segment - 1];
+        const Vector3& p1 = sourcePoints[segment];
+        const Vector3& p2 = sourcePoints[segment + 1];
+        const Vector3& p3 = sourcePoints[(std::min)(segment + 2, sourcePoints.size() - 1)];
+        const Vector3 segmentDelta = { p2.x - p1.x, p2.y - p1.y, p2.z - p1.z };
+        const float segmentLength = std::sqrt(lengthSquared(segmentDelta));
+        // Keep the smooth curve dense enough even at low frame rates, without
+        // generating an unbounded number of vertices during a teleport/jump.
+        const int subdivisions = std::clamp(
+            static_cast<int>(std::ceil(segmentLength / (std::max)(thickness * 0.65f, 0.025f))), 2, 12);
+        for (int step = 0; step < subdivisions; ++step) {
+            const float t = static_cast<float>(step) / subdivisions;
+            if (segment == 0 && segmentLength > 0.000001f && lengthSquared(nozzleExhaustDirection) > 0.000001f) {
+                // ノズルの向きと直前フレームの移動方向が大きく異なるときに、
+                // 排気方向をそのまま接線にすると L 字の折れ曲がりになる。
+                // その場合は履歴の接線へ滑らかに寄せ、方向がほぼ一致している
+                // ときだけノズル向きを強く残す。
+                const Vector3 historyDirection = normalizeOr(segmentDelta, { 0.0f, 0.0f, -1.0f });
+                const Vector3 exhaustDirection = normalizeOr(nozzleExhaustDirection, historyDirection);
+                const float directionAlignment = std::clamp(
+                    exhaustDirection.x * historyDirection.x +
+                    exhaustDirection.y * historyDirection.y +
+                    exhaustDirection.z * historyDirection.z, -1.0f, 1.0f);
+                // 90 度以上の差では排気方向の影響をほぼ除き、45 度以内で
+                // 徐々に本来のノズル方向へ戻す。これで急旋回時も丸い弧になる。
+                const float nozzleInfluence = std::clamp((directionAlignment - 0.05f) / 0.80f, 0.0f, 1.0f);
+                const Vector3 direction = normalizeOr({
+                    historyDirection.x + (exhaustDirection.x - historyDirection.x) * nozzleInfluence,
+                    historyDirection.y + (exhaustDirection.y - historyDirection.y) * nozzleInfluence,
+                    historyDirection.z + (exhaustDirection.z - historyDirection.z) * nozzleInfluence
+                }, historyDirection);
+                const Vector3 startTangent = {
+                    // 接線を短くして、最初の 1 区間だけが直線に見えるのを防ぐ。
+                    direction.x * segmentLength * (0.20f + 0.20f * nozzleInfluence),
+                    direction.y * segmentLength * (0.20f + 0.20f * nozzleInfluence),
+                    direction.z * segmentLength * (0.20f + 0.20f * nozzleInfluence)
+                };
+                const Vector3 endTangent = {
+                    (p3.x - p1.x) * 0.5f,
+                    (p3.y - p1.y) * 0.5f,
+                    (p3.z - p1.z) * 0.5f
+                };
+                appendPoint(cubicHermite(p1, p2, startTangent, endTangent, t));
+            } else {
+                appendPoint(catmullRom(p0, p1, p2, p3, t));
+            }
+        }
+    }
+    appendPoint(sourcePoints.back());
+    if (curvePoints.size() < 2) return vertices;
+
+    // A high-speed frame can move farther than several normal frames.  Crop
+    // by world distance after the curve is generated, rather than by a fixed
+    // number of samples, so the trail cannot suddenly stretch off-screen.
+    if (maxLength > 0.0f) {
+        std::vector<Vector3> limitedPoints;
+        limitedPoints.reserve(curvePoints.size());
+        limitedPoints.push_back(curvePoints.front());
+        float remainingLength = maxLength;
+        for (size_t index = 1; index < curvePoints.size() && remainingLength > 0.0f; ++index) {
+            const Vector3& previous = limitedPoints.back();
+            const Vector3& candidate = curvePoints[index];
+            const Vector3 delta = {
+                candidate.x - previous.x,
+                candidate.y - previous.y,
+                candidate.z - previous.z
+            };
+            const float segmentLength = std::sqrt(lengthSquared(delta));
+            if (segmentLength <= remainingLength) {
+                limitedPoints.push_back(candidate);
+                remainingLength -= segmentLength;
+            } else if (segmentLength > 0.000001f) {
+                const float ratio = remainingLength / segmentLength;
+                limitedPoints.push_back({
+                    previous.x + delta.x * ratio,
+                    previous.y + delta.y * ratio,
+                    previous.z + delta.z * ratio
+                });
+                break;
+            }
+        }
+        curvePoints = std::move(limitedPoints);
+    }
+    if (curvePoints.size() < 2) return vertices;
+
+    std::vector<float> distances(curvePoints.size(), 0.0f);
+    for (size_t index = 1; index < curvePoints.size(); ++index) {
+        distances[index] = distances[index - 1] + std::sqrt(lengthSquared({
+            curvePoints[index].x - curvePoints[index - 1].x,
+            curvePoints[index].y - curvePoints[index - 1].y,
+            curvePoints[index].z - curvePoints[index - 1].z }));
+    }
+    const float totalDistance = distances.back();
+    if (totalDistance <= 0.000001f) return vertices;
+
+    vertices.reserve(curvePoints.size() * 2);
+    for (size_t index = 0; index < curvePoints.size(); ++index) {
         Vector3 direction{};
-        if (index + 1 < points_.size()) {
+        if (index + 1 < curvePoints.size()) {
             direction = {
-                points_[index].x - points_[index + 1].x,
-                points_[index].y - points_[index + 1].y,
-                points_[index].z - points_[index + 1].z
+                curvePoints[index].x - curvePoints[index + 1].x,
+                curvePoints[index].y - curvePoints[index + 1].y,
+                curvePoints[index].z - curvePoints[index + 1].z
             };
         }
         if (lengthSquared(direction) <= 0.000001f && index > 0) {
             direction = {
-                points_[index - 1].x - points_[index].x,
-                points_[index - 1].y - points_[index].y,
-                points_[index - 1].z - points_[index].z
+                curvePoints[index - 1].x - curvePoints[index].x,
+                curvePoints[index - 1].y - curvePoints[index].y,
+                curvePoints[index - 1].z - curvePoints[index].z
             };
         }
         direction = normalizeOr(direction, { 0.0f, 0.0f, 1.0f });
 
         const Vector3 toCamera = normalizeOr({
-            cameraPosition.x - points_[index].x,
-            cameraPosition.y - points_[index].y,
-            cameraPosition.z - points_[index].z
+            cameraPosition.x - curvePoints[index].x,
+            cameraPosition.y - curvePoints[index].y,
+            cameraPosition.z - curvePoints[index].z
         }, { 0.0f, 1.0f, 0.0f });
         Vector3 right = MyMath::Cross(direction, toCamera);
         if (lengthSquared(right) <= 0.000001f) {
@@ -163,25 +326,34 @@ std::vector<VertexData> Trail::GenerateRibbonVertices(Camera* camera, float thic
         }
         right = normalizeOr(right, { 1.0f, 0.0f, 0.0f });
 
-        const float progress = 1.0f - static_cast<float>(index) /
-            static_cast<float>(points_.size() - 1);
-        // ノズル側を太く、軌跡の末端を糸のように細くして速度線に見せる。
-        const float halfWidth = thickness * (0.10f + 0.90f * progress);
-        const float fade = std::pow(progress, 0.62f) *
-            (progress <= 0.001f ? 0.0f : 1.0f);
-        const float colorScale = 0.30f + 0.70f * progress;
+        // Distance-based lifetime makes the fade stable even when a fast frame
+        // inserts more spline samples than a slow one.
+        const float progress = 1.0f - distances[index] / totalDistance;
+        // ノズル側から末端まで連続的に細くし、最後の一点だけで切れないようにする。
+        // 横方向のぼかしは RibbonTrail.PS.hlsl が担当する。
+        const float halfWidth = thickness * std::pow(progress, 0.72f);
+        const float fade = progress * progress * (3.0f - 2.0f * progress);
+        const float colorScale = 0.20f + 0.80f * std::sqrt(progress);
+        // 立体炎と重なる最初の区間も消さず、低い強度からなめらかに重ねる。
+        // これが炎の末端と光跡を同一の発光体に見せる接続部になる。急旋回時の
+        // 面の折れは弱く抑えつつ、透明な隙間は作らない。
+        const float coreBlend = coreFadeLength > 0.0001f
+            ? std::clamp(distances[index] / ((std::max)(coreFadeLength * 0.92f, 0.0001f)), 0.0f, 1.0f)
+            : 1.0f;
+        const float smoothCoreBlend = coreBlend * coreBlend * (3.0f - 2.0f * coreBlend);
+        const float coreOpacity = 0.18f + 0.82f * smoothCoreBlend;
         const Vector4 color = {
             headColor.x * colorScale,
             headColor.y * colorScale,
             headColor.z * colorScale,
-            headColor.w * intensity * fade
+            headColor.w * intensity * fade * coreOpacity
         };
 
         VertexData left{};
         left.position = {
-            points_[index].x - right.x * halfWidth,
-            points_[index].y - right.y * halfWidth,
-            points_[index].z - right.z * halfWidth,
+            curvePoints[index].x - right.x * halfWidth,
+            curvePoints[index].y - right.y * halfWidth,
+            curvePoints[index].z - right.z * halfWidth,
             1.0f
         };
         left.normal = { toCamera.x, toCamera.y, toCamera.z, 0.0f };
@@ -190,9 +362,9 @@ std::vector<VertexData> Trail::GenerateRibbonVertices(Camera* camera, float thic
 
         VertexData rightVertex = left;
         rightVertex.position = {
-            points_[index].x + right.x * halfWidth,
-            points_[index].y + right.y * halfWidth,
-            points_[index].z + right.z * halfWidth,
+            curvePoints[index].x + right.x * halfWidth,
+            curvePoints[index].y + right.y * halfWidth,
+            curvePoints[index].z + right.z * halfWidth,
             1.0f
         };
         rightVertex.texcoord.x = 1.0f;

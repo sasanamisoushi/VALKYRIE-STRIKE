@@ -180,8 +180,10 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
                 position.y + worldOffset.y, position.z + worldOffset.z });
             burner.positionMarkerObject->SetScale({ 0.045f, 0.045f, 0.045f });
         }
-        // 炎とリボンは同じノズル開口を始点にする。
+        // 炎はノズル開口から始め、リボンは下で炎の末端へ接続する。
         burner.adjustedExhaustDirection = MyMath::RotateVector(burner.exhaustDirection, placementRotation);
+        // 移動履歴へ曲がる前の接線にも、このフレームのノズル排気方向を使う。
+        burner.worldExhaustDirection = MyMath::RotateVector(burner.adjustedExhaustDirection, rotation);
         burner.placementScale = burnerPlacement.scale;
         const Vector3 localExit = {
             adjustedOffset.x + burner.adjustedExhaustDirection.x * kNozzleRearOffset,
@@ -201,22 +203,44 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
                 position.y + worldExitOffset.y,
                 position.z + worldExitOffset.z
             };
-            const Vector3 delta = {
-                worldExit.x - burner.lastRibbonWorldExit.x,
-                worldExit.y - burner.lastRibbonWorldExit.y,
-                worldExit.z - burner.lastRibbonWorldExit.z
+            // 光跡の履歴は、立体炎の先端そのものから採る。途中から採ると
+            // 炎の終端と履歴の始点が離れ、別エフェクトに見えてしまう。
+            const float placementScale = std::clamp(
+                (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
+                0.2f, 3.0f);
+            // 最外層の炎の末端と完全に同じ位置。リボンの最初の曲がりは
+            // 炎の内部で薄くブレンドし、末端から自然に尾を引かせる。
+            const float ribbonAnchorDistance = burner.plumeLength * effectSettings_.lengthScale
+                * placementScale * 1.04f;
+            const Vector3 ribbonStart = {
+                worldExit.x + burner.worldExhaustDirection.x * ribbonAnchorDistance,
+                worldExit.y + burner.worldExhaustDirection.y * ribbonAnchorDistance,
+                worldExit.z + burner.worldExhaustDirection.z * ribbonAnchorDistance
             };
-            const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+            burner.ribbonNozzleWorldPosition = worldExit;
+            burner.ribbonHeadWorldPosition = ribbonStart;
             if (burner.ribbonIntensity <= 0.02f) {
-                burner.ribbonTrail->SetOrigin(worldExit);
+                burner.ribbonTrail->SetOrigin(ribbonStart);
+                burner.lastRibbonWorldExit = ribbonStart;
                 burner.hasRibbonOrigin = false;
             } else if (!burner.hasRibbonOrigin) {
-                burner.ribbonTrail->SetOrigin(worldExit);
+                burner.ribbonTrail->SetOrigin(ribbonStart);
+                burner.lastRibbonWorldExit = ribbonStart;
                 burner.hasRibbonOrigin = true;
-            } else if (distanceSquared > 0.000001f) {
-                burner.ribbonTrail->Update(worldExit);
+            } else {
+                const Vector3 delta = {
+                    ribbonStart.x - burner.lastRibbonWorldExit.x,
+                    ribbonStart.y - burner.lastRibbonWorldExit.y,
+                    ribbonStart.z - burner.lastRibbonWorldExit.z
+                };
+                const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+                if (distanceSquared > 0.000001f) {
+                    // 各サンプルを実際の炎の先端へ置く。1点だけを遅延させないため、
+                    // 軌跡の途中だけが旗のようになびく現象を防げる。
+                    burner.ribbonTrail->Update(ribbonStart);
+                    burner.lastRibbonWorldExit = ribbonStart;
+                }
             }
-            burner.lastRibbonWorldExit = worldExit;
             burner.ribbonObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
             burner.ribbonObject->SetScale({ 1.0f, 1.0f, 1.0f });
             burner.ribbonObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
@@ -293,36 +317,35 @@ void BoosterEffect::Draw(Camera* camera) {
         object3dCommon->SetCommonDrawSettings();
     }
 
-    // 噴射炎は加算合成しつつ、機体・地形との前後関係を守る。
-    if (thrusterPlumeEnabled_) {
+    // 立体的な白熱芯。リボンと同じノズル口・同じ先端距離を基準にするため、
+    // 別エフェクトのような継ぎ目は作らない。
+    if (ribbonTrailEnabled_ && thrusterPlumeEnabled_) {
         object3dCommon->SetThrusterDrawSettings();
         for (auto& burner : burners_) {
-            if (burner.trail && burner.trailObject && burner.trailObject->GetModel()) {
-                const float plumeScale = std::clamp(
-                    (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
-                    0.2f, 3.0f);
-                std::vector<VertexData> trailVertices = burner.trail->GenerateThrusterVertices(
-                    camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
-                    burner.adjustedExhaustDirection,
-                    burner.plumeLength * effectSettings_.lengthScale * plumeScale, time_, burner.color.w,
-                    effectSettings_.coreLengthRatio, effectSettings_.glowScale);
-
-                // 頂点の発光色を保ち、材質には明るさの倍率だけを掛ける。
-                const float brightness = effectSettings_.brightness;
-                burner.trailObject->GetModel()->SetColor({ brightness, brightness, brightness, 1.0f });
-                
-                burner.trailObject->GetModel()->UpdateTrailVertices(trailVertices, false);
-                burner.trailObject->Update(camera);
-                
-                burner.trailObject->Draw();
+            if (!burner.trail || !burner.trailObject || !burner.trailObject->GetModel()) {
+                continue;
             }
+            const float plumeScale = std::clamp(
+                (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
+                0.2f, 3.0f);
+            const std::vector<VertexData> coreVertices = burner.trail->GenerateThrusterVertices(
+                camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
+                burner.adjustedExhaustDirection,
+                burner.plumeLength * effectSettings_.lengthScale * plumeScale, time_, burner.color.w,
+                effectSettings_.coreLengthRatio, effectSettings_.glowScale);
+            burner.trailObject->GetModel()->SetColor({
+                effectSettings_.brightness, effectSettings_.brightness,
+                effectSettings_.brightness, 1.0f
+            });
+            burner.trailObject->GetModel()->UpdateTrailVertices(coreVertices, false);
+            burner.trailObject->Update(camera);
+            burner.trailObject->Draw();
         }
     }
 
-    // 立体の炎の後ろへ、実際のノズル移動履歴から作った光の速度線を重ねる。
-    // カメラ正面を向く帯なので、急旋回時でも細いラインとして視認できる。
-    if (ribbonTrailEnabled_) {
-        object3dCommon->SetEffectDrawSettings();
+    // 同じ中心線の外側を覆う発光リボン。芯から光跡へ連続して細くする。
+    if (ribbonTrailEnabled_ && thrusterPlumeEnabled_) {
+        object3dCommon->SetRibbonTrailDrawSettings();
         for (auto& burner : burners_) {
             if (!burner.ribbonTrail || !burner.ribbonObject || !burner.ribbonObject->GetModel() ||
                 burner.ribbonIntensity <= 0.02f) {
@@ -331,10 +354,21 @@ void BoosterEffect::Draw(Camera* camera) {
             const float plumeScale = std::clamp(
                 (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
                 0.2f, 3.0f);
-            const float ribbonWidth = (0.030f + 0.075f * burner.ribbonIntensity) *
+            const float ribbonWidth = (0.040f + 0.085f * burner.ribbonIntensity) *
                 effectSettings_.widthScale * plumeScale;
+            const float coreLength = burner.plumeLength * effectSettings_.lengthScale * plumeScale * 1.04f;
+            // 炎と光跡の色相を共有し、幅と明度だけをノズル側から連続的に落とす。
+            const Vector4 ribbonColor = {
+                burner.color.x * effectSettings_.brightness * 1.20f,
+                burner.color.y * effectSettings_.brightness * 1.15f,
+                burner.color.z * effectSettings_.brightness * 1.20f,
+                1.0f
+            };
             std::vector<VertexData> ribbonVertices = burner.ribbonTrail->GenerateRibbonVertices(
-                camera, ribbonWidth, { 0.42f, 0.82f, 1.35f, 0.82f }, burner.ribbonIntensity);
+                // 履歴は最大 2.4m までに制限し、高速時も画面外まで引き伸ばさない。
+                camera, ribbonWidth, ribbonColor, burner.worldExhaustDirection,
+                burner.ribbonNozzleWorldPosition, burner.ribbonHeadWorldPosition,
+                burner.ribbonIntensity, 2.4f, coreLength);
             if (ribbonVertices.empty()) {
                 continue;
             }

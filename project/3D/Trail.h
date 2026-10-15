@@ -20,9 +20,12 @@ public:
     std::vector<VertexData> GenerateVertices(Camera *camera, float thickness);
 
     // 加速時のスラスター用。ワールド座標の履歴から、先端が明るく尾が細くなる
-    // 加算合成向けの発光リボンを生成する。
+    // ノズル口、炎の先端、履歴を同じ中心線で結ぶ加算合成用の発光リボン。
+    // 立体的な噴射芯を描く場合も、この中心線の先頭区間を共有する。
     std::vector<VertexData> GenerateRibbonVertices(Camera* camera, float thickness,
-        const Vector4& headColor, float intensity = 1.0f);
+        const Vector4& headColor, const Vector3& nozzleExhaustDirection,
+        const Vector3& nozzlePosition, const Vector3& plumeTipPosition,
+        float intensity = 1.0f, float maxLength = 0.0f, float coreFadeLength = 0.0f);
 
     // 推進炎用。排気方向へ伸びる、視点に依存しない立体チューブを生成する。
     std::vector<VertexData> GenerateThrusterVertices(Camera *camera, float thickness,

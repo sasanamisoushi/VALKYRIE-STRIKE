@@ -21,6 +21,8 @@ public:
 	void SetOverlayEffectDrawSettings();
 	// スラスター用。加算合成＋深度テストあり・深度書き込みなし＋背面カリング。
 	void SetThrusterDrawSettings();
+	// スラスターの移動軌跡用。柔らかい輪郭と繊維状の発光を持つ加算合成。
+	void SetRibbonTrailDrawSettings();
 	
 	//アルファブレンド（半透明）用描画設定
 	void SetAlphaBlendDrawSettings();
@@ -61,6 +63,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> effectPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> overlayEffectPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> thrusterPipelineState_;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> ribbonTrailPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> alphaBlendPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> linePipelineState_;
 
@@ -68,6 +71,7 @@ private:
 	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob;
 	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob;
 	Microsoft::WRL::ComPtr<IDxcBlob> thrusterPixelShaderBlob;
+	Microsoft::WRL::ComPtr<IDxcBlob> ribbonTrailPixelShaderBlob;
 
 	Camera *defaultCamera = nullptr;
 };
