@@ -126,7 +126,6 @@ void TitleScene::Initialize() {
 	// 本編と同じプレイヤー機を、タイトルでは入力なしの自動飛行として見せる。
 	titlePlayer_ = std::make_unique<Player>();
 	titlePlayer_->Initialize("vf-15c/scene.gltf");
-	titlePlayer_->SetBoosterRibbonTrailEnabled(false);
 	launchSoundData_ = AudioManager::GetInstance()->LoadWave("resources/Alarm01.wav");
 
 	selectedMenuItem_ = MenuItem::Start;
@@ -264,9 +263,6 @@ void TitleScene::ToggleBackgroundMode() {
 			gameplayBackground_.reset();
 		}
 		backgroundMode_ = BackgroundMode::FlightDemo;
-		if (titlePlayer_) {
-			titlePlayer_->SetBoosterRibbonTrailEnabled(false);
-		}
 		Object3dCommon::GetInstance()->SetDefaultCamera(camera.get());
 		UpdateTitleFlight();
 	}

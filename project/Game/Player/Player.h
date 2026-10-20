@@ -68,11 +68,6 @@ public:
     Quaternion GetQuaternion() const { return quaternion_; }
     const Object3d* GetObject3d() const { return object_.get(); }
     BoosterEffect* GetBoosterEffect() const { return boosterEffect_.get(); }
-    void SetBoosterRibbonTrailEnabled(bool enabled) {
-        if (boosterEffect_) {
-            boosterEffect_->SetRibbonTrailEnabled(enabled);
-        }
-    }
     void SetBoosterPlumeEnabled(bool enabled) {
         if (boosterEffect_) {
             boosterEffect_->SetThrusterPlumeEnabled(enabled);

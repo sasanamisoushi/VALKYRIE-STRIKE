@@ -423,9 +423,6 @@ void GamePlayScene::Initialize() {
 	isEditorPreviewPlaying_ = !IsSimulationMode();
 
 	ReloadSceneJson();
-	if (IsTitleBackgroundMode() && player_) {
-		player_->SetBoosterRibbonTrailEnabled(false);
-	}
 	if (!IsSimulationMode() && !IsTitleBackgroundMode()) {
 		GameStartTransitionData titleTransition;
 		if (GameStartTransition::Consume(titleTransition) && player_) {

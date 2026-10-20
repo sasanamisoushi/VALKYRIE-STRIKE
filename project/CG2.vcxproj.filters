@@ -462,7 +462,7 @@
   <ItemGroup>
     <None Include="resources\shaders\object3d.hlsli" />
     <None Include="resources\shaders\Thruster.PS.hlsl" />
-    <None Include="resources\shaders\RibbonTrail.PS.hlsl" />
+    <None Include="resources\shaders\SpeedTrail.PS.hlsl" />
     <None Include="resources\shaders\Particle.PS.hlsl" />
     <None Include="resources\shaders\Particle.VS.hlsl" />
     <None Include="resources\shaders\Sprite.hlsli" />

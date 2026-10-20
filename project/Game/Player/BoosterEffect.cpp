@@ -53,21 +53,27 @@ void BoosterEffect::Initialize() {
     }
     modelManager->CreateTrailModel("PlayerThrusterTrailLeft");
     modelManager->CreateTrailModel("PlayerThrusterTrailRight");
-    modelManager->CreateTrailModel("PlayerThrusterRibbonLeft");
-    modelManager->CreateTrailModel("PlayerThrusterRibbonRight");
+    modelManager->CreateTrailModel("PlayerThrusterSpeedTrailLeft");
+    modelManager->CreateTrailModel("PlayerThrusterSpeedTrailRight");
+    modelManager->CreateTrailModel("PlayerThrusterFlareLeft");
+    modelManager->CreateTrailModel("PlayerThrusterFlareRight");
 
 }
-
 
 void BoosterEffect::SetupBurnersForMode(int playerMode) {
     burners_.clear();
     lastMode_ = playerMode;
 
+    const size_t modeIndex = playerMode <= 0 ? 0u : (playerMode >= 3 ? 2u : static_cast<size_t>(playerMode));
+    // 既定2基と追加ノズルを先に確保し、Burner（所有ポインタを含む）の
+    // push_back 中に再配置が起きないようにする。
+    burners_.reserve(2 + extraThrustersByMode_[modeIndex].size());
+
     const float scale = kPlayerModelScale;
 
     const auto makeBurner = [](const Vector3& offset, const Vector4& color,
         int trailLength, const std::string& nozzleModel, const std::string& trailModel,
-        const std::string& ribbonModel, float modelSide,
+        const std::string& speedTrailModel, const std::string& flareModel, float modelSide,
         bool isExtraThruster = false, size_t extraThrusterIndex = 0) {
         Burner burner;
         burner.trail = std::make_unique<Trail>();
@@ -76,11 +82,16 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
         burner.trailObject->Initialize(Object3dCommon::GetInstance());
         burner.trailObject->SetModel(trailModel);
 
-        burner.ribbonTrail = std::make_unique<Trail>();
-        burner.ribbonTrail->Initialize(28);
-        burner.ribbonObject = std::make_unique<Object3d>();
-        burner.ribbonObject->Initialize(Object3dCommon::GetInstance());
-        burner.ribbonObject->SetModel(ribbonModel);
+        burner.speedTrail = std::make_unique<Trail>();
+        // 距離固定サンプリングは高速時に1フレームへ複数点を入れるため、
+        // 最長0.76秒ぶんを切らずに保持できる余裕を持たせる。
+        burner.speedTrail->Initialize(128);
+        burner.speedTrailObject = std::make_unique<Object3d>();
+        burner.speedTrailObject->Initialize(Object3dCommon::GetInstance());
+        burner.speedTrailObject->SetModel(speedTrailModel);
+        burner.speedTrailFlareObject = std::make_unique<Object3d>();
+        burner.speedTrailFlareObject->Initialize(Object3dCommon::GetInstance());
+        burner.speedTrailFlareObject->SetModel(flareModel);
 
         burner.nozzleObject = std::make_unique<Object3d>();
         burner.nozzleObject->Initialize(Object3dCommon::GetInstance());
@@ -109,29 +120,30 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
             0.771f, 7.998f - kVf15cModelCenterOffset.y,
             -10.772f - kVf15cModelCenterOffset.z
         };
-        burners_.push_back(makeBurner({ -fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterRibbonLeft", -1.0f));
-        burners_.push_back(makeBurner({  fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterRibbonRight", 1.0f));
+        burners_.push_back(makeBurner({ -fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f));
+        burners_.push_back(makeBurner({  fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f));
     } else if (playerMode == 1) { // Gerwalk: 脚部のふくらはぎ後方・左右ノズル
-        burners_.push_back(makeBurner({ -2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterRibbonLeft", -1.0f));
-        burners_.push_back(makeBurner({  2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterRibbonRight", 1.0f));
+        burners_.push_back(makeBurner({ -2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f));
+        burners_.push_back(makeBurner({  2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f));
     } else { // Battroid: 脚部のふくらはぎ後方・左右ノズル
-        burners_.push_back(makeBurner({ -1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterRibbonLeft", -1.0f));
-        burners_.push_back(makeBurner({  1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterRibbonRight", 1.0f));
+        burners_.push_back(makeBurner({ -1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f));
+        burners_.push_back(makeBurner({  1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f));
     }
 
     // 追加ノズルは各形態ごとに独立して持つ。炎の頂点を共有しないよう、
     // 1基ごとに専用トレイルモデルを用意する。
-    const size_t modeIndex = playerMode <= 0 ? 0u : (playerMode >= 3 ? 2u : static_cast<size_t>(playerMode));
     ModelManager* modelManager = ModelManager::GetInstance();
     const auto& extraThrusters = extraThrustersByMode_[modeIndex];
     for (size_t index = 0; index < extraThrusters.size(); ++index) {
         const bool isRight = index % 2 != 0;
         const std::string trailModel = "PlayerThrusterTrailExtra_" + std::to_string(modeIndex) + "_" + std::to_string(index);
-        const std::string ribbonModel = "PlayerThrusterRibbonExtra_" + std::to_string(modeIndex) + "_" + std::to_string(index);
+        const std::string speedTrailModel = "PlayerThrusterSpeedTrailExtra_" + std::to_string(modeIndex) + "_" + std::to_string(index);
+        const std::string flareModel = "PlayerThrusterFlareExtra_" + std::to_string(modeIndex) + "_" + std::to_string(index);
         modelManager->CreateTrailModel(trailModel);
-        modelManager->CreateTrailModel(ribbonModel);
+        modelManager->CreateTrailModel(speedTrailModel);
+        modelManager->CreateTrailModel(flareModel);
         burners_.push_back(makeBurner({ 0.0f, 0.0f, 0.0f }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12,
-            isRight ? "vf-15c/thruster_right.obj" : "vf-15c/thruster_left.obj", trailModel, ribbonModel,
+            isRight ? "vf-15c/thruster_right.obj" : "vf-15c/thruster_left.obj", trailModel, speedTrailModel, flareModel,
             isRight ? 1.0f : -1.0f, true, index));
     }
 }
@@ -180,9 +192,8 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
                 position.y + worldOffset.y, position.z + worldOffset.z });
             burner.positionMarkerObject->SetScale({ 0.045f, 0.045f, 0.045f });
         }
-        // 炎はノズル開口から始め、リボンは下で炎の末端へ接続する。
+        // 炎はノズル開口から始め、機体の向きに合わせて排気方向へ伸ばす。
         burner.adjustedExhaustDirection = MyMath::RotateVector(burner.exhaustDirection, placementRotation);
-        // 移動履歴へ曲がる前の接線にも、このフレームのノズル排気方向を使う。
         burner.worldExhaustDirection = MyMath::RotateVector(burner.adjustedExhaustDirection, rotation);
         burner.placementScale = burnerPlacement.scale;
         const Vector3 localExit = {
@@ -196,54 +207,36 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
             burner.trailObject->SetScale({ 1.0f, 1.0f, 1.0f });
             burner.trailObject->SetQuaternionRotate(rotation);
         }
-        if (burner.ribbonTrail && burner.ribbonObject) {
+        if (burner.speedTrail && burner.speedTrailObject) {
             const Vector3 worldExitOffset = MyMath::Transform(localExit, rotationMatrix);
-            const Vector3 worldExit = {
-                position.x + worldExitOffset.x,
-                position.y + worldExitOffset.y,
-                position.z + worldExitOffset.z
-            };
-            // 光跡の履歴は、立体炎の先端そのものから採る。途中から採ると
-            // 炎の終端と履歴の始点が離れ、別エフェクトに見えてしまう。
+            const Vector3 worldExit = { position.x + worldExitOffset.x,
+                position.y + worldExitOffset.y, position.z + worldExitOffset.z };
             const float placementScale = std::clamp(
                 (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
                 0.2f, 3.0f);
-            // 最外層の炎の末端と完全に同じ位置。リボンの最初の曲がりは
-            // 炎の内部で薄くブレンドし、末端から自然に尾を引かせる。
-            const float ribbonAnchorDistance = burner.plumeLength * effectSettings_.lengthScale
-                * placementScale * 1.04f;
-            const Vector3 ribbonStart = {
-                worldExit.x + burner.worldExhaustDirection.x * ribbonAnchorDistance,
-                worldExit.y + burner.worldExhaustDirection.y * ribbonAnchorDistance,
-                worldExit.z + burner.worldExhaustDirection.z * ribbonAnchorDistance
+            const float flameLength = burner.plumeLength * effectSettings_.lengthScale * placementScale;
+            // 光跡の現在点・履歴点はともに実際のノズル口を使う。固定炎の途中や
+            // 先端を履歴へ足すと、急旋回時に人工的な直線区間が残って直角に見える。
+            burner.speedTrailStart = worldExit;
+            burner.speedTrailFlareCenter = {
+                worldExit.x + burner.worldExhaustDirection.x * flameLength * 0.12f,
+                worldExit.y + burner.worldExhaustDirection.y * flameLength * 0.12f,
+                worldExit.z + burner.worldExhaustDirection.z * flameLength * 0.12f
             };
-            burner.ribbonNozzleWorldPosition = worldExit;
-            burner.ribbonHeadWorldPosition = ribbonStart;
-            if (burner.ribbonIntensity <= 0.02f) {
-                burner.ribbonTrail->SetOrigin(ribbonStart);
-                burner.lastRibbonWorldExit = ribbonStart;
-                burner.hasRibbonOrigin = false;
-            } else if (!burner.hasRibbonOrigin) {
-                burner.ribbonTrail->SetOrigin(ribbonStart);
-                burner.lastRibbonWorldExit = ribbonStart;
-                burner.hasRibbonOrigin = true;
+            if (!burner.hasSpeedTrailOrigin || burner.speedTrailIntensity <= 0.035f) {
+                burner.speedTrail->SetOrigin(worldExit);
+                burner.hasSpeedTrailOrigin = true;
             } else {
-                const Vector3 delta = {
-                    ribbonStart.x - burner.lastRibbonWorldExit.x,
-                    ribbonStart.y - burner.lastRibbonWorldExit.y,
-                    ribbonStart.z - burner.lastRibbonWorldExit.z
-                };
-                const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
-                if (distanceSquared > 0.000001f) {
-                    // 各サンプルを実際の炎の先端へ置く。1点だけを遅延させないため、
-                    // 軌跡の途中だけが旗のようになびく現象を防げる。
-                    burner.ribbonTrail->Update(ribbonStart);
-                    burner.lastRibbonWorldExit = ribbonStart;
-                }
+                burner.speedTrail->Update(worldExit, 1.0f / 60.0f, burner.speedTrailLifetime);
             }
-            burner.ribbonObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
-            burner.ribbonObject->SetScale({ 1.0f, 1.0f, 1.0f });
-            burner.ribbonObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+            burner.speedTrailObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
+            burner.speedTrailObject->SetScale({ 1.0f, 1.0f, 1.0f });
+            burner.speedTrailObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+            if (burner.speedTrailFlareObject) {
+                burner.speedTrailFlareObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
+                burner.speedTrailFlareObject->SetScale({ 1.0f, 1.0f, 1.0f });
+                burner.speedTrailFlareObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+            }
         }
     }
 }
@@ -265,9 +258,12 @@ void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, 
         * (1.0f + accelerationBlend_ * (effectSettings_.boostWidthMultiplier - 1.0f));
     const float targetAlpha = std::clamp(0.40f + cappedSpeedRatio * 0.40f
         + accelerationBlend_ * 0.18f, 0.0f, 0.92f);
-    const float targetRibbonIntensity = (!ribbonTrailEnabled_ || cappedSpeedRatio <= 0.06f) ? 0.0f : std::clamp(
-        0.18f + cappedSpeedRatio * 0.72f + accelerationBlend_ * 0.20f, 0.0f, 1.0f);
-
+    // 参考映像と同じく低速では固定炎だけにし、推進中だけ短い帯を残す。
+    const float targetSpeedTrailIntensity = cappedSpeedRatio <= 0.10f ? 0.0f : std::clamp(
+        0.16f + cappedSpeedRatio * 0.46f + accelerationBlend_ * 0.30f, 0.0f, 0.86f);
+    // 加速時ほど、履歴を空間に長く残す。距離ではなく各点の経過時間で消える。
+    const float targetSpeedTrailLifetime = cappedSpeedRatio <= 0.10f ? 0.18f : std::clamp(
+        0.30f + cappedSpeedRatio * 0.26f + accelerationBlend_ * 0.20f, 0.18f, 0.76f);
     for (auto& burner : burners_) {
         // 長い白い棒に見えないよう、短い噴射を基準に幅で加速を表す。
         burner.plumeLength = burner.plumeLength > 0.0f
@@ -275,12 +271,8 @@ void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, 
         burner.plumeRadius = burner.plumeRadius > 0.0f
             ? burner.plumeRadius + (targetRadius - burner.plumeRadius) * 0.25f : targetRadius;
         burner.color.w += (targetAlpha - burner.color.w) * 0.25f;
-        burner.ribbonIntensity = ribbonTrailEnabled_
-            ? burner.ribbonIntensity + (targetRibbonIntensity - burner.ribbonIntensity) * 0.20f
-            : 0.0f;
-        if (!ribbonTrailEnabled_) {
-            burner.hasRibbonOrigin = false;
-        }
+        burner.speedTrailIntensity += (targetSpeedTrailIntensity - burner.speedTrailIntensity) * 0.20f;
+        burner.speedTrailLifetime += (targetSpeedTrailLifetime - burner.speedTrailLifetime) * 0.18f;
     }
     RefreshPlacement(position, rotation, playerMode);
 }
@@ -317,9 +309,55 @@ void BoosterEffect::Draw(Camera* camera) {
         object3dCommon->SetCommonDrawSettings();
     }
 
-    // 立体的な白熱芯。リボンと同じノズル口・同じ先端距離を基準にするため、
-    // 別エフェクトのような継ぎ目は作らない。
-    if (ribbonTrailEnabled_ && thrusterPlumeEnabled_) {
+    // 参考映像の光跡は、寿命付きの外側リボン・内側コア・根元フレアの三層。
+    // 固定炎の中から出る順番で先に描き、その上へ立体的な白熱芯を重ねる。
+    if (thrusterPlumeEnabled_) {
+        object3dCommon->SetSpeedTrailDrawSettings();
+        for (auto& burner : burners_) {
+            if (!burner.speedTrail || !burner.speedTrailObject || !burner.speedTrailObject->GetModel()
+                || burner.speedTrailIntensity <= 0.04f) {
+                continue;
+            }
+            const float plumeScale = std::clamp(
+                (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
+                0.2f, 3.0f);
+            const float trailRadius = burner.plumeRadius * effectSettings_.widthScale * plumeScale;
+            if (burner.speedTrailFlareObject && burner.speedTrailFlareObject->GetModel()) {
+                const std::vector<VertexData> flareVertices = burner.speedTrail->GenerateThrusterFlareVertices(
+                    camera, burner.speedTrailFlareCenter, trailRadius * 1.90f, burner.speedTrailIntensity * 0.82f);
+                if (!flareVertices.empty()) {
+                    burner.speedTrailFlareObject->GetModel()->SetColor({
+                        effectSettings_.brightness, effectSettings_.brightness,
+                        effectSettings_.brightness, 1.0f
+                    });
+                    burner.speedTrailFlareObject->GetModel()->UpdateTrailVertices(flareVertices, true);
+                    burner.speedTrailFlareObject->Update(camera);
+                    burner.speedTrailFlareObject->Draw();
+                }
+            }
+            const std::vector<VertexData> speedTrailVertices = burner.speedTrail->GenerateSpeedTrailVertices(
+                camera, trailRadius,
+                burner.speedTrailStart, burner.worldExhaustDirection,
+                burner.speedTrailIntensity, burner.speedTrailLifetime);
+            if (speedTrailVertices.empty()) continue;
+            burner.speedTrailObject->GetModel()->SetColor({
+                effectSettings_.brightness, effectSettings_.brightness,
+                effectSettings_.brightness, 1.0f
+            });
+            // V座標をスクロールさせ、空間に残った帯の内部だけを後方へ流す。
+            const Vector3 uvScale = { 1.0f, 5.5f, 1.0f };
+            const Vector3 uvTranslate = { 0.0f, -time_ * 0.0125f, 0.0f };
+            burner.speedTrailObject->GetModel()->SetUvTransform(
+                MyMath::MakeAffineMatrix(uvScale, Vector3{ 0.0f, 0.0f, 0.0f }, uvTranslate));
+            burner.speedTrailObject->GetModel()->UpdateTrailVertices(speedTrailVertices, true);
+            burner.speedTrailObject->Update(camera);
+            burner.speedTrailObject->Draw();
+        }
+    }
+
+    // 白熱芯と外炎も光跡と同じ履歴曲線に沿わせる。これで固定炎だけが直線のまま
+    // 残らず、ノズル口から光跡まで一本の曲がる噴射になる。
+    if (thrusterPlumeEnabled_) {
         object3dCommon->SetThrusterDrawSettings();
         for (auto& burner : burners_) {
             if (!burner.trail || !burner.trailObject || !burner.trailObject->GetModel()) {
@@ -328,11 +366,30 @@ void BoosterEffect::Draw(Camera* camera) {
             const float plumeScale = std::clamp(
                 (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
                 0.2f, 3.0f);
-            const std::vector<VertexData> coreVertices = burner.trail->GenerateThrusterVertices(
-                camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
-                burner.adjustedExhaustDirection,
-                burner.plumeLength * effectSettings_.lengthScale * plumeScale, time_, burner.color.w,
-                effectSettings_.coreLengthRatio, effectSettings_.glowScale);
+            const float coreLength = burner.plumeLength * effectSettings_.lengthScale * plumeScale;
+            std::vector<VertexData> coreVertices;
+            if (burner.speedTrail) {
+                coreVertices = burner.speedTrail->GenerateCurvedThrusterVertices(
+                    camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
+                    burner.speedTrailStart, burner.worldExhaustDirection,
+                    coreLength, time_, burner.color.w,
+                    effectSettings_.coreLengthRatio, effectSettings_.glowScale);
+            }
+            if (!coreVertices.empty()) {
+                // 曲線炎の頂点はワールド空間で生成済みなので、Object3d 側の変換は
+                // 恒等にする。光跡と同じ位置・同じ曲率で重なる。
+                burner.trailObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
+                burner.trailObject->SetScale({ 1.0f, 1.0f, 1.0f });
+                burner.trailObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+            } else {
+                // 履歴がまだ2点たまっていない発生直後だけ、従来の短い直線炎を使う。
+                coreVertices = burner.trail->GenerateThrusterVertices(
+                    camera, burner.plumeRadius * effectSettings_.widthScale * plumeScale,
+                    burner.adjustedExhaustDirection,
+                    coreLength, time_, burner.color.w,
+                    effectSettings_.coreLengthRatio, effectSettings_.glowScale);
+                burner.trailObject->SetTranslate(burner.trailObject->GetTranslate());
+            }
             burner.trailObject->GetModel()->SetColor({
                 effectSettings_.brightness, effectSettings_.brightness,
                 effectSettings_.brightness, 1.0f
@@ -343,40 +400,5 @@ void BoosterEffect::Draw(Camera* camera) {
         }
     }
 
-    // 同じ中心線の外側を覆う発光リボン。芯から光跡へ連続して細くする。
-    if (ribbonTrailEnabled_ && thrusterPlumeEnabled_) {
-        object3dCommon->SetRibbonTrailDrawSettings();
-        for (auto& burner : burners_) {
-            if (!burner.ribbonTrail || !burner.ribbonObject || !burner.ribbonObject->GetModel() ||
-                burner.ribbonIntensity <= 0.02f) {
-                continue;
-            }
-            const float plumeScale = std::clamp(
-                (burner.placementScale.x + burner.placementScale.y + burner.placementScale.z) / 3.0f,
-                0.2f, 3.0f);
-            const float ribbonWidth = (0.040f + 0.085f * burner.ribbonIntensity) *
-                effectSettings_.widthScale * plumeScale;
-            const float coreLength = burner.plumeLength * effectSettings_.lengthScale * plumeScale * 1.04f;
-            // 炎と光跡の色相を共有し、幅と明度だけをノズル側から連続的に落とす。
-            const Vector4 ribbonColor = {
-                burner.color.x * effectSettings_.brightness * 1.20f,
-                burner.color.y * effectSettings_.brightness * 1.15f,
-                burner.color.z * effectSettings_.brightness * 1.20f,
-                1.0f
-            };
-            std::vector<VertexData> ribbonVertices = burner.ribbonTrail->GenerateRibbonVertices(
-                // 履歴は最大 2.4m までに制限し、高速時も画面外まで引き伸ばさない。
-                camera, ribbonWidth, ribbonColor, burner.worldExhaustDirection,
-                burner.ribbonNozzleWorldPosition, burner.ribbonHeadWorldPosition,
-                burner.ribbonIntensity, 2.4f, coreLength);
-            if (ribbonVertices.empty()) {
-                continue;
-            }
-            burner.ribbonObject->GetModel()->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
-            burner.ribbonObject->GetModel()->UpdateTrailVertices(ribbonVertices, true);
-            burner.ribbonObject->Update(camera);
-            burner.ribbonObject->Draw();
-        }
-    }
     object3dCommon->SetEffectDrawSettings();
 }

@@ -49,8 +49,6 @@ public:
     void SetPlacementMarkersVisible(bool visible) { showPlacementMarkers_ = visible; }
     bool GetEditorPreviewAcceleration() const { return editorPreviewAccelerating_; }
     void SetEditorPreviewAcceleration(bool accelerating) { editorPreviewAccelerating_ = accelerating; }
-    void SetRibbonTrailEnabled(bool enabled) { ribbonTrailEnabled_ = enabled; }
-    bool IsRibbonTrailEnabled() const { return ribbonTrailEnabled_; }
     void SetThrusterPlumeEnabled(bool enabled) { thrusterPlumeEnabled_ = enabled; }
     bool IsThrusterPlumeEnabled() const { return thrusterPlumeEnabled_; }
     const EffectSettings& GetEffectSettings() const { return effectSettings_; }
@@ -63,9 +61,11 @@ private:
     struct Burner {
         std::unique_ptr<Trail> trail;
         std::unique_ptr<Object3d> trailObject;
-        // 機体の移動履歴を残す、細い発光リボン。立体の噴射炎とは別レイヤー。
-        std::unique_ptr<Trail> ribbonTrail;
-        std::unique_ptr<Object3d> ribbonObject;
+        // 固定炎の末端から続く、短時間だけ残る平面発光帯。
+        std::unique_ptr<Trail> speedTrail;
+        std::unique_ptr<Object3d> speedTrailObject;
+        // ノズル根元の境目を消す、カメラ正対の加算フレア。
+        std::unique_ptr<Object3d> speedTrailFlareObject;
         // 左右別の実モデルを機体へ固定し、その後端から噴射する。
         std::unique_ptr<Object3d> nozzleObject;
         std::unique_ptr<Object3d> positionMarkerObject;
@@ -80,12 +80,11 @@ private:
         Vector4 color;
         float plumeLength = 0.0f;
         float plumeRadius = 0.0f;
-        float ribbonIntensity = 0.0f;
-        // 1本のリボンの先頭2点。ノズル口→炎の先端→遅延した履歴として接続する。
-        Vector3 ribbonNozzleWorldPosition = { 0.0f, 0.0f, 0.0f };
-        Vector3 ribbonHeadWorldPosition = { 0.0f, 0.0f, 0.0f };
-        Vector3 lastRibbonWorldExit = { 0.0f, 0.0f, 0.0f };
-        bool hasRibbonOrigin = false;
+        float speedTrailIntensity = 0.0f;
+        float speedTrailLifetime = 0.55f;
+        Vector3 speedTrailStart = { 0.0f, 0.0f, 0.0f };
+        Vector3 speedTrailFlareCenter = { 0.0f, 0.0f, 0.0f };
+        bool hasSpeedTrailOrigin = false;
     };
 
     std::vector<Burner> burners_;
@@ -94,7 +93,6 @@ private:
     EffectSettings effectSettings_;
     bool showPlacementMarkers_ = false;
     bool editorPreviewAccelerating_ = true;
-    bool ribbonTrailEnabled_ = true;
     bool thrusterPlumeEnabled_ = true;
     float accelerationBlend_ = 0.0f;
     int lastMode_ = -1;

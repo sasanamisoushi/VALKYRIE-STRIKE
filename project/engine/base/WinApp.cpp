@@ -143,16 +143,19 @@ void WinApp::Finalize() {
 }
 
 bool WinApp::ProcessMessage() {
-
+	// OS のイベントはフレームごとにまとめて処理する。1件だけ処理すると、
+	// マウス移動やリサイズのメッセージが多い場面でキューが滞留し、入力や
+	// ウィンドウ応答が数フレーム遅れることがある。
 	MSG msg{};
-
-	if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+	bool receivedQuit = false;
+	while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+		if (msg.message == WM_QUIT) {
+			receivedQuit = true;
+			continue;
+		}
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
 	}
 
-	if (msg.message == WM_QUIT) {
-		return true;
-	}
-	return false;
+	return receivedQuit;
 }

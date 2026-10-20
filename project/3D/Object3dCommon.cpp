@@ -49,9 +49,9 @@ void Object3dCommon::SetThrusterDrawSettings() {
 	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
-void Object3dCommon::SetRibbonTrailDrawSettings() {
+void Object3dCommon::SetSpeedTrailDrawSettings() {
 	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
-	dxCommon_->GetCommandList()->SetPipelineState(ribbonTrailPipelineState_.Get());
+	dxCommon_->GetCommandList()->SetPipelineState(speedTrailPipelineState_.Get());
 	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 }
 
@@ -81,9 +81,8 @@ void Object3dCommon::LoadShaders() {
 	assert(pixelShaderBlob != nullptr);
 	thrusterPixelShaderBlob = dxCommon_->CompileShader(L"resources/shaders/Thruster.PS.hlsl", L"ps_6_0");
 	assert(thrusterPixelShaderBlob != nullptr);
-	ribbonTrailPixelShaderBlob = dxCommon_->CompileShader(L"resources/shaders/RibbonTrail.PS.hlsl", L"ps_6_0");
-	assert(ribbonTrailPixelShaderBlob != nullptr);
-
+	speedTrailPixelShaderBlob = dxCommon_->CompileShader(L"resources/shaders/SpeedTrail.PS.hlsl", L"ps_6_0");
+	assert(speedTrailPixelShaderBlob != nullptr);
 }
 
 void Object3dCommon::CreateRootSignature() {
@@ -272,13 +271,6 @@ void Object3dCommon::CreateGraphicsPipeline() {
 	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&effectPipelineState_));
 	assert(SUCCEEDED(hr) && "エフェクト用パイプラインの作成に失敗しました。");
 
-	// 速度線は通常マテリアルを通さず、加算用の専用シェーダーで描く。
-	// これにより半透明の板ではなく、端が溶ける自発光として背景に重なる。
-	graphicsPipelineStateDesc.PS = { ribbonTrailPixelShaderBlob->GetBufferPointer(), ribbonTrailPixelShaderBlob->GetBufferSize() };
-	ribbonTrailPipelineState_ = nullptr;
-	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&ribbonTrailPipelineState_));
-	assert(SUCCEEDED(hr) && "光跡用パイプラインの作成に失敗しました。");
-
 	// 閉じた立体の外炎／白熱芯を発光として描く。裏面の二重加算を抑える。
 	graphicsPipelineStateDesc.PS = { thrusterPixelShaderBlob->GetBufferPointer(), thrusterPixelShaderBlob->GetBufferSize() };
 	graphicsPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
@@ -287,6 +279,12 @@ void Object3dCommon::CreateGraphicsPipeline() {
 	graphicsPipelineStateDesc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
 	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&thrusterPipelineState_));
 	assert(SUCCEEDED(hr) && "スラスター用パイプラインの作成に失敗しました。");
+
+	graphicsPipelineStateDesc.PS = { speedTrailPixelShaderBlob->GetBufferPointer(), speedTrailPixelShaderBlob->GetBufferSize() };
+	graphicsPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&speedTrailPipelineState_));
+	assert(SUCCEEDED(hr) && "スラスター光跡用パイプラインの作成に失敗しました。");
+
 	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() };
 	graphicsPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 	graphicsPipelineStateDesc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;

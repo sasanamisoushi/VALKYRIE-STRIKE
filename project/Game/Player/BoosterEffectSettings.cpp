@@ -146,6 +146,7 @@ bool BoosterEffect::SaveSettings(const std::string& filePath) const {
     effect["coreLengthRatio"] = effectSettings_.coreLengthRatio;
     effect["boostWidthMultiplier"] = effectSettings_.boostWidthMultiplier;
     effect["boostLengthMultiplier"] = effectSettings_.boostLengthMultiplier;
+    settings["thrusterPlumeEnabled"] = thrusterPlumeEnabled_;
     std::ofstream output(filePath, std::ios::binary | std::ios::trunc);
     if (!output.is_open()) {
         return false;
@@ -181,6 +182,12 @@ bool BoosterEffect::LoadSettings(const std::string& filePath) {
         };
         std::array<PlacementSettings, kPlacementModeCount> placements{};
         std::array<std::vector<ExtraThrusterSettings>, kPlacementModeCount> extraThrustersByMode{};
+        bool thrusterPlumeEnabled = true;
+        if (settings.contains("thrusterPlumeEnabled")) {
+            const auto& enabled = settings.at("thrusterPlumeEnabled");
+            if (!enabled.is_boolean()) return false;
+            thrusterPlumeEnabled = enabled.get<bool>();
+        }
         if (settings.contains("placementByMode")) {
             const auto& savedPlacements = settings.at("placementByMode");
             if (!savedPlacements.is_array() || savedPlacements.size() != kPlacementModeCount) {
@@ -240,6 +247,7 @@ bool BoosterEffect::LoadSettings(const std::string& filePath) {
         placementSettings_ = placements;
         extraThrustersByMode_ = std::move(extraThrustersByMode);
         effectSettings_ = appearance;
+        thrusterPlumeEnabled_ = thrusterPlumeEnabled;
         // 読み込みで追加ノズル数が変わるため、次回の配置更新でノズル群を作り直す。
         lastMode_ = -1;
         return true;

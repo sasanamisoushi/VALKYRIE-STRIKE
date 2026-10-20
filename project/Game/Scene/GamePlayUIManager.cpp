@@ -1447,6 +1447,12 @@ void GamePlayUIManager::UpdateUI() {
 				if (ImGui::Checkbox("加速状態をプレビュー", &previewAccelerating)) {
 					booster->SetEditorPreviewAcceleration(previewAccelerating);
 				}
+				bool thrusterPlumeEnabled = booster->IsThrusterPlumeEnabled();
+				if (ImGui::Checkbox("光跡を表示", &thrusterPlumeEnabled)) {
+					booster->SetThrusterPlumeEnabled(thrusterPlumeEnabled);
+					saveAndApplySettings("光跡の表示設定を保存して、ただちに反映しました。");
+				}
+				ImGui::TextDisabled("OFFにすると、ノズル本体は残して光跡と炎だけを非表示にします。");
 				ImGui::Separator();
 				ImGui::Text("エフェクトの見た目");
 				BoosterEffect::EffectSettings effect = booster->GetEffectSettings();
