@@ -26,6 +26,8 @@ public:
 	//getter
 	HWND GetHwnd() const { return hwnd; }
 	HINSTANCE GetHinstance() const { return wc.hInstance; }
+	// ImGuiの入力捕捉状態に関係なく、ウィンドウが受け取ったF1押下を1回だけ取得する。
+	bool ConsumeF1Pressed();
 	static int32_t GetClientWidth() { return currentClientWidth_; }
 	static int32_t GetClientHeight() { return currentClientHeight_; }
 
@@ -35,6 +37,7 @@ public: //定数
 	static const int32_t kClientHeight = 1080;
 	static int32_t currentClientWidth_;
 	static int32_t currentClientHeight_;
+	static bool f1Pressed_;
 
 private:
 

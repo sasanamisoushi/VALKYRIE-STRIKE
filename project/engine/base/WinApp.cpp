@@ -17,10 +17,17 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 int32_t WinApp::currentClientWidth_ = WinApp::kClientWidth;
 int32_t WinApp::currentClientHeight_ = WinApp::kClientHeight;
+bool WinApp::f1Pressed_ = false;
 
 
 //ウィンドウプロシージャ
 LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+	// ImGuiのWin32ハンドラーより先に取得する。ImGui表示中にキーボードを
+	// 捕捉していても、F1だけは編集画面を閉じるために必ず使えるようにする。
+	if (msg == WM_KEYDOWN && wparam == VK_F1 && (lparam & (1LL << 30)) == 0) {
+		f1Pressed_ = true;
+	}
+
 	if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam)) {
 		return true;
 	}
@@ -46,6 +53,12 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
 
 	//標準のメッセージを処理を行う
 	return DefWindowProc(hwnd, msg, wparam, lparam);
+}
+
+bool WinApp::ConsumeF1Pressed() {
+	const bool pressed = f1Pressed_;
+	f1Pressed_ = false;
+	return pressed;
 }
 
 LONG WINAPI WinApp::ExportDump(EXCEPTION_POINTERS *exception) {
