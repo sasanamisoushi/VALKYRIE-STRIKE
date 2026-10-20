@@ -1,0 +1,7 @@
+newmtl WarpInnerMat
+Ka 1.0 1.0 1.0
+Kd 1.0 1.0 1.0
+Ks 0.0 0.0 0.0
+d 0.8
+illum 1
+map_Kd warp_stream_lines.png

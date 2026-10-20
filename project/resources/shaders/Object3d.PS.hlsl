@@ -35,6 +35,10 @@ struct EnvMapParam
 {
     int32_t enable; // 0:OFF, 1:ON
     float32_t weight; // 反射の強さ
+    float32_t2 padding;
+    float32_t4 clipPlane;
+    int32_t clipPlaneEnabled;
+    float32_t3 clipPlanePadding;
 };
 ConstantBuffer<EnvMapParam> gEnvMapParam : register(b3);
 
@@ -46,6 +50,14 @@ struct PixelShaderOutput
 PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
+
+    // ワープ出口など、空間上の面をまたぐ演出では通過済みの側だけを描画する。
+    // 通常のオブジェクトは clipPlaneEnabled が 0 のため、従来の描画に影響しない。
+    if (gEnvMapParam.clipPlaneEnabled != 0 &&
+        dot(float32_t4(input.worldPosition, 1.0f), gEnvMapParam.clipPlane) < 0.0f)
+    {
+        discard;
+    }
     
     float4 transformedUV = mul(float32_t4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
     float32_t4 textureColor = gTexture.Sample(gSampler, transformedUV.xy);

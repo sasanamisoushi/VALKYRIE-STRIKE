@@ -13,6 +13,8 @@ public:
 
 	//共通描画設定
 	void SetCommonDrawSettings();
+	// UI やワープ演出の上へ 3D 本体を描く設定。深度を参照しないが、色は通常の不透明描画のまま維持する。
+	void SetOverlayDrawSettings();
 
 	//エフェクト用描画設定
 	void SetEffectDrawSettings();
@@ -60,6 +62,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
 
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> overlayPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> effectPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> overlayEffectPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> thrusterPipelineState_;

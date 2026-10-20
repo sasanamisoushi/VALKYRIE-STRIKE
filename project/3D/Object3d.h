@@ -35,7 +35,12 @@ struct CameraForGPU {
 struct EnvMapParam {
 	int32_t enable;
 	float weight;
-	float padding[2];  // 8バイト
+	float padding[2];
+	// ワールド空間のクリップ面。normal.xyz * worldPosition + distance が
+	// 0 未満のピクセルを描画しない。演出用にオブジェクト単位で利用する。
+	Vector4 clipPlane = { 0.0f, 0.0f, 0.0f, 0.0f };
+	int32_t clipPlaneEnabled = 0;
+	float clipPlanePadding[3] = {};
 };
 
 class Object3d {
@@ -76,6 +81,17 @@ public:
 	void SetEnvironmentMapEnabled(bool enabled) {
 		if (envMapParamData_) {
 			envMapParamData_->enable = enabled ? 1 : 0;
+		}
+	}
+	void SetWorldClipPlane(const Vector3& normal, float distance) {
+		if (envMapParamData_) {
+			envMapParamData_->clipPlane = { normal.x, normal.y, normal.z, distance };
+			envMapParamData_->clipPlaneEnabled = 1;
+		}
+	}
+	void ClearWorldClipPlane() {
+		if (envMapParamData_) {
+			envMapParamData_->clipPlaneEnabled = 0;
 		}
 	}
 

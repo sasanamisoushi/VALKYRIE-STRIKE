@@ -27,6 +27,13 @@ void Object3dCommon::SetCommonDrawSettings() {
 	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
+void Object3dCommon::SetOverlayDrawSettings() {
+	// スプライトが深度バッファを書き込んだ後でも、演出用の 3D 本体を確実に見せる。
+	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
+	dxCommon_->GetCommandList()->SetPipelineState(overlayPipelineState_.Get());
+	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
 void Object3dCommon::SetEffectDrawSettings() {
 	//ルートシグネチャをセットするコマンド
 	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
@@ -247,6 +254,14 @@ void Object3dCommon::CreateGraphicsPipeline() {
 	pipelineState_ = nullptr;
 	HRESULT hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&pipelineState_));
 	assert(SUCCEEDED(hr) && "パイプラインの作成に失敗しました！");
+
+	// 2D のワープ画面が先に深度を書き込んでいても、機体本体を手前に表示する専用パス。
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC overlayPipelineDesc = graphicsPipelineStateDesc;
+	overlayPipelineDesc.DepthStencilState.DepthEnable = false;
+	overlayPipelineDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	overlayPipelineState_ = nullptr;
+	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&overlayPipelineDesc, IID_PPV_ARGS(&overlayPipelineState_));
+	assert(SUCCEEDED(hr) && "オーバーレイ用パイプラインの作成に失敗しました。");
 
 	// エフェクト用パイプラインの生成 (深度書き込み無効)
 	graphicsPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;

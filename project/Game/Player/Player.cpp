@@ -393,6 +393,7 @@ void Player::Initialize(const std::string &modelName) {
 
     boosterEffect_ = std::make_unique<BoosterEffect>();
     boosterEffect_->Initialize();
+    boosterEffect_->SetPlayerModelScale(modelScale_.x);
 }
 
 void Player::ChangeMode(PlayerMode newMode) {
@@ -661,7 +662,7 @@ void Player::Update(const std::list<std::unique_ptr<Obstacle>> &obstacles, const
 
 	// 変形・回避ロールを含む描画姿勢を先に確定する。
 	UpdateModel();
-	if (boosterEffect_) {
+	if (boosterEffect_ && presentationThrustersVisible_) {
 		auto input = Input::GetInstance();
 		PlayerModeParams& p = modeParams_[static_cast<int>(currentMode_)];
 		float speedVal = Length(velocity_);
@@ -679,11 +680,33 @@ void Player::UpdatePresentation(const Vector3& position, const Vector3& eulerRot
 	// タイトルなどの自動飛行も、機体の最終姿勢と噴射姿勢を揃える。
 	UpdateModel(false);
 
-	if (boosterEffect_) {
+	if (boosterEffect_ && presentationThrustersVisible_) {
 		const PlayerModeParams& params = modeParams_[static_cast<int>(currentMode_)];
 		const float speedRatio = speed / (std::max)(0.0001f, params.maxMoveSpeed);
 		boosterEffect_->Update(position_, object_ ? object_->GetQuaternionRotate() : quaternion_,
 			static_cast<int>(currentMode_), speedRatio, isBoosting);
+	}
+}
+
+void Player::SetPresentationClipPlane(const Vector3& normal, float distance) {
+	if (object_) {
+		object_->SetWorldClipPlane(normal, distance);
+	}
+	for (TransformPlayerPart& part : transformParts_) {
+		if (part.object) {
+			part.object->SetWorldClipPlane(normal, distance);
+		}
+	}
+}
+
+void Player::ClearPresentationClipPlane() {
+	if (object_) {
+		object_->ClearWorldClipPlane();
+	}
+	for (TransformPlayerPart& part : transformParts_) {
+		if (part.object) {
+			part.object->ClearWorldClipPlane();
+		}
 	}
 }
 
@@ -826,12 +849,13 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
 
 	// シールドが背景に溶けても状態を認識できるよう、ガード中は機体を青く発光させる。
 	if (object_ && object_->GetModel() && !IsTransformPlayerModel()) {
-		const Vector4 normalColor = UsesNaturalPlayerModelScale(modelName_)
+		Vector4 normalColor = UsesNaturalPlayerModelScale(modelName_)
 			? Vector4{ 1.0f, 1.0f, 1.0f, 1.0f }
 			: Vector4{ 0.2f, 0.5f, 1.0f, 1.0f };
+		normalColor.w = presentationAlpha_;
 		object_->GetModel()->SetEnableLighting(!isGuarding_);
 		object_->GetModel()->SetColor(isGuarding_
-			? Vector4{ 0.15f, 0.75f, 1.0f, 1.0f }
+			? Vector4{ 0.15f, 0.75f, 1.0f, presentationAlpha_ }
 			: normalColor);
 	}
 
@@ -989,6 +1013,10 @@ void Player::ApplyGuardPose(float blendWeight) {
 }
 
 void Player::Draw(Camera* camera, bool drawEffects) {
+	const bool isFadingIn = presentationAlpha_ < 0.999f;
+	if (isFadingIn) {
+		Object3dCommon::GetInstance()->SetAlphaBlendDrawSettings();
+	}
 	if (object_) {
 		// Scene のカメラ更新後の行列で、機体と炎を同じフレームに投影する。
 		object_->Update(camera);
@@ -1000,7 +1028,10 @@ void Player::Draw(Camera* camera, bool drawEffects) {
 			part.object->Draw();
 		}
 	}
-	if (boosterEffect_) {
+	if (isFadingIn) {
+		Object3dCommon::GetInstance()->SetCommonDrawSettings();
+	}
+	if (boosterEffect_ && presentationThrustersVisible_) {
 		boosterEffect_->RefreshPlacement(object_ ? object_->GetTranslate() : position_,
 			object_ ? object_->GetQuaternionRotate() : quaternion_, static_cast<int>(currentMode_));
 		boosterEffect_->DrawNozzles(camera);
@@ -1024,7 +1055,7 @@ void Player::DrawEffects(Camera* camera) {
 		}
 		Object3dCommon::GetInstance()->SetCommonDrawSettings();
 	}
-	if (boosterEffect_) {
+	if (boosterEffect_ && presentationThrustersVisible_) {
 		// 不透明パスで実際に描いた機体の位置・姿勢を、そのまま炎の親変換に使う。
 		boosterEffect_->RefreshPlacement(object_ ? object_->GetTranslate() : position_,
 			object_ ? object_->GetQuaternionRotate() : quaternion_, static_cast<int>(currentMode_));

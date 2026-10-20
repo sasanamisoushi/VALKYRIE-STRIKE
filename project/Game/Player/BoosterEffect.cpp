@@ -6,8 +6,8 @@
 #include <string>
 
 namespace {
-constexpr float kPlayerModelScale = 0.08f;
-constexpr float kNozzleRearOffset = kPlayerModelScale * 1.02f;
+constexpr float kDefaultPlayerModelScale = 0.08f;
+constexpr float kNozzleRearOffsetMultiplier = 1.02f;
 // Model::LoadGltfFile centers the VF-15C mesh around its bounding-box center.
 // The thruster OBJ still uses the original Blender scene coordinates, so use
 // the same center offset when converting its attachment point to player-local.
@@ -60,6 +60,19 @@ void BoosterEffect::Initialize() {
 
 }
 
+void BoosterEffect::SetPlayerModelScale(float scale) {
+    // 演出用にプレイヤーを拡大しても、プレイ中と同じ相対位置に
+    // ノズルと炎を保つ。極小値へのクランプでゼロ除算も防ぐ。
+    const float safeScale = (std::max)(scale, 0.0001f);
+    if (std::abs(playerModelScale_ - safeScale) < 0.0001f) {
+        return;
+    }
+    playerModelScale_ = safeScale;
+    if (lastMode_ >= 0) {
+        SetupBurnersForMode(lastMode_);
+    }
+}
+
 void BoosterEffect::SetupBurnersForMode(int playerMode) {
     burners_.clear();
     lastMode_ = playerMode;
@@ -69,9 +82,9 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
     // push_back 中に再配置が起きないようにする。
     burners_.reserve(2 + extraThrustersByMode_[modeIndex].size());
 
-    const float scale = kPlayerModelScale;
+    const float scale = playerModelScale_;
 
-    const auto makeBurner = [](const Vector3& offset, const Vector4& color,
+    const auto makeBurner = [this](const Vector3& offset, const Vector4& color,
         int trailLength, const std::string& nozzleModel, const std::string& trailModel,
         const std::string& speedTrailModel, const std::string& flareModel, float modelSide,
         bool isExtraThruster = false, size_t extraThrusterIndex = 0) {
@@ -101,8 +114,8 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
         burner.positionMarkerObject->SetModel("PlayerThrusterPlacementMarker");
 
         burner.offset = offset;
-        burner.nozzleOriginOffset = { modelSide * 0.771f * kPlayerModelScale,
-            7.998f * kPlayerModelScale, -10.772f * kPlayerModelScale };
+        burner.nozzleOriginOffset = { modelSide * 0.771f * playerModelScale_,
+            7.998f * playerModelScale_, -10.772f * playerModelScale_ };
         // ゲーム内のプレイヤー前方はローカル +Z。三人称カメラはその反対側
         // （-Z、機体後方）に置かれるため、噴射も -Z 側へ伸ばす。
         burner.exhaustDirection = { 0.0f, 0.0f, -1.0f };
@@ -156,6 +169,7 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
     const Matrix4x4 rotationMatrix = MyMath::MakeRotateMatrix(rotation);
     const PlacementSettings& placement = GetPlacementSettings(playerMode);
     const size_t modeIndex = playerMode <= 0 ? 0u : (playerMode >= 3 ? 2u : static_cast<size_t>(playerMode));
+    const float placementScaleFactor = playerModelScale_ / kDefaultPlayerModelScale;
     for (auto& burner : burners_) {
         PlacementSettings burnerPlacement = placement;
         Vector3 baseOffset = burner.offset;
@@ -170,9 +184,9 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
         const Quaternion placementRotation = MakePlacementRotation(burnerPlacement.rotationDegrees);
         const Quaternion nozzleRotation = MyMath::Normalize(MyMath::Multiply(placementRotation, rotation));
         const Vector3 adjustedOffset = {
-            baseOffset.x + burnerPlacement.positionOffset.x,
-            baseOffset.y + burnerPlacement.positionOffset.y,
-            baseOffset.z + burnerPlacement.positionOffset.z
+            baseOffset.x + burnerPlacement.positionOffset.x * placementScaleFactor,
+            baseOffset.y + burnerPlacement.positionOffset.y * placementScaleFactor,
+            baseOffset.z + burnerPlacement.positionOffset.z * placementScaleFactor
         };
         const Vector3 worldOffset = MyMath::Transform(adjustedOffset, rotationMatrix);
         const Vector3 modelTranslation = MyMath::Transform(
@@ -183,23 +197,24 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
         if (burner.nozzleObject) {
             burner.nozzleObject->SetTranslate({ position.x + modelTranslation.x,
                 position.y + modelTranslation.y, position.z + modelTranslation.z });
-            burner.nozzleObject->SetScale({ kPlayerModelScale * burnerPlacement.scale.x,
-                kPlayerModelScale * burnerPlacement.scale.y, kPlayerModelScale * burnerPlacement.scale.z });
+            burner.nozzleObject->SetScale({ playerModelScale_ * burnerPlacement.scale.x,
+                playerModelScale_ * burnerPlacement.scale.y, playerModelScale_ * burnerPlacement.scale.z });
             burner.nozzleObject->SetQuaternionRotate(nozzleRotation);
         }
         if (burner.positionMarkerObject) {
             burner.positionMarkerObject->SetTranslate({ position.x + worldOffset.x,
                 position.y + worldOffset.y, position.z + worldOffset.z });
-            burner.positionMarkerObject->SetScale({ 0.045f, 0.045f, 0.045f });
+            burner.positionMarkerObject->SetScale({ 0.045f * placementScaleFactor,
+                0.045f * placementScaleFactor, 0.045f * placementScaleFactor });
         }
         // 炎はノズル開口から始め、機体の向きに合わせて排気方向へ伸ばす。
         burner.adjustedExhaustDirection = MyMath::RotateVector(burner.exhaustDirection, placementRotation);
         burner.worldExhaustDirection = MyMath::RotateVector(burner.adjustedExhaustDirection, rotation);
         burner.placementScale = burnerPlacement.scale;
         const Vector3 localExit = {
-            adjustedOffset.x + burner.adjustedExhaustDirection.x * kNozzleRearOffset,
-            adjustedOffset.y + burner.adjustedExhaustDirection.y * kNozzleRearOffset,
-            adjustedOffset.z + burner.adjustedExhaustDirection.z * kNozzleRearOffset
+            adjustedOffset.x + burner.adjustedExhaustDirection.x * playerModelScale_ * kNozzleRearOffsetMultiplier,
+            adjustedOffset.y + burner.adjustedExhaustDirection.y * playerModelScale_ * kNozzleRearOffsetMultiplier,
+            adjustedOffset.z + burner.adjustedExhaustDirection.z * playerModelScale_ * kNozzleRearOffsetMultiplier
         };
         if (burner.trail && burner.trailObject) {
             burner.trail->SetOrigin(localExit);
@@ -252,9 +267,9 @@ void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, 
     // 加速・解除に約0.2秒で追従し、幅と光量が自然に変化する。
     accelerationBlend_ += ((isAccelerating ? 1.0f : 0.0f) - accelerationBlend_) * 0.18f;
     const float flicker = 1.0f + std::sin(time_) * 0.02f;
-    const float targetLength = kPlayerModelScale * (9.5f + cappedSpeedRatio * 3.2f)
+    const float targetLength = playerModelScale_ * (9.5f + cappedSpeedRatio * 3.2f)
         * (1.0f + accelerationBlend_ * (effectSettings_.boostLengthMultiplier - 1.0f)) * flicker;
-    const float targetRadius = kPlayerModelScale * (0.56f + cappedSpeedRatio * 0.16f)
+    const float targetRadius = playerModelScale_ * (0.56f + cappedSpeedRatio * 0.16f)
         * (1.0f + accelerationBlend_ * (effectSettings_.boostWidthMultiplier - 1.0f));
     const float targetAlpha = std::clamp(0.40f + cappedSpeedRatio * 0.40f
         + accelerationBlend_ * 0.18f, 0.0f, 0.92f);

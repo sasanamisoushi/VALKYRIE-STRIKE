@@ -68,6 +68,14 @@ public:
     Quaternion GetQuaternion() const { return quaternion_; }
     const Object3d* GetObject3d() const { return object_.get(); }
     BoosterEffect* GetBoosterEffect() const { return boosterEffect_.get(); }
+    // ワープなどの演出で使う、機体全体の表示アルファ。
+    void SetPresentationAlpha(float alpha) { presentationAlpha_ = alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha); }
+    float GetPresentationAlpha() const { return presentationAlpha_; }
+	// ワープ面の向こう側を描かないための、演出中だけ使うワールド空間クリップ面。
+	void SetPresentationClipPlane(const Vector3& normal, float distance);
+	void ClearPresentationClipPlane();
+	// ワープ中は、機体後端が出口面を通過するまでノズル・噴射を描画しない。
+	void SetPresentationThrustersVisible(bool visible) { presentationThrustersVisible_ = visible; }
     void SetBoosterPlumeEnabled(bool enabled) {
         if (boosterEffect_) {
             boosterEffect_->SetThrusterPlumeEnabled(enabled);
@@ -102,10 +110,18 @@ public:
             object_->Update();
         }
     }
-    void SetScale(const Vector3 &scale) { 
-        modelScale_ = scale;
-        if (object_) object_->SetScale(scale); 
-    }
+	void SetScale(const Vector3& scale) {
+		modelScale_ = scale;
+		// UpdateModel が currentDrawScale_ を描画オブジェクトへ戻すため、ここも同時に更新する。
+		currentDrawScale_ = scale;
+		targetDrawScale_ = scale;
+		if (object_) {
+			object_->SetScale(scale);
+		}
+		if (boosterEffect_) {
+			boosterEffect_->SetPlayerModelScale(scale.x);
+		}
+	}
     void SetRotation(const Vector3 &eulerRotation);
     void SetVelocity(const Vector3& velocity) { velocity_ = velocity; }
 
@@ -190,6 +206,8 @@ private:
 	Vector3 modelScale_ = { 1.0f, 1.0f, 1.0f };
     Vector3 currentDrawScale_ = { 1.0f, 1.0f, 1.0f };
     Vector3 targetDrawScale_ = { 1.0f, 1.0f, 1.0f };
+    float presentationAlpha_ = 1.0f;
+	bool presentationThrustersVisible_ = true;
 
     PlayerMode currentMode_ = PlayerMode::Fighter;
     PlayerModeParams modeParams_[3];

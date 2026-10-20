@@ -180,9 +180,9 @@ void TitleScene::Update() {
 				? std::clamp((launchProgress - 0.24f) * 0.26f, 0.0f, 0.16f)
 				: 0.0f;
 			if (++launchFrame_ >= kLaunchDurationFrames) {
-				// 演出の白フラッシュが収束した時点で、プレイヤー操作をすぐに返す。
+				// ワープ演出（LOADING）へ移行。本編へはワープ後にクリーンな状態で新規初期化する。
 				GameStartTransition::Begin({ gameplayBackground_->GetTitleLaunchForward(), 0.0f, 0 });
-				SceneManager::GetInstance()->ChangeScene("GAMEPLAY");
+				SceneManager::GetInstance()->ChangeScene("LOADING");
 			}
 		} else {
 			UpdateTitleFlight();
@@ -386,7 +386,7 @@ void TitleScene::UpdateTitleFlight() {
 		if (++launchFrame_ >= kLaunchDurationFrames) {
 			// 専用飛行デモから開始する場合も、自動ブーストで入力を奪わない。
 			GameStartTransition::Begin({ { 0.0f, 0.0f, 1.0f }, 0.0f, 0 });
-			SceneManager::GetInstance()->ChangeScene("GAMEPLAY");
+			SceneManager::GetInstance()->ChangeScene("LOADING");
 		}
 	}
 

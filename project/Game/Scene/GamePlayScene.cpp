@@ -47,6 +47,28 @@ namespace {
 		return value * value * (3.0f - 2.0f * value);
 	}
 
+	void SetCameraLookAt(Camera* camera, const Vector3& position, const Vector3& target) {
+		if (!camera) {
+			return;
+		}
+		const Vector3 toTarget = {
+			target.x - position.x,
+			target.y - position.y,
+			target.z - position.z,
+		};
+		const float length = std::sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y + toTarget.z * toTarget.z);
+		if (length <= 0.0001f) {
+			return;
+		}
+		const Vector3 direction = { toTarget.x / length, toTarget.y / length, toTarget.z / length };
+		const Quaternion pitch = MyMath::MakeAxisAngle(
+			{ 1.0f, 0.0f, 0.0f }, -std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
+		const Quaternion yaw = MyMath::MakeAxisAngle(
+			{ 0.0f, 1.0f, 0.0f }, std::atan2(direction.x, direction.z));
+		camera->SetTranslate(position);
+		camera->SetQuaternion(MyMath::Normalize(MyMath::Multiply(yaw, pitch)));
+	}
+
 	Vector3 CalculateTitleLaunchCameraShake(float progress, int frame) {
 		// 機体が加速するほど、エンジンの振動が少しずつカメラへ伝わる。
 		const float acceleration = SmoothStep01((progress - 0.20f) / 0.54f);
@@ -85,6 +107,60 @@ void GamePlayScene::BeginTitleLaunch() {
 	titleLaunchStartForward_ = NormalizeOrVector3(titleLaunchStartForward_, { 0.0f, 0.0f, 1.0f });
 	// タイトルで飛んでいた向きを、そのまま本編開始時へ渡す。
 	titleLaunchForward_ = titleLaunchStartForward_;
+}
+
+void GamePlayScene::ActivateFromWarp() {
+	// 1. 本編ゲームプレイモードへ確実に切り替え（PDF原因2対策）
+	mode_ = Mode::Gameplay;
+	titleLaunchActive_ = false;
+	titleEnemyEntering_ = false;
+	titleEnemyRespawnTimer_ = 0;
+
+	// 2. 本編用カメラへの復帰と初期化
+	if (camera) {
+		Object3dCommon::GetInstance()->SetDefaultCamera(camera.get());
+	}
+
+	// 3. 地形・敵データの再読み込みとコライダー復帰（PDF原因1対策）
+	ReloadSceneJson();
+	for (auto& obstacle : obstacles_) {
+		if (obstacle) {
+			obstacle->SetCollisionEnabled(true);
+			obstacle->Update();
+		}
+	}
+
+	// 4. 本編音声の開始
+	if (!pVoice1) pVoice1 = AudioManager::GetInstance()->PlayWave(soundData1, true);
+	if (!pVoice2) pVoice2 = AudioManager::GetInstance()->PlayWave(soundData2, true);
+	if (!pSongVoice) {
+		pSongVoice = AudioManager::GetInstance()->PlayWave(songSoundData, true);
+		if (pSongVoice) pSongVoice->SetVolume(0.0f);
+	}
+
+	// 5. プレイヤーの移動制御フラグと推力・コライダー復帰（PDF原因1・2対策）
+	if (player_) {
+		player_->SetSpecialAttackActive(false);
+		player_->ChangeMode(PlayerMode::Fighter);
+
+		// ファイター形態の前進基本推力を直ちに付与し、前進停止を防止
+		const Vector3 forward = player_->GetForwardVector();
+		const float baseSpeed = player_->GetModeParams(PlayerMode::Fighter).maxMoveSpeed * 0.8f;
+		player_->SetVelocity({ forward.x * baseSpeed, forward.y * baseSpeed, forward.z * baseSpeed });
+	}
+
+	// 6. 出撃ブーストフラグの初期化（入力をロックさせない）
+	GameStartTransitionData titleTransition;
+	GameStartTransition::Consume(titleTransition);
+	introBoostFrames_ = 0;
+	introBoostVelocity_ = { 0.0f, 0.0f, 0.0f };
+
+	// 7. ゲーム進行フラグ・物理演算・タイムスケール完全復帰（PDF原因3対策）
+	isGameOver_ = false;
+	gameOverTimer_ = 0;
+	isPaused_ = false;
+	isEditorPreviewPlaying_ = true; // shouldUpdateGame を確実に有効化
+	warpFadeInAlpha_ = 1.0f;
 }
 
 bool GamePlayScene::TryConsumeAmmo(MissileType type) {
@@ -165,6 +241,14 @@ void GamePlayScene::Initialize() {
 	}
 
 	TextureManager::GetInstance()->LoadTexture("resources/white1x1.png");
+	TextureManager::GetInstance()->LoadTexture("resources/mission_start_overlay.png");
+	warpFadeInSprite_ = std::make_unique<Sprite>();
+	warpFadeInSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
+	warpFadeInSprite_->SetAnchorPoint({ 0.0f, 0.0f });
+	missionStartOverlaySprite_ = std::make_unique<Sprite>();
+	missionStartOverlaySprite_->Initialize(SpriteCommon::GetInstance(), "resources/mission_start_overlay.png");
+	missionStartOverlaySprite_->SetAnchorPoint({ 0.5f, 0.5f });
+	warpFadeInAlpha_ = 1.0f;
 	spGaugeBackgroundSprite_ = std::make_unique<Sprite>();
 	spGaugeBackgroundSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
 	spGaugeFillSprite_ = std::make_unique<Sprite>();
@@ -426,24 +510,103 @@ void GamePlayScene::Initialize() {
 	if (!IsSimulationMode() && !IsTitleBackgroundMode()) {
 		GameStartTransitionData titleTransition;
 		if (GameStartTransition::Consume(titleTransition) && player_) {
-			const float horizontalLength = std::sqrt(
-				titleTransition.forward.x * titleTransition.forward.x +
-				titleTransition.forward.z * titleTransition.forward.z);
+			// ReloadSceneJson() で Blender の PLAYER オブジェクトを読み込んだ直後の
+			// 座標・向きを保持する。タイトル側の飛行方向は使わないため、毎回同じ
+			// ゲート位置から出て、演出終了時にもステージで定義した場所へ戻る。
+			const Vector3 stageSpawnPosition = player_->GetPosition();
+			Vector3 forward = NormalizeOrVector3(player_->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
+			const float horizontalLength = std::sqrt(forward.x * forward.x + forward.z * forward.z);
 			if (horizontalLength > 0.0001f) {
-				const float yaw = std::atan2(titleTransition.forward.x, titleTransition.forward.z);
+				const float yaw = std::atan2(forward.x, forward.z);
 				player_->SetRotation({ 0.0f, yaw, 0.0f });
 			}
-			introBoostVelocity_ = titleTransition.forward;
-			introBoostVelocity_.x *= titleTransition.initialSpeed;
-			introBoostVelocity_.y *= titleTransition.initialSpeed;
-			introBoostVelocity_.z *= titleTransition.initialSpeed;
-			introBoostFrames_ = titleTransition.boostFrames;
-			introBoostInitialFrames_ = titleTransition.boostFrames;
-			introBoostYaw_ = std::atan2(titleTransition.forward.x, titleTransition.forward.z);
+
+			// ワープ出口をスポーン地点から十分に後方へ置き、機体がステージへ
+			// 飛び込んでくる距離を確保する。
+			warpExitForward_ = forward;
+			warpExitRight_ = NormalizeOrVector3({ forward.z, 0.0f, -forward.x }, { 1.0f, 0.0f, 0.0f });
+			warpExitYaw_ = std::atan2(forward.x, forward.z);
+			warpExitGatePosition_ = AddVector3(stageSpawnPosition, ScaleVector3(forward, -8.0f));
+			warpExitStartPosition_ = AddVector3(warpExitGatePosition_, ScaleVector3(forward, -4.0f));
+			// 操作開始は終了時の後方カメラに対して少し手前になるよう、Blender の
+			// スポーン地点から進行方向と逆へ 3.5 ユニット寄せる。
+			warpExitEndPosition_ = AddVector3(stageSpawnPosition, ScaleVector3(forward, -3.5f));
+			// 出現まではゲート前方の斜め位置から捉え、出口通過後にだけ
+			// 通常の後方追従カメラへ切り替える。
+			warpExitCinematicCameraPosition_ = AddVector3(
+				AddVector3(warpExitGatePosition_, ScaleVector3(forward, 2.8f)),
+				AddVector3(ScaleVector3(warpExitRight_, 4.8f), { 0.0f, 2.1f, 0.0f }));
+			warpExitActive_ = true;
+			warpExitFrame_ = 0;
+			warpExitGateFrames_ = kWarpExitGateLifetimeFrames;
+
+			// 到着後に演出用の前進を重ねない。これにより、壁へ押し出されず
+			// Blender で指定した PLAYER の位置からゲームプレイを開始できる。
+			introBoostVelocity_ = { 0.0f, 0.0f, 0.0f };
+			introBoostFrames_ = 0;
+			introBoostInitialFrames_ = 0;
+			introBoostYaw_ = warpExitYaw_;
+			player_->SetPresentationAlpha(0.0f);
+			player_->SetPresentationThrustersVisible(false);
+			const float clipPlaneDistance = -(warpExitForward_.x * warpExitGatePosition_.x +
+				warpExitForward_.y * warpExitGatePosition_.y + warpExitForward_.z * warpExitGatePosition_.z);
+			player_->SetPresentationClipPlane(warpExitForward_, clipPlaneDistance);
+			player_->UpdatePresentation(warpExitStartPosition_, { -0.04f, warpExitYaw_, 0.0f }, 2.0f, true);
 		}
 	}
-// 	simulationManager_->RefreshSimulationActionNames();
-// 	missilePresetManager_->RefreshMissilePresetNames();
+
+	if (warpExitActive_ || warpExitGateFrames_ > 0) {
+		ModelManager* modelManager = ModelManager::GetInstance();
+		modelManager->CreatePlaneModel("warp_exit_ring_quad");
+		modelManager->CreatePlaneModel("warp_exit_fill_quad");
+		modelManager->CreatePlaneModel("warp_exit_core_quad");
+		if (Model* ringModel = modelManager->FindModel("warp_exit_ring_quad")) {
+			ringModel->SetTextureFilePath("resources/warp_cloud_ring.png");
+			ringModel->SetEnableLighting(false);
+		}
+		if (Model* fillModel = modelManager->FindModel("warp_exit_fill_quad")) {
+			fillModel->SetTextureFilePath("resources/circle2.png");
+			fillModel->SetEnableLighting(false);
+		}
+		if (Model* coreModel = modelManager->FindModel("warp_exit_core_quad")) {
+			coreModel->SetTextureFilePath("resources/warp_flare_core.png");
+			coreModel->SetEnableLighting(false);
+		}
+		warpExitRingObject_ = std::make_unique<Object3d>();
+		warpExitRingObject_->Initialize(Object3dCommon::GetInstance());
+		warpExitRingObject_->SetModel("warp_exit_ring_quad");
+		warpExitFillObject_ = std::make_unique<Object3d>();
+		warpExitFillObject_->Initialize(Object3dCommon::GetInstance());
+		warpExitFillObject_->SetModel("warp_exit_fill_quad");
+		warpExitCoreObject_ = std::make_unique<Object3d>();
+		warpExitCoreObject_->Initialize(Object3dCommon::GetInstance());
+		warpExitCoreObject_->SetModel("warp_exit_core_quad");
+	}
+
+	// 障害物・地形のコライダーを全件有効化して更新（PDF 不具合A-1, A-2対策）
+	for (auto& obstacle : obstacles_) {
+		if (obstacle) {
+			obstacle->SetCollisionEnabled(true);
+			obstacle->Update();
+		}
+	}
+
+	// プレイヤーの移動制御フラグと推力・コライダー復帰（PDF 不具合B-1, A-3対策）
+	if (player_) {
+		player_->SetSpecialAttackActive(false);
+		player_->ChangeMode(PlayerMode::Fighter);
+
+		// ファイター形態の前進基本推力を直ちに付与し、前進停止を防止
+		const Vector3 forward = player_->GetForwardVector();
+		const float baseSpeed = player_->GetModeParams(PlayerMode::Fighter).maxMoveSpeed * 0.8f;
+		player_->SetVelocity({ forward.x * baseSpeed, forward.y * baseSpeed, forward.z * baseSpeed });
+
+		// カメラを自機位置に即座に同期（PDF 不具合B-3対策）
+		if (camera) {
+			player_->UpdateCamera(camera.get(), nullptr, false);
+			camera->Update();
+		}
+	}
 
 	if (IsSimulationMode()) {
 		isEditorPreviewPlaying_ = false;
@@ -451,7 +614,6 @@ void GamePlayScene::Initialize() {
 		uiManager_->showSimulationWindow_ = true;
 		SetDebugCameraActive(true);
 	}
-
 
 	EditorReceiver::GetInstance()->Initialize();
 }
@@ -929,7 +1091,17 @@ void GamePlayScene::Finalize() {
 }
 
 void GamePlayScene::Update() {
+	Camera* activeCamera = isDebugCameraActive_ ? static_cast<Camera*>(debugFlyCamera_.get()) : camera.get();
+	if (activeCamera) {
+		Object3dCommon::GetInstance()->SetDefaultCamera(activeCamera);
+	}
 
+	if (warpFadeInAlpha_ > 0.0f) {
+		warpFadeInAlpha_ -= 1.0f / 35.0f;
+		if (warpFadeInAlpha_ <= 0.0f) {
+			warpFadeInAlpha_ = 0.0f;
+		}
+	}
 
 	if (EditorReceiver::GetInstance()->Update(player_.get(), enemies_, obstacles_, enemySpawns_)) {
 		// エディタからの差し替えでは敵リスト全体が再生成されるため、生ポインタの参照を残さない。
@@ -1096,15 +1268,18 @@ void GamePlayScene::Update() {
 	const bool isSimulation = IsSimulationMode();
 	const bool isFullFlowPreview = !isSimulation || uiManager_->simulationPlaybackMode_ == 1;
 	const bool isSelectedOnlyPreview = isSimulation && uiManager_->simulationPlaybackMode_ == 0;
+	// 出撃カット中は敵の思考・弾・HUD を止める。入力や既存弾による被弾を
+	// 演出に持ち込まないため、開始からアフターバーナー終了までを一続きに扱う。
+	const bool isWarpExitSequenceActive = warpExitActive_ || introBoostFrames_ > 0;
 	// 移動キーは設定パネル上にマウスがあっても受け付ける。
 	// マウス捕捉まで必須にすると、UI を表示しているだけで Player::Update が
 	// 呼ばれず、W/S などのキーボード移動まで停止してしまう。
 	const bool updateSelectedPlayer = shouldUpdateGame && canUseKeyboardInput && (isFullFlowPreview || uiManager_->currentSimulationTarget_ == 0);
-	const bool updateSelectedMissiles = shouldUpdateGame && (isFullFlowPreview || uiManager_->currentSimulationTarget_ == 1);
-	const bool updateSelectedEnemies = shouldUpdateGame && (isFullFlowPreview || uiManager_->currentSimulationTarget_ == 2);
+	const bool updateSelectedMissiles = shouldUpdateGame && !isWarpExitSequenceActive && (isFullFlowPreview || uiManager_->currentSimulationTarget_ == 1);
+	const bool updateSelectedEnemies = shouldUpdateGame && !isWarpExitSequenceActive && (isFullFlowPreview || uiManager_->currentSimulationTarget_ == 2);
 	const bool updateSelectedParticles = shouldUpdateGame && (isFullFlowPreview || uiManager_->currentSimulationTarget_ == 3);
-	const bool allowWeaponInput = shouldUpdateGame && canUsePlayerInput && (!isSimulation || isFullFlowPreview);
-	const bool allowLockOnBehavior = shouldUpdateGame && !isGameOver_ &&
+	const bool allowWeaponInput = shouldUpdateGame && !isWarpExitSequenceActive && canUsePlayerInput && (!isSimulation || isFullFlowPreview);
+	const bool allowLockOnBehavior = shouldUpdateGame && !isWarpExitSequenceActive && !isGameOver_ &&
 		(isFullFlowPreview || uiManager_->currentSimulationTarget_ == 1 || uiManager_->currentSimulationTarget_ == 2);
 	const bool updateDebugWireframes = !isSimulation || isFullFlowPreview || updateSelectedPlayer || updateSelectedMissiles || updateSelectedEnemies || updateSelectedParticles;
 	const bool updateAnimationPreview = shouldUpdateGame && (!isSimulation || isFullFlowPreview);
@@ -1333,7 +1508,7 @@ void GamePlayScene::Update() {
 
 
 
-	Camera *activeCamera = isDebugCameraActive_ ? static_cast<Camera *>(debugFlyCamera_.get()) : camera.get();
+	activeCamera = isDebugCameraActive_ ? static_cast<Camera *>(debugFlyCamera_.get()) : camera.get();
 	lockOnManager_->UpdateLockOn(activeCamera, allowLockOnBehavior);
 
 
@@ -1426,7 +1601,47 @@ void GamePlayScene::Update() {
 			player_->SetVelocity(velocity);
 			player_->UpdatePresentation(position, { pitch, yaw, roll }, (std::max)(0.9f, horizontalSpeed * 7.0f), false);
 		} else if (updateSelectedPlayer) {
-			if (introBoostFrames_ > 0) {
+			if (warpExitActive_) {
+				const float fadeProgress = SmoothStep01(
+					static_cast<float>(warpExitFrame_ - kWarpExitPlayerFadeStartFrame) /
+					static_cast<float>(kWarpExitPlayerFadeFrames));
+				player_->SetPresentationAlpha(fadeProgress);
+				const float progress = std::clamp(
+					static_cast<float>(warpExitFrame_) / static_cast<float>(kWarpExitDurationFrames), 0.0f, 1.0f);
+				const float easedProgress = SmoothStep01(progress);
+				Vector3 position = {
+					warpExitStartPosition_.x + (warpExitEndPosition_.x - warpExitStartPosition_.x) * easedProgress,
+					warpExitStartPosition_.y + (warpExitEndPosition_.y - warpExitStartPosition_.y) * easedProgress,
+					warpExitStartPosition_.z + (warpExitEndPosition_.z - warpExitStartPosition_.z) * easedProgress,
+				};
+				// ワープ面の中心を通る軌道へ寄せ、後端のスラスターまで画面内に収める。
+				// 始点・終点はスポーンラインへ正確に戻す。
+				const float flyByOffset = std::sin(progress * 3.14159265f) * 0.32f;
+				position = AddVector3(position, ScaleVector3(warpExitRight_, flyByOffset));
+				const float roll = std::sin(progress * 3.14159265f) * 0.18f;
+				// 噴射・ノズルは独立描画なので、クリップ面より先に見えないよう
+				// 機体後端が出口を通る頃から有効にする。
+				player_->SetPresentationThrustersVisible(warpExitFrame_ >= kWarpExitGateFadeStartFrame);
+				player_->SetVelocity(ScaleVector3(warpExitForward_, 0.48f + progress * 0.22f));
+				player_->UpdatePresentation(position, { -0.05f, warpExitYaw_, roll }, 2.6f, true);
+				++warpExitFrame_;
+				if (warpExitFrame_ == kWarpExitCameraHandoffStartFrame) {
+					// 後方カメラへ回る前に出口を消す。これでワープがカメラと自機の間に
+					// 残らず、機体後方から進行方向を見通せる。ここまでにクリップ面で
+					// 自機の後端も出口を通り抜けている。
+					warpExitGateFrames_ = 0;
+				}
+				if (warpExitFrame_ >= kWarpExitDurationFrames) {
+					// 操作開始へ速度を引き継ぐ。ここで停止させないことで、演出終了と
+					// 本編開始の間に機体・カメラが一拍止まるのを防ぐ。
+					const Vector3 handoffVelocity = ScaleVector3(warpExitForward_, 0.42f);
+					player_->SetVelocity(handoffVelocity);
+					player_->UpdatePresentation(warpExitEndPosition_, { 0.0f, warpExitYaw_, 0.0f }, 2.2f, true);
+					player_->ClearPresentationClipPlane();
+					player_->SetPresentationThrustersVisible(true);
+					warpExitActive_ = false;
+				}
+			} else if (introBoostFrames_ > 0) {
 				const float progress = 1.0f - static_cast<float>(introBoostFrames_) /
 					static_cast<float>((std::max)(1, introBoostInitialFrames_));
 				Vector3 position = player_->GetPosition();
@@ -1435,11 +1650,6 @@ void GamePlayScene::Update() {
 				position.z += introBoostVelocity_.z;
 				player_->SetVelocity(introBoostVelocity_);
 				player_->UpdatePresentation(position, { -0.05f, introBoostYaw_, progress * 6.28318531f }, 2.2f, true);
-				if (environmentRenderer_ && introBoostFrames_ % 8 == 0) {
-					environmentRenderer_->GetParticleManager()->Emit(
-						"smoke", position, 2, { 0.72f, 0.80f, 0.88f, 0.11f },
-						0.035f, 0.015f, 3.8f, 1.4f, 1.6f, 2.8f, 7.0f);
-				}
 				--introBoostFrames_;
 			} else {
 				Vector3 lockOnTargetPosition;
@@ -2036,10 +2246,24 @@ void GamePlayScene::Update() {
 					targetPos = &enemyPos;
 				}
 				player_->UpdateCamera(camera.get(), targetPos);
+				if (warpExitActive_ && !isDebugCameraActive_) {
+					UpdateWarpExitCamera(camera.get());
+				}
 			}
 		}
 		camera->Update();
 	}
+
+	// Object3d は Update 時のカメラ行列を WVP として保持する。地形は物理更新時にも
+	// 更新されるが、ワープ演出ではこの後にカメラが大きく移動するため、確定した
+	// カメラ行列でもう一度更新して地面がカメラに固定されたように見えるのを防ぐ。
+	for (auto& obstacle : obstacles_) {
+		if (obstacle) {
+			obstacle->Update();
+		}
+	}
+
+	UpdateWarpExitGate(activeCamera);
 
 	if (isSelectedOnlyPreview) {
 		for (auto &enemy : enemies_) {
@@ -2350,6 +2574,8 @@ void GamePlayScene::Draw() {
 	if (!renderCamera) {
 		return;
 	}
+	Object3dCommon::GetInstance()->SetDefaultCamera(renderCamera);
+
 	// 深度を書き込まない炎やパーティクルを、背景で上書きしない。
 	if (environmentRenderer_) {
 		environmentRenderer_->DrawBackground();
@@ -2357,7 +2583,8 @@ void GamePlayScene::Draw() {
 	Object3dCommon::GetInstance()->SetCommonDrawSettings();
 
 
-	if (player_) {
+	const bool shouldDrawPlayer = player_ && player_->GetPresentationAlpha() > 0.001f;
+	if (shouldDrawPlayer) {
 		// 機体・ノズルは不透明パス。炎は地形の深度が完成してから描く。
 		if (isEditorPreviewPlaying_ && player_->GetBoosterEffect()) {
 			// 編集UIを閉じて再生した際に位置確認用の黄色い球を残さない。
@@ -2385,7 +2612,7 @@ void GamePlayScene::Draw() {
 	}
 
 
-	if (enemyBulletManager_) {
+	if (enemyBulletManager_ && !(warpExitActive_ || introBoostFrames_ > 0)) {
 		enemyBulletManager_->Draw(renderCamera);
 	}
 
@@ -2498,10 +2725,11 @@ void GamePlayScene::Draw() {
 
 	Object3dCommon::GetInstance()->SetEffectDrawSettings();
 	if (environmentRenderer_) environmentRenderer_->Draw();
+	DrawWarpExitGate();
 
 	// すべての不透明オブジェクトの後に、実際の噴射を加算する。
 	// Z-Test は有効、Z-Write は無効のまま、前景の翼・地形には正しく隠れる。
-	if (player_) {
+	if (shouldDrawPlayer) {
 		player_->DrawEffects(renderCamera);
 	}
 
@@ -2520,12 +2748,151 @@ void GamePlayScene::Draw() {
 	DrawOverlay();
 }
 
+void GamePlayScene::UpdateWarpExitCamera(Camera* renderCamera) {
+	if (!warpExitActive_ || !renderCamera || !player_) {
+		return;
+	}
+
+	const float progress = std::clamp(
+		static_cast<float>(warpExitFrame_) / static_cast<float>(kWarpExitDurationFrames), 0.0f, 1.0f);
+	// UpdateCamera が先に作った通常追従カメラを終点に使うことで、演出終了時に
+	// 位置・画角ともゲームプレイ用カメラへ自然につながる。
+	const Vector3 followCameraPosition = renderCamera->GetTranslate();
+	const float handoffProgress = SmoothStep01(
+		(static_cast<float>(warpExitFrame_ - kWarpExitCameraHandoffStartFrame)) /
+		static_cast<float>(kWarpExitCameraHandoffFrames));
+	const Vector3 cinematicPosition = {
+		warpExitCinematicCameraPosition_.x + std::sin(progress * 5.2f) * 0.12f,
+		warpExitCinematicCameraPosition_.y + std::sin(progress * 4.1f) * 0.06f,
+		warpExitCinematicCameraPosition_.z,
+	};
+	const Vector3 cameraPosition = LerpVector3(cinematicPosition, followCameraPosition, handoffProgress);
+
+	// カメラの移動と注視点の切り替えに同じ補間率を使う。以前は注視点だけが
+	// 先に自機へ寄っていたため、ワープから出るタイミングとカメラの動きが
+	// ずれて見えていた。
+	const float trackingProgress = handoffProgress;
+	const Vector3 gateFocus = AddVector3(warpExitGatePosition_, { 0.0f, 0.65f, 0.0f });
+	const Vector3 playerFocus = AddVector3(player_->GetPosition(), ScaleVector3(warpExitForward_, 4.2f));
+	const Vector3 focus = LerpVector3(gateFocus, playerFocus, trackingProgress);
+	SetCameraLookAt(renderCamera, cameraPosition, focus);
+	// 開始時は広角寄りにしてゲートと地形を入れ、追従へ渡す間に通常画角へ戻す。
+	renderCamera->SetFovY(0.76f - handoffProgress * 0.28f);
+}
+
+void GamePlayScene::UpdateWarpExitGate(Camera* renderCamera) {
+	if (warpExitGateFrames_ <= 0 || !renderCamera) {
+		return;
+	}
+
+	const float fadeOut = 1.0f - SmoothStep01(
+		static_cast<float>(warpExitFrame_ - kWarpExitGateFadeStartFrame) /
+		static_cast<float>(kWarpExitCameraHandoffStartFrame - kWarpExitGateFadeStartFrame));
+	const float animationProgress = std::clamp(
+		static_cast<float>(warpExitFrame_) / static_cast<float>(kWarpExitDurationFrames), 0.0f, 1.0f);
+	const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(warpExitFrame_) * 0.36f);
+
+	if (warpExitRingObject_) {
+		warpExitRingObject_->SetTranslate(warpExitGatePosition_);
+		warpExitRingObject_->SetRotate({ 0.0f, warpExitYaw_, static_cast<float>(warpExitFrame_) * 0.055f });
+		const float scale = 4.4f + animationProgress * 1.5f + pulse * 0.24f;
+		warpExitRingObject_->SetScale({ scale, scale, 1.0f });
+		if (Model* ringModel = warpExitRingObject_->GetModel()) {
+			ringModel->SetColor({ 0.56f, 0.90f, 1.0f, fadeOut * (0.72f + pulse * 0.24f) });
+		}
+		warpExitRingObject_->Update(renderCamera);
+	}
+	if (warpExitFillObject_) {
+		warpExitFillObject_->SetTranslate(AddVector3(warpExitGatePosition_, ScaleVector3(warpExitForward_, -0.02f)));
+		warpExitFillObject_->SetRotate({ 0.0f, warpExitYaw_, static_cast<float>(warpExitFrame_) * 0.018f });
+		const float fillScale = 4.05f + animationProgress * 1.34f + pulse * 0.14f;
+		warpExitFillObject_->SetScale({ fillScale, fillScale, 1.0f });
+		if (Model* fillModel = warpExitFillObject_->GetModel()) {
+			fillModel->SetColor({ 0.30f, 0.72f, 1.0f, fadeOut * (0.56f + pulse * 0.13f) });
+		}
+		warpExitFillObject_->Update(renderCamera);
+	}
+	if (warpExitCoreObject_) {
+		warpExitCoreObject_->SetTranslate(AddVector3(warpExitGatePosition_, ScaleVector3(warpExitForward_, -0.03f)));
+		warpExitCoreObject_->SetRotate({ 0.0f, warpExitYaw_, -static_cast<float>(warpExitFrame_) * 0.032f });
+		const float coreScale = 2.25f + animationProgress * 1.25f + pulse * 0.18f;
+		warpExitCoreObject_->SetScale({ coreScale, coreScale, 1.0f });
+		if (Model* coreModel = warpExitCoreObject_->GetModel()) {
+			coreModel->SetColor({ 0.48f, 0.84f, 1.0f, fadeOut * (0.25f + pulse * 0.12f) });
+		}
+		warpExitCoreObject_->Update(renderCamera);
+	}
+
+	--warpExitGateFrames_;
+}
+
+void GamePlayScene::DrawWarpExitGate() {
+	if (warpExitGateFrames_ <= 0) {
+		return;
+	}
+	Object3dCommon::GetInstance()->SetEffectDrawSettings();
+	if (warpExitFillObject_) {
+		warpExitFillObject_->Draw();
+	}
+	if (warpExitCoreObject_) {
+		warpExitCoreObject_->Draw();
+	}
+	if (warpExitRingObject_) {
+		warpExitRingObject_->Draw();
+	}
+}
+
+void GamePlayScene::DrawMissionStartOverlay() {
+	if (!missionStartOverlaySprite_ || !warpExitActive_ || warpExitFrame_ < kWarpExitMissionStartFrame) {
+		return;
+	}
+
+	const float progress = std::clamp(
+		static_cast<float>(warpExitFrame_ - kWarpExitMissionStartFrame) /
+			static_cast<float>(kWarpExitDurationFrames - kWarpExitMissionStartFrame),
+		0.0f, 1.0f);
+	// 冒頭で素早く実体化した後は、HUD が現れる直前まで表示を保つ。
+	// これにより動画上の13秒地点まで MISSION START が残る。
+	const float alpha = (std::min)(
+		SmoothStep01(progress / 0.12f),
+		1.0f - SmoothStep01((progress - 0.94f) / 0.06f));
+	if (alpha <= 0.001f) {
+		return;
+	}
+
+	const float screenWidth = static_cast<float>(WinApp::GetClientWidth());
+	const float screenHeight = static_cast<float>(WinApp::GetClientHeight());
+	const float width = (std::min)(screenWidth * 0.72f, 1120.0f);
+	const float height = width * 0.5625f;
+	// スプライト描画は通常プレイでも常に有効で、ImGui の描画フレームに依存しない。
+	missionStartOverlaySprite_->SetPosition({ screenWidth * 0.5f, screenHeight * 0.49f });
+	missionStartOverlaySprite_->SetSize({ width, height });
+	missionStartOverlaySprite_->SetColor({ 1.0f, 1.0f, 1.0f, alpha });
+	missionStartOverlaySprite_->Update();
+	missionStartOverlaySprite_->Draw();
+}
+
 void GamePlayScene::DrawOverlay() {
 	if (isDebugCameraActive_ && !debugFlyCamera_) return;
 	if (!isDebugCameraActive_ && !camera) return;
 
 	Camera *activeCamera = isDebugCameraActive_ ? static_cast<Camera *>(debugFlyCamera_.get()) : camera.get();
 	if (!activeCamera) return;
+
+	// 出撃カット中は開始演出だけを重ね、戦闘 HUD・レーダー・照準を一切出さない。
+	if (warpExitActive_ || introBoostFrames_ > 0) {
+		DrawMissionStartOverlay();
+		if (warpFadeInSprite_ && warpFadeInAlpha_ > 0.001f) {
+			const float screenWidth = static_cast<float>(WinApp::GetClientWidth());
+			const float screenHeight = static_cast<float>(WinApp::GetClientHeight());
+			warpFadeInSprite_->SetPosition({ 0.0f, 0.0f });
+			warpFadeInSprite_->SetSize({ screenWidth, screenHeight });
+			warpFadeInSprite_->SetColor({ 1.0f, 1.0f, 1.0f, warpFadeInAlpha_ });
+			warpFadeInSprite_->Update();
+			warpFadeInSprite_->Draw();
+		}
+		return;
+	}
 
 	if (IsTitleBackgroundMode()) {
 		// タイトルでは戦闘 HUD を出さず、ロックオン表示だけを残す。
@@ -2880,6 +3247,15 @@ void GamePlayScene::DrawOverlay() {
 		}
 	}
 	DrawPauseOverlay(screenWidth, screenHeight);
+
+	// ワープ終了時のホワイトアウトからゲームステージへのフェードイン
+	if (warpFadeInSprite_ && warpFadeInAlpha_ > 0.001f) {
+		warpFadeInSprite_->SetPosition({ 0.0f, 0.0f });
+		warpFadeInSprite_->SetSize({ screenWidth, screenHeight });
+		warpFadeInSprite_->SetColor({ 1.0f, 1.0f, 1.0f, warpFadeInAlpha_ });
+		warpFadeInSprite_->Update();
+		warpFadeInSprite_->Draw();
+	}
 }
 
 void GamePlayScene::DrawPauseOverlay(float screenWidth, float screenHeight) {

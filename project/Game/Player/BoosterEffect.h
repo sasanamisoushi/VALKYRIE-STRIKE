@@ -52,6 +52,8 @@ public:
     void SetThrusterPlumeEnabled(bool enabled) { thrusterPlumeEnabled_ = enabled; }
     bool IsThrusterPlumeEnabled() const { return thrusterPlumeEnabled_; }
     const EffectSettings& GetEffectSettings() const { return effectSettings_; }
+    // 自機モデルと同じ縮尺でノズル・炎・光跡の取付座標を計算する。
+    void SetPlayerModelScale(float scale);
     void SetEffectSettings(const EffectSettings& settings);
     void ResetEffectSettings();
     bool SaveSettings(const std::string& filePath) const;
@@ -95,6 +97,7 @@ private:
     bool editorPreviewAccelerating_ = true;
     bool thrusterPlumeEnabled_ = true;
     float accelerationBlend_ = 0.0f;
+    float playerModelScale_ = 0.08f;
     int lastMode_ = -1;
     float time_ = 0.0f;
 

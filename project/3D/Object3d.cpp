@@ -227,6 +227,8 @@ void Object3d::CreateEnvMapParamData() {
 	// 初期値
 	envMapParamData_->enable = 1;      // 最初はON
 	envMapParamData_->weight = 0.3f;   // 30%の反射
+	envMapParamData_->clipPlane = { 0.0f, 0.0f, 0.0f, 0.0f };
+	envMapParamData_->clipPlaneEnabled = 0;
 }
 
 void Object3d::SetModel(const std::string &filepath) {
