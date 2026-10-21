@@ -3,6 +3,7 @@
 #include <combaseapi.h>
 #include <cstdint>
 #include <algorithm>
+#include <cstring>
 #include <cwctype>
 #include <filesystem>
 #include <string>
@@ -18,6 +19,12 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 int32_t WinApp::currentClientWidth_ = WinApp::kClientWidth;
 int32_t WinApp::currentClientHeight_ = WinApp::kClientHeight;
 bool WinApp::f1Pressed_ = false;
+bool WinApp::codexDemoInputEnabled_ = false;
+bool WinApp::hasCodexDemoMousePosition_ = false;
+POINT WinApp::codexDemoMousePosition_ = {};
+long WinApp::codexDemoMouseDeltaX_ = 0;
+long WinApp::codexDemoMouseDeltaY_ = 0;
+uint8_t WinApp::codexDemoMouseButtons_[4] = {};
 
 
 //ウィンドウプロシージャ
@@ -26,6 +33,38 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
 	// 捕捉していても、F1だけは編集画面を閉じるために必ず使えるようにする。
 	if (msg == WM_KEYDOWN && wparam == VK_F1 && (lparam & (1LL << 30)) == 0) {
 		f1Pressed_ = true;
+	}
+
+	// Computer Use のポインター操作は Windows メッセージとして届く。一方、通常版の
+	// 操作は DirectInput を使うため、Codex デモ実行ファイルに限りここで橋渡しする。
+	if (codexDemoInputEnabled_) {
+		switch (msg) {
+		case WM_MOUSEMOVE: {
+			const POINT position{
+				static_cast<LONG>(static_cast<SHORT>(LOWORD(lparam))),
+				static_cast<LONG>(static_cast<SHORT>(HIWORD(lparam)))
+			};
+			if (hasCodexDemoMousePosition_) {
+				codexDemoMouseDeltaX_ += position.x - codexDemoMousePosition_.x;
+				codexDemoMouseDeltaY_ += position.y - codexDemoMousePosition_.y;
+			}
+			codexDemoMousePosition_ = position;
+			hasCodexDemoMousePosition_ = true;
+			break;
+		}
+		case WM_LBUTTONDOWN: codexDemoMouseButtons_[0] = 0x80; break;
+		case WM_LBUTTONUP:   codexDemoMouseButtons_[0] = 0; break;
+		case WM_RBUTTONDOWN: codexDemoMouseButtons_[1] = 0x80; break;
+		case WM_RBUTTONUP:   codexDemoMouseButtons_[1] = 0; break;
+		case WM_MBUTTONDOWN: codexDemoMouseButtons_[2] = 0x80; break;
+		case WM_MBUTTONUP:   codexDemoMouseButtons_[2] = 0; break;
+		case WM_XBUTTONDOWN: codexDemoMouseButtons_[3] = 0x80; break;
+		case WM_XBUTTONUP:   codexDemoMouseButtons_[3] = 0; break;
+		case WM_KILLFOCUS:
+			ZeroMemory(codexDemoMouseButtons_, sizeof(codexDemoMouseButtons_));
+			hasCodexDemoMousePosition_ = false;
+			break;
+		}
 	}
 
 	if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam)) {
@@ -61,6 +100,18 @@ bool WinApp::ConsumeF1Pressed() {
 	return pressed;
 }
 
+bool WinApp::IsCodexDemoInputEnabled() {
+	return codexDemoInputEnabled_;
+}
+
+void WinApp::ConsumeCodexDemoMouseState(long &deltaX, long &deltaY, uint8_t (&buttons)[4]) {
+	deltaX = codexDemoMouseDeltaX_;
+	deltaY = codexDemoMouseDeltaY_;
+	codexDemoMouseDeltaX_ = 0;
+	codexDemoMouseDeltaY_ = 0;
+	memcpy(buttons, codexDemoMouseButtons_, sizeof(codexDemoMouseButtons_));
+}
+
 LONG WINAPI WinApp::ExportDump(EXCEPTION_POINTERS *exception) {
 	SYSTEMTIME time;
 	GetLocalTime(&time);
@@ -84,6 +135,8 @@ LONG WINAPI WinApp::ExportDump(EXCEPTION_POINTERS *exception) {
 void WinApp::Initialize() {
 
 	CoInitializeEx(0, COINIT_MULTITHREADED);
+	const wchar_t *commandLine = GetCommandLineW();
+	codexDemoInputEnabled_ = commandLine && std::wstring(commandLine).find(L"--codex-demo") != std::wstring::npos;
 
 	
 	//ウインドウプロシージャ
@@ -122,6 +175,9 @@ void WinApp::Initialize() {
 		});
 		if (exeName.find(L"simulation") != std::wstring::npos) {
 			windowTitle = L"VALKYRIE STRIKE Simulation";
+		} else if (exeName.find(L"codexdemo") != std::wstring::npos) {
+			windowTitle = L"VALKYRIE STRIKE Codex Demo";
+			codexDemoInputEnabled_ = true;
 		}
 	}
 	hwnd = CreateWindow(

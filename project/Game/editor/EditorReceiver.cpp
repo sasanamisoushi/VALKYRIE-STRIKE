@@ -262,7 +262,9 @@ void EditorReceiver::ReceiveLoop() {
 	sockaddr_in recvAddr;
 	recvAddr.sin_family = AF_INET;
 	recvAddr.sin_port = htons(50000); // 💡ポート50000番を専用の通り道にする
-	recvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	// Blender は同じPCの 127.0.0.1 にだけ送信する。全ネットワークで
+	// 待ち受けないことで、外部から受信せずファイアウォール確認も不要にする。
+	recvAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
 	bind(recvSocket, (SOCKADDR *)&recvAddr, sizeof(recvAddr));
 

@@ -30,6 +30,25 @@ namespace {
 		});
 		return exeName.find(L"simulation") != std::wstring::npos;
 	}
+
+	bool ShouldStartCodexDemoScene() {
+		const wchar_t *commandLine = GetCommandLineW();
+		if (commandLine && std::wstring(commandLine).find(L"--codex-demo") != std::wstring::npos) {
+			return true;
+		}
+
+		wchar_t modulePath[MAX_PATH] = {};
+		const DWORD length = GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
+		if (length == 0) {
+			return false;
+		}
+
+		std::wstring exeName = std::filesystem::path(modulePath).stem().wstring();
+		std::transform(exeName.begin(), exeName.end(), exeName.begin(), [](wchar_t c) {
+			return static_cast<wchar_t>(std::towlower(c));
+		});
+		return exeName.find(L"codexdemo") != std::wstring::npos;
+	}
 }
 
 void Game::Initialize() {
@@ -67,9 +86,14 @@ void Game::Initialize() {
 	//マネージャーにファクトリーをセット
 	SceneManager::GetInstance()->SetSceneFactory(sceneFactory_.get());
 
-	// 通常起動はタイトル画面から開始する。シミュレーション専用起動だけは
-	// 従来どおり専用シーンを直接開く。
-	SceneManager::GetInstance()->ChangeScene(ShouldStartSimulationScene() ? "SIMULATION" : "TITLE");
+	// 通常起動はタイトル画面から開始する。検証専用の起動だけは専用シーンを直接開く。
+	const char *initialScene = "TITLE";
+	if (ShouldStartSimulationScene()) {
+		initialScene = "SIMULATION";
+	} else if (ShouldStartCodexDemoScene()) {
+		initialScene = "CODEX_DEMO";
+	}
+	SceneManager::GetInstance()->ChangeScene(initialScene);
 
 	// ノイズ画像を2種類とも読み込んでおく
 	TextureManager::GetInstance()->LoadTexture("resources/noise0.png");

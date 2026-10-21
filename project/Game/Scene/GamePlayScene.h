@@ -44,6 +44,8 @@ public:
 	enum class Mode {
 		Gameplay,
 		Simulation,
+		// Codex のデモ確認用。ゲームプレイのルールとHUDは通常版と同一。
+		CodexDemo,
 		// タイトル画面の背面で本編の3Dシーンだけを動かす。操作とHUDは表示しない。
 		TitleBackground
 	};

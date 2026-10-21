@@ -28,6 +28,10 @@ public:
 	HINSTANCE GetHinstance() const { return wc.hInstance; }
 	// ImGuiの入力捕捉状態に関係なく、ウィンドウが受け取ったF1押下を1回だけ取得する。
 	bool ConsumeF1Pressed();
+	// Codex デモ実行ファイルだけで有効にする、Windows メッセージ経由のマウス入力。
+	// 通常版の DirectInput 操作および制作時の操作には影響しない。
+	static bool IsCodexDemoInputEnabled();
+	static void ConsumeCodexDemoMouseState(long &deltaX, long &deltaY, uint8_t (&buttons)[4]);
 	static int32_t GetClientWidth() { return currentClientWidth_; }
 	static int32_t GetClientHeight() { return currentClientHeight_; }
 
@@ -38,6 +42,12 @@ public: //定数
 	static int32_t currentClientWidth_;
 	static int32_t currentClientHeight_;
 	static bool f1Pressed_;
+	static bool codexDemoInputEnabled_;
+	static bool hasCodexDemoMousePosition_;
+	static POINT codexDemoMousePosition_;
+	static long codexDemoMouseDeltaX_;
+	static long codexDemoMouseDeltaY_;
+	static uint8_t codexDemoMouseButtons_[4];
 
 private:
 

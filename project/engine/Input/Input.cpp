@@ -82,10 +82,18 @@ void Input::Update() {
 	// ===========================
 	// マウス入力の更新
 	// ===========================
-	if (mouse_) {
-		// 前フレームの状態を保存
-		mouseStatePre_ = mouseState_;
-
+	// 前フレームの状態を保存
+	mouseStatePre_ = mouseState_;
+	if (WinApp::IsCodexDemoInputEnabled()) {
+		// Codex デモ版は DirectInput ではなく、WinApp が受け取った Windows
+		// メッセージを使う。これにより自動操作環境と実機の入力経路を分離できる。
+		uint8_t buttons[4] = {};
+		ZeroMemory(&mouseState_, sizeof(mouseState_));
+		WinApp::ConsumeCodexDemoMouseState(mouseState_.lX, mouseState_.lY, buttons);
+		for (size_t index = 0; index < 4; ++index) {
+			mouseState_.rgbButtons[index] = buttons[index];
+		}
+	} else if (mouse_) {
 		// マウス情報の取得
 		mouse_->Acquire();
 		HRESULT hr = mouse_->GetDeviceState(sizeof(DIMOUSESTATE), &mouseState_);
