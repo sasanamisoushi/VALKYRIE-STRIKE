@@ -79,10 +79,10 @@ void TitleScene::Initialize() {
 	menuRowSprite_ = std::make_unique<Sprite>();
 	menuRowSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
 	titleControlsGuideSprite_ = std::make_unique<Sprite>();
-	titleControlsGuideSprite_->Initialize(SpriteCommon::GetInstance(), "resources/title_controls.png");
+	titleControlsGuideSprite_->Initialize(SpriteCommon::GetInstance(), "resources/title_controls_simple.png");
 	for (auto& label : menuLabelSprites_) {
 		label = std::make_unique<Sprite>();
-		label->Initialize(SpriteCommon::GetInstance(), "resources/title_menu_labels.png");
+		label->Initialize(SpriteCommon::GetInstance(), "resources/title_menu_labels_simple.png");
 	}
 	for (auto& segment : settingMeterSegments_) {
 		segment = std::make_unique<Sprite>();
@@ -492,8 +492,8 @@ void TitleScene::Draw() {
 		DrawMenuOverlay(static_cast<float>(WinApp::GetClientWidth()), static_cast<float>(WinApp::GetClientHeight()), launchUiAlpha);
 		// タイトルメニュー専用の選択・決定操作を、選択肢と重ならない右下へ表示する。
 		if (!isSettingsOpen_ && titleControlsGuideSprite_) {
-			constexpr float kGuideWidth = 360.0f;
-			constexpr float kGuideHeight = 206.0f;
+			constexpr float kGuideWidth = 330.0f;
+			constexpr float kGuideHeight = 103.0f;
 			constexpr float kGuideMargin = 18.0f;
 			titleControlsGuideSprite_->SetPosition({
 				(static_cast<float>(WinApp::GetClientWidth()) - kGuideWidth - kGuideMargin),
@@ -721,13 +721,28 @@ void TitleScene::DrawMenuOverlay(float screenWidth, float screenHeight, float op
 		label->Draw();
 	};
 	if (!isSettingsOpen_) {
-		// メインメニューはロゴの下に文字だけを置く。選択枠や背景パネルは描かない。
+		// ロゴとは独立した、読みやすいフラットなメニュー。選択中の行だけを
+		// 深い青の面と細いシアンのバーで示し、装飾過多にならないようにする。
 		const auto drawMainMenuLabel = [&](size_t labelIndex, MenuItem item, float topY) {
 			const bool selected = selectedMenuItem_ == item;
-			const float labelHeight = selected ? 52.0f : 44.0f;
+			if (selected) {
+				const float rowLeft = screenWidth * 0.5f - 202.0f;
+				menuRowSprite_->SetPosition({ rowLeft, topY - 10.0f });
+				menuRowSprite_->SetSize({ 404.0f, 62.0f });
+				menuRowSprite_->SetColor({ 0.02f, 0.09f, 0.15f, 0.78f * opacity });
+				menuRowSprite_->Update();
+				menuRowSprite_->Draw();
+
+				menuRowSprite_->SetPosition({ rowLeft, topY - 10.0f });
+				menuRowSprite_->SetSize({ 4.0f, 62.0f });
+				menuRowSprite_->SetColor({ 0.28f, 0.86f, 0.96f, opacity });
+				menuRowSprite_->Update();
+				menuRowSprite_->Draw();
+			}
+			const float labelHeight = selected ? 48.0f : 42.0f;
 			drawLabel(labelIndex, screenWidth * 0.5f,
-				topY - (labelHeight - 44.0f) * 0.5f, labelHeight,
-				selected ? 1.0f : 0.62f);
+				topY - (labelHeight - 42.0f) * 0.5f, labelHeight,
+				selected ? 1.0f : 0.58f);
 		};
 		drawMainMenuLabel(0, MenuItem::Start, screenHeight - 225.0f);
 		drawMainMenuLabel(1, MenuItem::Settings, screenHeight - 145.0f);
