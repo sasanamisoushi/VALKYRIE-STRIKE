@@ -28,6 +28,9 @@ public:
 	HINSTANCE GetHinstance() const { return wc.hInstance; }
 	// ImGuiの入力捕捉状態に関係なく、ウィンドウが受け取ったF1押下を1回だけ取得する。
 	bool ConsumeF1Pressed();
+	// ゲーム操作中はOSカーソルを隠し、編集UIを使う時だけ表示する。
+	// 非アクティブなウィンドウでは常に表示へ戻す。
+	void SetCursorVisible(bool visible);
 	// Codex デモ実行ファイルだけで有効にする、Windows メッセージ経由のマウス入力。
 	// 通常版の DirectInput 操作および制作時の操作には影響しない。
 	static bool IsCodexDemoInputEnabled();
@@ -42,6 +45,7 @@ public: //定数
 	static int32_t currentClientWidth_;
 	static int32_t currentClientHeight_;
 	static bool f1Pressed_;
+	bool isCursorVisible_ = true;
 	static bool codexDemoInputEnabled_;
 	static bool hasCodexDemoMousePosition_;
 	static POINT codexDemoMousePosition_;

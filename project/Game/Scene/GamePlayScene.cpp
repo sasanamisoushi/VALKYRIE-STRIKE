@@ -537,6 +537,7 @@ void GamePlayScene::Initialize() {
 				AddVector3(warpExitGatePosition_, ScaleVector3(forward, 2.8f)),
 				AddVector3(ScaleVector3(warpExitRight_, 4.8f), { 0.0f, 2.1f, 0.0f }));
 			warpExitActive_ = true;
+			warpExitImpactTriggered_ = false;
 			warpExitFrame_ = 0;
 			warpExitGateFrames_ = kWarpExitGateLifetimeFrames;
 
@@ -560,6 +561,8 @@ void GamePlayScene::Initialize() {
 		modelManager->CreatePlaneModel("warp_exit_ring_quad");
 		modelManager->CreatePlaneModel("warp_exit_fill_quad");
 		modelManager->CreatePlaneModel("warp_exit_core_quad");
+		modelManager->CreatePlaneModel("warp_exit_spiral_outer_quad");
+		modelManager->CreatePlaneModel("warp_exit_spiral_inner_quad");
 		if (Model* ringModel = modelManager->FindModel("warp_exit_ring_quad")) {
 			ringModel->SetTextureFilePath("resources/warp_cloud_ring.png");
 			ringModel->SetEnableLighting(false);
@@ -572,6 +575,14 @@ void GamePlayScene::Initialize() {
 			coreModel->SetTextureFilePath("resources/warp_flare_core.png");
 			coreModel->SetEnableLighting(false);
 		}
+		if (Model* spiralOuterModel = modelManager->FindModel("warp_exit_spiral_outer_quad")) {
+			spiralOuterModel->SetTextureFilePath("resources/fold_cloud_noise.png");
+			spiralOuterModel->SetEnableLighting(false);
+		}
+		if (Model* spiralInnerModel = modelManager->FindModel("warp_exit_spiral_inner_quad")) {
+			spiralInnerModel->SetTextureFilePath("resources/fold_cloud_noise.png");
+			spiralInnerModel->SetEnableLighting(false);
+		}
 		warpExitRingObject_ = std::make_unique<Object3d>();
 		warpExitRingObject_->Initialize(Object3dCommon::GetInstance());
 		warpExitRingObject_->SetModel("warp_exit_ring_quad");
@@ -581,6 +592,12 @@ void GamePlayScene::Initialize() {
 		warpExitCoreObject_ = std::make_unique<Object3d>();
 		warpExitCoreObject_->Initialize(Object3dCommon::GetInstance());
 		warpExitCoreObject_->SetModel("warp_exit_core_quad");
+		warpExitSpiralOuterObject_ = std::make_unique<Object3d>();
+		warpExitSpiralOuterObject_->Initialize(Object3dCommon::GetInstance());
+		warpExitSpiralOuterObject_->SetModel("warp_exit_spiral_outer_quad");
+		warpExitSpiralInnerObject_ = std::make_unique<Object3d>();
+		warpExitSpiralInnerObject_->Initialize(Object3dCommon::GetInstance());
+		warpExitSpiralInnerObject_->SetModel("warp_exit_spiral_inner_quad");
 	}
 
 	// 障害物・地形のコライダーを全件有効化して更新（PDF 不具合A-1, A-2対策）
@@ -1201,6 +1218,18 @@ void GamePlayScene::Update() {
 	}
 
 	bool shouldUpdateGame = !isPaused_;
+	// 通常プレイの視点操作中だけカーソルをゲーム画面内に固定する。
+	// タイトル背景、ポーズ、ゲームオーバー、編集UI中は Game::Update の既定値
+	// （固定解除・カーソル非表示）をそのまま使う。
+	const bool isMouseLookActive =
+		!IsSimulationMode() &&
+		!IsTitleBackgroundMode() &&
+		!isGameOver_ &&
+		!isAbortingToTitle_ &&
+		shouldUpdateGame &&
+		canUsePlayerInput &&
+		!ImGuiManager::IsVisible();
+	Input::GetInstance()->SetMouseCursorClipEnabled(isMouseLookActive);
 
 	if (isGameOver_) {
 		gameOverTimer_++;
@@ -1608,7 +1637,10 @@ void GamePlayScene::Update() {
 				player_->SetPresentationAlpha(fadeProgress);
 				const float progress = std::clamp(
 					static_cast<float>(warpExitFrame_) / static_cast<float>(kWarpExitDurationFrames), 0.0f, 1.0f);
-				const float easedProgress = SmoothStep01(progress);
+				// 出現直後はワープの慣性を残して素早く飛び出し、ステージへ近づくほど
+				// 減速する Ease-Out。開始と終了の両方が遅い SmoothStep を使わないことで、
+				// ポータルから押し出され続けるような印象をなくす。
+				const float easedProgress = 1.0f - (1.0f - progress) * (1.0f - progress);
 				Vector3 position = {
 					warpExitStartPosition_.x + (warpExitEndPosition_.x - warpExitStartPosition_.x) * easedProgress,
 					warpExitStartPosition_.y + (warpExitEndPosition_.y - warpExitStartPosition_.y) * easedProgress,
@@ -1622,8 +1654,23 @@ void GamePlayScene::Update() {
 				// 噴射・ノズルは独立描画なので、クリップ面より先に見えないよう
 				// 機体後端が出口を通る頃から有効にする。
 				player_->SetPresentationThrustersVisible(warpExitFrame_ >= kWarpExitGateFadeStartFrame);
-				player_->SetVelocity(ScaleVector3(warpExitForward_, 0.48f + progress * 0.22f));
-				player_->UpdatePresentation(position, { -0.05f, warpExitYaw_, roll }, 2.6f, true);
+				// 高速で飛び出した直後から、巡航速度とスラスター出力を一緒に落とす。
+				const float exitSpeed = 0.82f - progress * 0.40f;
+				const float thrusterPower = 3.35f - progress * 1.55f;
+				player_->SetVelocity(ScaleVector3(warpExitForward_, exitSpeed));
+				player_->UpdatePresentation(position, { -0.05f, warpExitYaw_, roll }, thrusterPower, true);
+				// 機体が出口面を突き破る瞬間に、前方へ短く細かな発光粒子を散らす。
+				// 既存の test グループを使うため、新しい描画用ディスクリプタは消費しない。
+				if (!warpExitImpactTriggered_ && warpExitFrame_ >= kWarpExitGatePassageFrame) {
+					if (environmentRenderer_ && environmentRenderer_->GetParticleManager()) {
+						const Vector3 burstPosition = AddVector3(position, ScaleVector3(warpExitForward_, 0.72f));
+						environmentRenderer_->GetParticleManager()->EmitDirectionalBurst(
+							"test", burstPosition, warpExitForward_, 56,
+							{ 0.55f, 0.92f, 1.0f, 1.0f }, 0.62f,
+							0.52f, 0.22f, 0.052f, 0.026f, 0.22f, 0.46f, 0.34f);
+					}
+					warpExitImpactTriggered_ = true;
+				}
 				++warpExitFrame_;
 				if (warpExitFrame_ == kWarpExitCameraHandoffStartFrame) {
 					// 後方カメラへ回る前に出口を消す。これでワープがカメラと自機の間に
@@ -2758,26 +2805,39 @@ void GamePlayScene::UpdateWarpExitCamera(Camera* renderCamera) {
 	// UpdateCamera が先に作った通常追従カメラを終点に使うことで、演出終了時に
 	// 位置・画角ともゲームプレイ用カメラへ自然につながる。
 	const Vector3 followCameraPosition = renderCamera->GetTranslate();
+	// 機体がゲートを抜けた瞬間からカメラを引き始める。従来のように後半まで
+	// 固定したままにせず、飛び出す勢いと連動して画を広げる。
+	const float cameraPullbackDuration = static_cast<float>(
+		kWarpExitCameraHandoffStartFrame - kWarpExitGatePassageFrame + kWarpExitCameraHandoffFrames);
 	const float handoffProgress = SmoothStep01(
-		(static_cast<float>(warpExitFrame_ - kWarpExitCameraHandoffStartFrame)) /
-		static_cast<float>(kWarpExitCameraHandoffFrames));
+		(static_cast<float>(warpExitFrame_ - kWarpExitGatePassageFrame)) /
+		cameraPullbackDuration);
 	const Vector3 cinematicPosition = {
 		warpExitCinematicCameraPosition_.x + std::sin(progress * 5.2f) * 0.12f,
 		warpExitCinematicCameraPosition_.y + std::sin(progress * 4.1f) * 0.06f,
 		warpExitCinematicCameraPosition_.z,
 	};
 	const Vector3 cameraPosition = LerpVector3(cinematicPosition, followCameraPosition, handoffProgress);
+	// 出口面を抜ける一瞬だけ、減衰の速い小さな振動を重ねて質量感を出す。
+	const float impactTime = static_cast<float>(warpExitFrame_ - kWarpExitGatePassageFrame);
+	const float impactEnvelope = std::clamp(1.0f - std::abs(impactTime) / 11.0f, 0.0f, 1.0f);
+	const float impactStrength = impactEnvelope * impactEnvelope;
+	const Vector3 impactShake = {
+		std::sin(impactTime * 3.8f) * 0.16f * impactStrength,
+		std::cos(impactTime * 5.1f) * 0.095f * impactStrength,
+		-0.07f * impactStrength,
+	};
+	const Vector3 shakenCameraPosition = AddVector3(cameraPosition, impactShake);
 
-	// カメラの移動と注視点の切り替えに同じ補間率を使う。以前は注視点だけが
-	// 先に自機へ寄っていたため、ワープから出るタイミングとカメラの動きが
-	// ずれて見えていた。
+	// カメラの移動と注視点の切り替えに同じ補間率を使い、ポータルを抜ける
+	// 機体を捉えながら自然に通常の後方追従へ渡す。
 	const float trackingProgress = handoffProgress;
 	const Vector3 gateFocus = AddVector3(warpExitGatePosition_, { 0.0f, 0.65f, 0.0f });
 	const Vector3 playerFocus = AddVector3(player_->GetPosition(), ScaleVector3(warpExitForward_, 4.2f));
 	const Vector3 focus = LerpVector3(gateFocus, playerFocus, trackingProgress);
-	SetCameraLookAt(renderCamera, cameraPosition, focus);
-	// 開始時は広角寄りにしてゲートと地形を入れ、追従へ渡す間に通常画角へ戻す。
-	renderCamera->SetFovY(0.76f - handoffProgress * 0.28f);
+	SetCameraLookAt(renderCamera, shakenCameraPosition, focus);
+	// 出現時は広角、減速に合わせて通常画角へ戻して速度感を保つ。
+	renderCamera->SetFovY(0.80f - handoffProgress * 0.32f);
 }
 
 void GamePlayScene::UpdateWarpExitGate(Camera* renderCamera) {
@@ -2822,6 +2882,35 @@ void GamePlayScene::UpdateWarpExitGate(Camera* renderCamera) {
 		}
 		warpExitCoreObject_->Update(renderCamera);
 	}
+	// 外周のリングとは別に、出口の奥で二枚の雲を逆方向へ回す。中心にも
+	// 回転の流れを作ることで、平らな輪ではなく奥へ続く螺旋の出口に見せる。
+	const float spiralPulse = 0.5f + 0.5f * std::sin(static_cast<float>(warpExitFrame_) * 0.19f);
+	if (warpExitSpiralOuterObject_) {
+		warpExitSpiralOuterObject_->SetTranslate(
+			AddVector3(warpExitGatePosition_, ScaleVector3(warpExitForward_, -0.045f)));
+		warpExitSpiralOuterObject_->SetRotate({
+			0.0f, warpExitYaw_, -static_cast<float>(warpExitFrame_) * 0.118f + animationProgress * 1.4f });
+		const float outerScale = 4.90f - animationProgress * 1.20f + spiralPulse * 0.18f;
+		warpExitSpiralOuterObject_->SetScale({ outerScale, outerScale * 0.68f, 1.0f });
+		if (Model* spiralOuterModel = warpExitSpiralOuterObject_->GetModel()) {
+			spiralOuterModel->SetColor({ 0.24f, 0.72f, 1.0f,
+				fadeOut * (0.30f + (1.0f - animationProgress) * 0.26f) });
+		}
+		warpExitSpiralOuterObject_->Update(renderCamera);
+	}
+	if (warpExitSpiralInnerObject_) {
+		warpExitSpiralInnerObject_->SetTranslate(
+			AddVector3(warpExitGatePosition_, ScaleVector3(warpExitForward_, -0.055f)));
+		warpExitSpiralInnerObject_->SetRotate({
+			0.0f, warpExitYaw_, static_cast<float>(warpExitFrame_) * 0.164f - animationProgress * 2.1f });
+		const float innerScale = 3.10f - animationProgress * 0.58f + spiralPulse * 0.14f;
+		warpExitSpiralInnerObject_->SetScale({ innerScale, innerScale * 0.68f, 1.0f });
+		if (Model* spiralInnerModel = warpExitSpiralInnerObject_->GetModel()) {
+			spiralInnerModel->SetColor({ 0.56f, 0.94f, 1.0f,
+				fadeOut * (0.22f + (1.0f - animationProgress) * 0.24f) });
+		}
+		warpExitSpiralInnerObject_->Update(renderCamera);
+	}
 
 	--warpExitGateFrames_;
 }
@@ -2833,6 +2922,12 @@ void GamePlayScene::DrawWarpExitGate() {
 	Object3dCommon::GetInstance()->SetEffectDrawSettings();
 	if (warpExitFillObject_) {
 		warpExitFillObject_->Draw();
+	}
+	if (warpExitSpiralOuterObject_) {
+		warpExitSpiralOuterObject_->Draw();
+	}
+	if (warpExitSpiralInnerObject_) {
+		warpExitSpiralInnerObject_->Draw();
 	}
 	if (warpExitCoreObject_) {
 		warpExitCoreObject_->Draw();

@@ -1286,10 +1286,8 @@ void GamePlayUIManager::UpdateUI() {
 				input->IsControllerConnected() ? ImVec4(0.25f, 1.0f, 0.45f, 1.0f) : ImVec4(1.0f, 0.70f, 0.25f, 1.0f),
 				"コントローラー: %s (XInput Player 1)", input->IsControllerConnected() ? "接続済み" : "未接続");
 
-			bool isCursorClipped = input->IsMouseCursorClipEnabled();
-			if (ImGui::Checkbox("マウスカーソルを画面内に固定する (画面外へのはみ出し防止)", &isCursorClipped)) {
-				input->SetMouseCursorClipEnabled(isCursorClipped);
-			}
+			ImGui::TextUnformatted("通常プレイ中はマウスカーソルを自動で画面内に固定します。");
+			ImGui::TextUnformatted("編集UI・ポーズ中は固定を解除します。");
 
 			if (ImGui::Button("初期設定に戻す")) {
 				input->ResetPlayerActionBindings();

@@ -120,6 +120,11 @@ void Game::Update() {
 
 	Framework::Update();
 	HandleResize();
+	// シーン側が明示的に有効にした通常プレイ以外では、画面外へのカーソル移動を許可する。
+	Input::GetInstance()->SetMouseCursorClipEnabled(false);
+	// タイトル・ポーズ・ゲームオーバーなど、マウスを使わない画面ではカーソルを隠す。
+	// 編集UIを開いている間だけOSカーソルを表示する。
+	winApp->SetCursorVisible(showImGui_);
 
 #ifdef ENABLE_IMGUI
 	// F1キーでImGuiの表示・非表示を切り替え

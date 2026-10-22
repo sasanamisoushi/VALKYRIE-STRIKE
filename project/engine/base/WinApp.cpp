@@ -100,6 +100,20 @@ bool WinApp::ConsumeF1Pressed() {
 	return pressed;
 }
 
+void WinApp::SetCursorVisible(bool visible) {
+	// フォーカスを失った時までカーソルを隠すと、別アプリの操作ができなくなる。
+	if (!visible && (hwnd == nullptr || GetForegroundWindow() != hwnd || IsIconic(hwnd))) {
+		visible = true;
+	}
+
+	if (isCursorVisible_ == visible) {
+		return;
+	}
+
+	ShowCursor(visible ? TRUE : FALSE);
+	isCursorVisible_ = visible;
+}
+
 bool WinApp::IsCodexDemoInputEnabled() {
 	return codexDemoInputEnabled_;
 }
@@ -206,6 +220,7 @@ void WinApp::Update() {
 
 void WinApp::Finalize() {
 
+	SetCursorVisible(true);
 	CloseWindow(hwnd);
 	//COMの終了処理
 	CoUninitialize();

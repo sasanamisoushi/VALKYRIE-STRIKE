@@ -117,6 +117,13 @@ public://メンバ関数
 		float scale = 0.1f, float scaleVariance = 0.05f,
 		float lifeTimeMin = 0.5f, float lifeTimeMax = 1.0f,
 		float posVariance = 0.1f);
+	// 指定方向を中心に円錐状へ散らす、衝撃波・噴射向けの短命バースト。
+	void EmitDirectionalBurst(const std::string name, const Vector3 &position, const Vector3 &direction,
+		uint32_t count, const Vector4 &color, float spreadRadians,
+		float speed = 0.5f, float speedVariance = 0.2f,
+		float scale = 0.1f, float scaleVariance = 0.05f,
+		float lifeTimeMin = 0.5f, float lifeTimeMax = 1.0f,
+		float posVariance = 0.1f);
 
 	// 中心に留まり、回転しながら膨らんで消える火球用Plane粒子
 	void EmitFireball(const std::string name, const Vector3 &position, uint32_t count, const Vector4 &color,

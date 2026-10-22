@@ -794,6 +794,100 @@ void ParticleManager::Emit(const std::string name, const Vector3 &position, uint
 	}
 }
 
+void ParticleManager::EmitDirectionalBurst(const std::string name, const Vector3 &position, const Vector3 &direction,
+	uint32_t count, const Vector4 &color, float spreadRadians,
+	float speed, float speedVariance,
+	float scale, float scaleVariance,
+	float lifeTimeMin, float lifeTimeMax,
+	float posVariance) {
+	if (particleGroups_.find(name) == particleGroups_.end()) {
+		return;
+	}
+
+	ParticleGroup &group = particleGroups_[name];
+	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
+	if (emitCount == 0) {
+		return;
+	}
+
+	const float directionLength = std::sqrt(
+		direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+	if (directionLength <= 0.0001f) {
+		return;
+	}
+
+	const Vector3 forward = {
+		direction.x / directionLength,
+		direction.y / directionLength,
+		direction.z / directionLength,
+	};
+	const Vector3 referenceAxis = std::abs(forward.y) > 0.92f
+		? Vector3{ 1.0f, 0.0f, 0.0f }
+		: Vector3{ 0.0f, 1.0f, 0.0f };
+	Vector3 right = {
+		referenceAxis.y * forward.z - referenceAxis.z * forward.y,
+		referenceAxis.z * forward.x - referenceAxis.x * forward.z,
+		referenceAxis.x * forward.y - referenceAxis.y * forward.x,
+	};
+	const float rightLength = std::sqrt(right.x * right.x + right.y * right.y + right.z * right.z);
+	right = { right.x / rightLength, right.y / rightLength, right.z / rightLength };
+	const Vector3 up = {
+		forward.y * right.z - forward.z * right.y,
+		forward.z * right.x - forward.x * right.z,
+		forward.x * right.y - forward.y * right.x,
+	};
+
+	static std::random_device seedGenerator;
+	static std::mt19937_64 engine(seedGenerator());
+	constexpr float kPi = 3.14159265f;
+	const float clampedSpread = std::clamp(spreadRadians, 0.0f, 1.50f);
+	std::uniform_real_distribution<float> distCosTheta(std::cos(clampedSpread), 1.0f);
+	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
+	std::uniform_real_distribution<float> distSpeed(speed - speedVariance, speed + speedVariance);
+	std::uniform_real_distribution<float> distScale(scale - scaleVariance, scale + scaleVariance);
+	std::uniform_real_distribution<float> distLife(lifeTimeMin, lifeTimeMax);
+	std::uniform_real_distribution<float> distRadius(0.0f, posVariance);
+	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
+	std::uniform_real_distribution<float> distAngularSpeed(0.08f, 0.22f);
+	std::uniform_int_distribution<int> distSpinDirection(0, 1);
+
+	for (uint32_t i = 0; i < emitCount; ++i) {
+		const float cosTheta = distCosTheta(engine);
+		const float sinTheta = std::sqrt((std::max)(0.0f, 1.0f - cosTheta * cosTheta));
+		const float angle = distAngle(engine);
+		const Vector3 burstDirection = {
+			forward.x * cosTheta + right.x * std::cos(angle) * sinTheta + up.x * std::sin(angle) * sinTheta,
+			forward.y * cosTheta + right.y * std::cos(angle) * sinTheta + up.y * std::sin(angle) * sinTheta,
+			forward.z * cosTheta + right.z * std::cos(angle) * sinTheta + up.z * std::sin(angle) * sinTheta,
+		};
+
+		Particle particle{};
+		const float particleScale = (std::max)(0.0f, distScale(engine));
+		particle.initialScale = particleScale;
+		particle.finalScale = 0.0f;
+		particle.transform.scale = { particleScale, particleScale, 1.0f };
+		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
+		particle.angularVelocity = distAngularSpeed(engine) * (distSpinDirection(engine) == 0 ? -1.0f : 1.0f);
+
+		const float spawnRadius = distRadius(engine);
+		particle.transform.translate = {
+			position.x + burstDirection.x * spawnRadius,
+			position.y + burstDirection.y * spawnRadius,
+			position.z + burstDirection.z * spawnRadius,
+		};
+		const float particleSpeed = (std::max)(0.0f, distSpeed(engine));
+		particle.velocity = {
+			burstDirection.x * particleSpeed,
+			burstDirection.y * particleSpeed,
+			burstDirection.z * particleSpeed,
+		};
+		particle.color = color;
+		particle.lifeTime = (std::max)(0.01f, distLife(engine));
+		particle.currentTime = 0.0f;
+		group.particle.push_back(particle);
+	}
+}
+
 void ParticleManager::EmitFireball(const std::string name, const Vector3 &position, uint32_t count,
 	const Vector4 &color, float initialScale, float finalScale, float lifeTime, float radius) {
 	if (particleGroups_.find(name) == particleGroups_.end()) {

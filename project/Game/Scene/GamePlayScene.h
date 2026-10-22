@@ -162,20 +162,24 @@ private:
 	// 外周だけでなく、出口の内部も発光面で満たして空間の穴に見せる。
 	std::unique_ptr<Object3d> warpExitFillObject_;
 	std::unique_ptr<Object3d> warpExitCoreObject_;
+	// 中心部を逆方向に回す二層の雲。外周だけの回転に見えない出口を作る。
+	std::unique_ptr<Object3d> warpExitSpiralOuterObject_;
+	std::unique_ptr<Object3d> warpExitSpiralInnerObject_;
 	bool warpExitActive_ = false;
+	bool warpExitImpactTriggered_ = false;
 	int warpExitFrame_ = 0;
 	int warpExitGateFrames_ = 0;
-	// ワープ出口から操作開始までの機体移動をゆっくり見せるため、約 3.5 秒保つ。
+	// ワープ出口から操作開始までを約 3.5 秒に保ち、出現直後の高速から巡航へ減速させる。
 	static constexpr int kWarpExitDurationFrames = 210;
 	static constexpr int kWarpExitGateLifetimeFrames = kWarpExitDurationFrames;
-	// ゲート通過前から短い実体化を始め、通過中に不透明へ到達させる。
-	static constexpr int kWarpExitPlayerFadeStartFrame = 88;
-	static constexpr int kWarpExitPlayerFadeFrames = 12;
+	// ゲート通過前から短い実体化を始め、勢いよく飛び出す見せ場で不透明へ到達させる。
+	static constexpr int kWarpExitPlayerFadeStartFrame = 44;
+	static constexpr int kWarpExitPlayerFadeFrames = 20;
 	// 自機が出口面を通過する瞬間。出口を消す・後方カメラへ渡す処理は、
 	// 自機全体が抜けるまで待ち、エフェクト内から姿が現れるようにする。
-	static constexpr int kWarpExitGatePassageFrame = 100;
-	static constexpr int kWarpExitGateFadeStartFrame = 118;
-	static constexpr int kWarpExitCameraHandoffStartFrame = 134;
+	static constexpr int kWarpExitGatePassageFrame = 60;
+	static constexpr int kWarpExitGateFadeStartFrame = 76;
+	static constexpr int kWarpExitCameraHandoffStartFrame = 96;
 	static constexpr int kWarpExitCameraHandoffFrames = 52;
 	// 戦闘 HUD の直前にだけ、出撃完了を知らせる中央演出を重ねる。
 	static constexpr int kWarpExitMissionStartFrame = 120;
