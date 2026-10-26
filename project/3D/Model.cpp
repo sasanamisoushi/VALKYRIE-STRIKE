@@ -15,6 +15,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <set>
 #include <wrl.h>
 #include <cmath>
 #include <assimp/scene.h>
@@ -62,6 +63,56 @@ bool UploadVertexData(ID3D12Resource* resource, const std::vector<VertexData>& v
 	std::memcpy(mappedData, vertices.data(), sizeof(VertexData) * vertices.size());
 	resource->Unmap(0, nullptr);
 	return true;
+}
+
+struct ObjLoadOptions {
+	std::set<int> includedGroups;
+	std::set<int> excludedGroups;
+	Vector3 pivot = { 0.0f, 0.0f, 0.0f };
+};
+
+void ParseGroupList(const std::string& text, std::set<int>& destination) {
+	std::stringstream list(text);
+	for (std::string token; std::getline(list, token, ',');) {
+		try {
+			const size_t dash = token.find('-');
+			const int first = std::stoi(token.substr(0, dash));
+			const int last = dash == std::string::npos ? first : std::stoi(token.substr(dash + 1));
+			for (int group = (std::min)(first, last); group <= (std::max)(first, last); ++group) {
+				destination.insert(group);
+			}
+		} catch (const std::exception&) {
+			// 不正な追加指定は無視し、OBJ本体の読み込みを継続する。
+		}
+	}
+}
+
+ObjLoadOptions ParseObjLoadOptions(const std::string& optionText) {
+	ObjLoadOptions options;
+	std::stringstream arguments(optionText);
+	for (std::string argument; std::getline(arguments, argument, ';');) {
+		const size_t equal = argument.find('=');
+		if (equal == std::string::npos) continue;
+
+		const std::string key = argument.substr(0, equal);
+		const std::string value = argument.substr(equal + 1);
+		if (key == "groups") {
+			ParseGroupList(value, options.includedGroups);
+		} else if (key == "exclude") {
+			ParseGroupList(value, options.excludedGroups);
+		} else if (key == "pivot") {
+			std::stringstream values(value);
+			std::string component;
+			try {
+				if (std::getline(values, component, ',')) options.pivot.x = std::stof(component);
+				if (std::getline(values, component, ',')) options.pivot.y = std::stof(component);
+				if (std::getline(values, component, ',')) options.pivot.z = std::stof(component);
+			} catch (const std::exception&) {
+				options.pivot = { 0.0f, 0.0f, 0.0f };
+			}
+		}
+	}
+	return options;
 }
 
 }
@@ -225,7 +276,7 @@ void Model::CreateMaterialData() {
 	//書き込むためのアドレスを取得
 	matetialResource->Map(0, nullptr, reinterpret_cast<void **>(&materialData));
 	//今回は赤を書き込んで見る
-	materialData->color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+	materialData->color = modelData.material.color;
 	materialData->enableLighting = 1;
 	materialData->uvTransform = math->MakeIdentity4x4();
 
@@ -254,6 +305,9 @@ MaterialData Model::LoadMaterialTemplateFile(const std::string &directoryPath, c
 			s >> textureFilename;
 			//連続してファイルパスにする
 			materialData.textureFilePath = directoryPath + "/" + textureFilename;
+		} else if (identifier == "Kd") {
+			// テクスチャを持たないOBJでも、MTLの拡散色をそのまま使えるようにする。
+			s >> materialData.color.x >> materialData.color.y >> materialData.color.z;
 		}
 	}
 	return materialData;
@@ -261,14 +315,21 @@ MaterialData Model::LoadMaterialTemplateFile(const std::string &directoryPath, c
 
 ModelData Model::LoadObjFile(const std::string &directoryPath, const std::string &filename) {
 	ModelData modelData;
+	const size_t optionStart = filename.find('#');
+	const std::string sourceFilename = filename.substr(0, optionStart);
+	const ObjLoadOptions options = optionStart == std::string::npos
+		? ObjLoadOptions{}
+		: ParseObjLoadOptions(filename.substr(optionStart + 1));
 	std::vector<Vector4> positions; //位置
 	std::vector<Vector3> normals;  //法線
 	std::vector<Vector2> texcoords; //テクスチャ座標
 	std::string line;  //ファイルから読んだ1行を格納するもの
 	std::map<std::string, uint32_t> vertexMap; // 頂点データの重複を防ぐためのマップ
 
-	std::ifstream file = OpenUtf8File(directoryPath + "/" + filename);  //ファイルを開く
+	std::ifstream file = OpenUtf8File(directoryPath + "/" + sourceFilename);  //ファイルを開く
 	assert(file.is_open()); //とりあえず開けなかったら止める
+	int objectGroupIndex = -1;
+	bool loadActiveGroup = options.includedGroups.empty();
 
 	while (std::getline(file, line)) {
 		std::string identifier;
@@ -292,7 +353,14 @@ ModelData Model::LoadObjFile(const std::string &directoryPath, const std::string
 			s >> normal.x >> normal.y >> normal.z;
 			normal.x *= -1.0f;
 			normals.push_back(normal);
+		} else if (identifier == "o") {
+			++objectGroupIndex;
+			loadActiveGroup = (options.includedGroups.empty() || options.includedGroups.contains(objectGroupIndex)) &&
+				!options.excludedGroups.contains(objectGroupIndex);
 		} else if (identifier == "f") {
+			if (!loadActiveGroup) {
+				continue;
+			}
 			// OBJの頂点定義は v/vt/vn だけでなく、v//vn や v の形式も許される。
 			// 空のUV欄へ stoi を行うと例外でゲーム全体が停止するため、欠けた要素は既定値で補う。
 			auto resolveIndex = [](const std::string &text, size_t count, size_t &outIndex) {
@@ -379,6 +447,14 @@ ModelData Model::LoadObjFile(const std::string &directoryPath, const std::string
 			//基本的にobjファイルと同一階層にmtlは存在されるので、ディレクトリ名とファイル名を渡す
 			modelData.material = LoadMaterialTemplateFile(directoryPath, materialFilename);
 		}
+	}
+
+	// OBJの部位を別Object3dとして描画する場合は、指定された支点を原点にする。
+	// 元ファイル自体は変更しないため、部位ごとの独立回転でも形状を崩さない。
+	for (VertexData& vertex : modelData.vertices) {
+		vertex.position.x -= options.pivot.x;
+		vertex.position.y -= options.pivot.y;
+		vertex.position.z -= options.pivot.z;
 	}
 	return modelData;
 }

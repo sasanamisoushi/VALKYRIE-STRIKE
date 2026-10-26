@@ -64,6 +64,7 @@ struct MaterialData {
 	std::string textureFilePath;
 	uint32_t textureIndex = 0;
 	float alphaReference = 0.0f;
+	Vector4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
 #include "engine/Camera/Camera.h"

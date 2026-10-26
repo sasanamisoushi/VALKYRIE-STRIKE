@@ -314,7 +314,7 @@ void Enemy::OnCollision() {
     EnemyActionController{}.Destroy(*this);
 }
 
-void Enemy::TakeDamage(int damage) {
+void Enemy::TakeDamage(int damage, const Vector3 &) {
     EnemyActionController{}.TakeDamage(*this, damage);
 }
 

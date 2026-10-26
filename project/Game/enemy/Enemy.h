@@ -49,7 +49,10 @@ public:
 
     // ミサイルと衝突したときの処理
     void OnCollision();
-    void TakeDamage(int damage);
+    // hitDirection は攻撃側から被弾点へ向かう単位方向。未指定の近接攻撃ではゼロベクトル。
+    virtual void TakeDamage(int damage, const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f });
+    // 撃破演出中など、当たり判定には残るが追加ダメージを受け付けない敵のための問い合わせ。
+    virtual bool CanReceiveDamage() const { return !isDead_; }
     void StartChasingPlayer();
 
     // 死んだかどうかのゲッター

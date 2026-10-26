@@ -154,11 +154,11 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
 
         if (!hitObstacle) {
             for (auto &enemy : enemies) {
-                if (!enemy->IsDead() && !missile->IsDead()) {
+                if (enemy->CanReceiveDamage() && !missile->IsDead()) {
                     OBB enemyOBB = enemy->GetOBB();
                     if (MyMath::IsCollision(bulletSphere, enemyOBB)) {
                         missile->OnCollision();
-                        enemy->TakeDamage(1);
+                        enemy->TakeDamage(1, missile->GetVelocity());
 
                         if (enemy->IsDead()) {
                             destroyedPositions.push_back(enemy->GetPosition());

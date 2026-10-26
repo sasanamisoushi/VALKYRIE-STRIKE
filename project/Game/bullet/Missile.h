@@ -49,6 +49,7 @@ public:
 
     // 自分の座標を外に教えるゲッター
     Vector3 GetPosition() const { return position_; }
+    Vector3 GetVelocity() const { return velocity_; }
     Enemy* GetTarget() const { return target_; }
     float GetCollisionRadius() const { return collisionRadius_; }
     void ClearTargetIfMatches(const Enemy* target) {
