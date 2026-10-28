@@ -46,6 +46,8 @@ public:
 		Simulation,
 		// Codex のデモ確認用。ゲームプレイのルールとHUDは通常版と同一。
 		CodexDemo,
+		// リリース版タイトルから起動する、操作不要のアトラクトデモ。
+		AttractDemo,
 		// タイトル画面の背面で本編の3Dシーンだけを動かす。操作とHUDは表示しない。
 		TitleBackground
 	};
@@ -82,6 +84,9 @@ private:
 
 	bool IsSimulationMode() const { return mode_ == Mode::Simulation; }
 	bool IsTitleBackgroundMode() const { return mode_ == Mode::TitleBackground; }
+	bool IsAttractDemoMode() const { return mode_ == Mode::AttractDemo; }
+	// タイトル背景だけが周回飛行を使う。アトラクトは通常ステージを直進する。
+	bool IsAutoFlightMode() const { return IsTitleBackgroundMode(); }
 	void DrawOverlay();
 	void DrawRadar();
 	void DrawPauseOverlay(float screenWidth, float screenHeight);
@@ -102,10 +107,15 @@ private:
 	bool TryConsumeAmmo(MissileType type);
 	void UpdateAutoReload();
 	void UpdateCinematicLockOnCamera();
+	void UpdateGameOverCinematicCamera(Camera* renderCamera);
 	void UpdateWarpExitCamera(Camera* renderCamera);
 	void UpdateWarpExitGate(Camera* renderCamera);
 	void DrawWarpExitGate();
 	void DrawMissionStartOverlay();
+	void DrawGameOverOverlay(float screenWidth, float screenHeight);
+	void DrawAttractDemoOverlay(float screenWidth, float screenHeight);
+	void UpdateAttractDemoSequence();
+	void UpdateAttractDemoPilot();
 	void ClearEnemyReferences(Enemy* enemy);
 	void ClearAllEnemyReferences();
 	Mode mode_ = Mode::Gameplay;
@@ -150,12 +160,14 @@ private:
 	std::array<std::unique_ptr<Sprite>, kMaxRadarBlips> radarBlipSprites_;
 	float radarSweepAngle_ = 0.0f;
 	std::array<std::unique_ptr<Sprite>, 3> hudHpDigitSprites_;
+	std::array<std::unique_ptr<Sprite>, 7> lockedTargetHpDigitSprites_;
 	std::array<std::unique_ptr<Sprite>, 7> hudNormalAmmoDigitSprites_;
 	std::array<std::unique_ptr<Sprite>, 7> hudHomingAmmoDigitSprites_;
 	std::unique_ptr<Object3d> boundaryAlertObject_;
 	std::unique_ptr<Object3d> ceilingBoundaryAlertObject_;
 	std::unique_ptr<Sprite> warpFadeInSprite_;
 	std::unique_ptr<Sprite> missionStartOverlaySprite_;
+	std::unique_ptr<Sprite> gameOverWhiteoutSprite_;
 	float warpFadeInAlpha_ = 0.0f;
 	// ロード後、ステージ空間に残るワープ出口。自機はこの輪を通って出現する。
 	std::unique_ptr<Object3d> warpExitRingObject_;
@@ -326,6 +338,10 @@ private:
 	// ゲームオーバー演出用
 	bool isGameOver_ = false;
 	int gameOverTimer_ = 0;
+	Vector3 gameOverFocusPosition_ = { 0.0f, 0.0f, 0.0f };
+	static constexpr int kGameOverCinematicFrames = 180;
+	int defeatedEnemyCount_ = 0;
+	int gameplayElapsedFrames_ = 0;
 	int previousPlayerHP_ = -1;
 	int damageEffectTimer_ = 0;
 
@@ -360,6 +376,10 @@ private:
 	int titleEnemyEnterFrame_ = 0;
 	int titleEnemySpawnSide_ = 1;
 	int titleEnemyCombatTimer_ = 0;
+	// アトラクトデモは通常入力を使わず、ゲームプレイの開始方向へ直進する。
+	int attractDemoFrame_ = 0;
+	Vector3 attractDemoForward_ = { 0.0f, 0.0f, 1.0f };
+	float attractDemoYaw_ = 0.0f;
 
 	// JSONファイルが最後に更新された日時を記録する変数
 	std::filesystem::file_time_type lastJsonWriteTime_;

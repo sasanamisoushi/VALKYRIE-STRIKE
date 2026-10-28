@@ -4,12 +4,27 @@
 #include "Game/Player/Player.h"
 #include "Game/obstacle/Obstacle.h" // 追加
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace {
     // プレイヤーの通常弾と同じ球モデルに合わせた標準サイズ。
     constexpr float kEnemyBulletScale = 0.3f;
     constexpr float kEnemyBulletRadius = 0.3f;
+
+    Quaternion MakeBeamRotation(const Vector3 &velocity) {
+        const float lengthSq = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z;
+        if (lengthSq <= 0.0001f) {
+            return { 0.0f, 0.0f, 0.0f, 1.0f };
+        }
+        const float length = std::sqrt(lengthSq);
+        const Vector3 direction = { velocity.x / length, velocity.y / length, velocity.z / length };
+        const Quaternion pitch = MyMath::MakeAxisAngle(
+            { 1.0f, 0.0f, 0.0f }, -std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
+        const Quaternion yaw = MyMath::MakeAxisAngle(
+            { 0.0f, 1.0f, 0.0f }, std::atan2(direction.x, direction.z));
+        return MyMath::Normalize(MyMath::Multiply(yaw, pitch));
+    }
 
     // 三角形との詳細判定の前に、安価なAABB判定で対象外を除外する。
     // 形状そのものの判定は後段で行うため、命中精度は変わらない。
@@ -39,6 +54,7 @@ void EnemyBulletManager::Initialize() {
             bullet.object->GetModel()->SetColor({ 1.0f, 1.0f, 0.0f, 1.0f }); // 通常弾と同じ黄色
         }
         bullet.isDead = true; // 最初は非アクティブに設定
+        bullet.tracksPlayer = false;
         bullet.position = { -9999.0f, -9999.0f, -9999.0f }; // 中心(0,0,0)に残らないよう画面外に退避
         bullet.elapsedFrames = 0;
         bullet.phaseOffset = 0.0f;
@@ -61,7 +77,52 @@ void EnemyBulletManager::Update(Player *player, std::vector<Vector3> &hitPositio
         }
 
         // 1. 移動処理
-        if (bullet.isHoming && player && !player->IsDead()) {
+        if (bullet.tracksPlayer && player && !player->IsDead()) {
+            // 地上ビームは発射時の古い座標を使い続けない。毎フレーム現在位置へ向け、
+            // ただし急旋回し過ぎないよう進行方向を補間してビームらしい軌跡を保つ。
+            const Vector3 playerPosition = player->GetPosition();
+            Vector3 toPlayer = {
+                playerPosition.x - bullet.position.x,
+                playerPosition.y - bullet.position.y,
+                playerPosition.z - bullet.position.z,
+            };
+            const float targetLengthSq = toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y + toPlayer.z * toPlayer.z;
+            if (targetLengthSq > 0.0001f) {
+                const float targetLength = std::sqrt(targetLengthSq);
+                const Vector3 desiredDirection = {
+                    toPlayer.x / targetLength,
+                    toPlayer.y / targetLength,
+                    toPlayer.z / targetLength,
+                };
+                const float currentSpeedSq = bullet.velocity.x * bullet.velocity.x + bullet.velocity.y * bullet.velocity.y + bullet.velocity.z * bullet.velocity.z;
+                const float currentSpeed = currentSpeedSq > 0.0001f ? std::sqrt(currentSpeedSq) : bullet.speed;
+                const Vector3 currentDirection = currentSpeedSq > 0.0001f
+                    ? Vector3{ bullet.velocity.x / currentSpeed, bullet.velocity.y / currentSpeed, bullet.velocity.z / currentSpeed }
+                    : desiredDirection;
+                Vector3 steeredDirection = {
+                    currentDirection.x * 0.72f + desiredDirection.x * 0.28f,
+                    currentDirection.y * 0.72f + desiredDirection.y * 0.28f,
+                    currentDirection.z * 0.72f + desiredDirection.z * 0.28f,
+                };
+                const float steeredLength = std::sqrt(
+                    steeredDirection.x * steeredDirection.x +
+                    steeredDirection.y * steeredDirection.y +
+                    steeredDirection.z * steeredDirection.z);
+                if (steeredLength > 0.0001f) {
+                    steeredDirection = {
+                        steeredDirection.x / steeredLength,
+                        steeredDirection.y / steeredLength,
+                        steeredDirection.z / steeredLength,
+                    };
+                    bullet.velocity = {
+                        steeredDirection.x * bullet.speed,
+                        steeredDirection.y * bullet.speed,
+                        steeredDirection.z * bullet.speed,
+                    };
+                    bullet.object->SetQuaternionRotate(MakeBeamRotation(bullet.velocity));
+                }
+            }
+        } else if (bullet.isHoming && player && !player->IsDead()) {
             bullet.elapsedFrames++;
             if (bullet.elapsedFrames >= 15) { // 15フレーム目から本格的に誘導開始
                 Vector3 toPlayer = { player->GetPosition().x - bullet.position.x, player->GetPosition().y - bullet.position.y, player->GetPosition().z - bullet.position.z };
@@ -292,6 +353,11 @@ void EnemyBulletManager::ShootBeam(const Vector3 &position, const Vector3 &veloc
     ShootConfigured(position, velocity, { 3.5f, 3.5f, 14.0f }, 3.5f, 3, 150, "BossBeam");
 }
 
+void EnemyBulletManager::ShootGroundBeam(const Vector3 &position, const Vector3 &velocity) {
+    // 箱ではなく丸い芯を長く伸ばした、細いシアンビーム。命中判定も見た目に合わせて少し広げる。
+    ShootConfigured(position, velocity, { 0.30f, 0.30f, 5.6f }, 0.60f, 1, 105, "GroundBeamCore", true);
+}
+
 void EnemyBulletManager::ShootMissile(const Vector3 &position, const Vector3 &velocity) {
     for (auto &bullet : bullets_) {
         if (bullet.isDead) { // 使用可能な弾を検索
@@ -322,6 +388,7 @@ void EnemyBulletManager::ShootMissile(const Vector3 &position, const Vector3 &ve
             bullet.collisionRadius = 0.5f;
             bullet.damage = 1;
             bullet.isHoming = true;
+            bullet.tracksPlayer = false;
             
             float newSpeedSq = initialVel.x * initialVel.x + initialVel.y * initialVel.y + initialVel.z * initialVel.z;
             bullet.speed = (newSpeedSq > 0.0001f) ? std::sqrt(newSpeedSq) : 0.35f;
@@ -347,7 +414,8 @@ void EnemyBulletManager::ShootMissile(const Vector3 &position, const Vector3 &ve
 }
 
 void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 &velocity, const Vector3 &scale,
-                                         float collisionRadius, int damage, int lifeTimer, const char *modelName) {
+                                         float collisionRadius, int damage, int lifeTimer, const char *modelName,
+                                         bool tracksPlayer) {
     for (auto &bullet : bullets_) {
         if (bullet.isDead) { // 使用可能な弾を検索
             bullet.position = position;
@@ -356,13 +424,25 @@ void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 
             bullet.collisionRadius = collisionRadius;
             bullet.damage = damage;
             bullet.isHoming = false;
+            bullet.tracksPlayer = tracksPlayer;
             bullet.elapsedFrames = 0;
+            const float speedSq = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z;
+            bullet.speed = speedSq > 0.0001f ? std::sqrt(speedSq) : 0.72f;
             bullet.isDead = false;
 
             bullet.object->SetModel(modelName);
             bullet.object->SetScale(scale);
-            if (bullet.object->GetModel() && std::string(modelName) == "EnemyBulletSphere") {
-                bullet.object->GetModel()->SetColor({ 1.0f, 1.0f, 0.0f, 1.0f });
+            if (std::string(modelName) == "BossBeam" || std::string(modelName) == "GroundBeamCore") {
+                bullet.object->SetQuaternionRotate(MakeBeamRotation(velocity));
+            } else {
+                bullet.object->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+            }
+            if (bullet.object->GetModel()) {
+                if (std::string(modelName) == "EnemyBulletSphere") {
+                    bullet.object->GetModel()->SetColor({ 1.0f, 1.0f, 0.0f, 1.0f });
+                } else if (std::string(modelName) == "GroundBeamCore") {
+                    bullet.object->GetModel()->SetColor({ 0.10f, 0.90f, 1.0f, 1.0f });
+                }
             }
             bullet.object->SetTranslate(position);
             bullet.object->Update();

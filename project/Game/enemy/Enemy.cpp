@@ -27,7 +27,6 @@ namespace {
     constexpr float kEnemyBulletSpeed = 0.18f;
     constexpr float kEnemyMuzzleOffset = 1.2f;
     constexpr float kPi = 3.1415926535f;
-    constexpr int kEnemyMaxHp = 2;
 
     float LengthSq(const Vector3 &v) {
         return v.x * v.x + v.y * v.y + v.z * v.z;
@@ -210,7 +209,7 @@ void Enemy::Initialize(const Vector3 &position) {
     flightPathSegmentIndex_ = 0;
     flightPathSegmentT_ = 0.0f;
     isChasingPlayer_ = true;
-    hp_ = kEnemyMaxHp;
+    hp_ = kMaxHP;
 
     // リスポーン直後の描画でもBlenderで設定した地点に表示されるように同期する。
     object_->SetTranslate(position_);

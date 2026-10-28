@@ -135,6 +135,7 @@ void TitleScene::Initialize() {
 	titleFlightFrame_ = 0;
 	launchFrame_ = 0;
 	launchFadeAlpha_ = 0.0f;
+	attractDemoTitleFrames_ = 0;
 	if (isPendingFadeIn_) {
 		titleFadeInAlpha_ = 1.0f;
 		isPendingFadeIn_ = false;
@@ -231,6 +232,28 @@ void TitleScene::Update() {
 			}
 		}
 	}
+
+#if defined(CG2_RELEASE_BUILD)
+	if (!isSettingsOpen_ && canAcceptInput) {
+		if (Input::GetInstance()->TriggerKey(DIK_TAB)) {
+			// 通常タイトルでは開始、デモ周回中に表示されたタイトルでは終了する。
+			if (isAttractDemoEnabled_) {
+				StopAttractDemo();
+			} else {
+				StartAttractDemo();
+				SceneManager::GetInstance()->ChangeScene("ATTRACT_DEMO");
+				return;
+			}
+		}
+
+		// リザルト後はタイトルを一瞬表示して、タイトル→ゲームプレイの順を保ったまま
+		// 次のデモ周回を開始する。最初のTAB開始時にはこの待機を通らない。
+		if (isAttractDemoEnabled_ && ++attractDemoTitleFrames_ >= 45) {
+			SceneManager::GetInstance()->ChangeScene("ATTRACT_DEMO");
+			return;
+		}
+	}
+#endif
 	DrawBackgroundModeImGui();
 
 	if (titleSprite) {
@@ -310,6 +333,10 @@ void TitleScene::DrawBackgroundModeImGui() {
 }
 
 void TitleScene::BeginLaunchSequence() {
+	// 手動開始を選んだら、以後はアトラクトデモを再開しない。
+#if defined(CG2_RELEASE_BUILD)
+	StopAttractDemo();
+#endif
 	// タイトル背景の地形を消さずに、そのまま出撃演出へ移る。
 	if (gameplayBackground_) {
 		gameplayBackground_->BeginTitleLaunch();
@@ -490,6 +517,9 @@ void TitleScene::Draw() {
 
 	if (flightState_ == TitleFlightState::Cruising || isLaunchUiVisible) {
 		DrawMenuOverlay(static_cast<float>(WinApp::GetClientWidth()), static_cast<float>(WinApp::GetClientHeight()), launchUiAlpha);
+		DrawAttractDemoStartPrompt(
+			static_cast<float>(WinApp::GetClientWidth()),
+			static_cast<float>(WinApp::GetClientHeight()));
 		// タイトルメニュー専用の選択・決定操作を、選択肢と重ならない右下へ表示する。
 		if (!isSettingsOpen_ && titleControlsGuideSprite_) {
 			constexpr float kGuideWidth = 330.0f;
@@ -517,6 +547,43 @@ void TitleScene::Draw() {
 		menuPanelSprite_->Update();
 		menuPanelSprite_->Draw();
 	}
+}
+
+void TitleScene::DrawAttractDemoStartPrompt(float screenWidth, float screenHeight) {
+#if defined(CG2_RELEASE_BUILD) && defined(ENABLE_IMGUI)
+	if (isSettingsOpen_ || !ImGui::GetCurrentContext()) {
+		return;
+	}
+
+	const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+	const float width = displaySize.x > 1.0f ? displaySize.x : screenWidth;
+	const float height = displaySize.y > 1.0f ? displaySize.y : screenHeight;
+	const char* prompt = isAttractDemoEnabled_
+		? "[ TAB ]  STOP ATTRACT DEMO"
+		: "[ TAB ]  START ATTRACT DEMO";
+	ImFont* font = ImGuiManager::GetGameOverFont();
+	if (!font) {
+		font = ImGui::GetFont();
+	}
+	constexpr float kFontSize = 18.0f;
+	const ImVec2 textSize = font->CalcTextSizeA(kFontSize, 1000.0f, 0.0f, prompt);
+	const float x = (width - textSize.x) * 0.5f;
+	const float y = height - 48.0f;
+	const int alpha = 225;
+	ImDrawList* drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+	drawList->AddRectFilled(
+		ImVec2(x - 20.0f, y - 7.0f), ImVec2(x + textSize.x + 20.0f, y + textSize.y + 8.0f),
+		IM_COL32(2, 14, 31, 205), 3.0f);
+	drawList->AddLine(ImVec2(x - 20.0f, y - 7.0f), ImVec2(x + 28.0f, y - 7.0f),
+		IM_COL32(80, 226, 255, alpha), 2.0f);
+	drawList->AddLine(ImVec2(x + textSize.x - 28.0f, y + textSize.y + 8.0f), ImVec2(x + textSize.x + 20.0f, y + textSize.y + 8.0f),
+		IM_COL32(80, 226, 255, alpha), 2.0f);
+	drawList->AddText(font, kFontSize, ImVec2(x + 1.5f, y + 1.5f), IM_COL32(0, 0, 0, alpha), prompt);
+	drawList->AddText(font, kFontSize, ImVec2(x, y), IM_COL32(194, 246, 255, alpha), prompt);
+#else
+	(void)screenWidth;
+	(void)screenHeight;
+#endif
 }
 
 void TitleScene::DrawWarpCloudLayers(float screenWidth, float screenHeight) {

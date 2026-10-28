@@ -42,6 +42,7 @@ namespace {
 	Vector3 BlendDirection(const Vector3 &from, const Vector3 &to, float blend) {
 		return NormalizeOr(Add(Scale(from, 1.0f - blend), Scale(to, blend)), to);
 	}
+
 }
 
 void Missile::Initialize(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning, ParticleManager* pManager, Enemy* target) {
@@ -96,6 +97,29 @@ void Missile::Initialize(const Vector3 &position, const Vector3 &velocity, Missi
 
 void Missile::Update(Camera *camera) {
 	if (isDead_) return;
+
+	if (type_ == MissileType::Normal && target_) {
+		if (target_->IsDead()) {
+			target_ = nullptr;
+		} else {
+			Vector3 targetPos = target_->GetPosition();
+			targetPos.y += target_->GetCollisionRadius() * 0.3f;
+			const Vector3 toTarget = Subtract(targetPos, position_);
+			const float distanceToTarget = Length(toTarget);
+			const Vector3 desiredDirection = NormalizeOr(toTarget, NormalizeOr(velocity_, { 0.0f, 0.0f, 1.0f }));
+			const Vector3 currentDirection = NormalizeOr(velocity_, desiredDirection);
+
+			// 通常弾は直進らしさを残しつつ、接近時だけ曲がりを少し強めて
+			// ロックオン中の移動目標を取り逃がさないようにする。
+			float homingStrength = std::clamp(tuning_.homingStrength, 0.0f, 1.0f);
+			if (distanceToTarget < 25.0f) {
+				homingStrength = (std::max)(homingStrength, 0.55f);
+			}
+			const Vector3 homingDirection = BlendDirection(currentDirection, desiredDirection, homingStrength);
+			const float speed = (std::max)(0.01f, Length(velocity_));
+			velocity_ = Scale(homingDirection, speed);
+		}
+	}
 
 	if (type_ == MissileType::MissileWithTrail && elapsedFrames_ >= kHomingForwardLaunchFrames) {
 		Vector3 targetPos = position_;

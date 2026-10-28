@@ -8,6 +8,8 @@
 
 class GroundEnemy : public Enemy {
 public:
+    static constexpr int kMaxHP = 3;
+
     GroundEnemy() = default;
     ~GroundEnemy() override = default;
 
@@ -20,6 +22,7 @@ public:
     void UpdateFlightPathMovement();
     void TakeDamage(int damage, const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f }) override;
     bool CanReceiveDamage() const override;
+    int GetMaxHP() const override { return kMaxHP; }
 
     // Scene 側が粒子・爆発マネージャへ渡す演出要求。敵ロジックを描画実装から分離する。
     struct EffectEvent {

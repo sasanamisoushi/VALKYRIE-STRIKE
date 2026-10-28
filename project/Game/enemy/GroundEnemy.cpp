@@ -13,7 +13,6 @@ namespace {
     constexpr float kGroundSpeed = 0.08f;
     constexpr float kTrackSpeed = 0.16f;
     constexpr float kHighJumpPower = 0.38f;
-    constexpr int kGroundEnemyMaxHp = 3;
     constexpr char kGroundEnemyRiggedModel[] = "EnemyR_Rig/EnemyR_Rig.gltf";
     // EnemyR は部位が別オブジェクトで出力されている。砲塔(38-48)だけを
     // 分離して独立照準させ、その他は元の形状のままメインボディとして描画する。
@@ -221,7 +220,7 @@ void GroundEnemy::Initialize(const Vector3 &position) {
     terrainClearance_ = 0.0f;
 
     isDead_ = false;
-    hp_ = kGroundEnemyMaxHp;
+    hp_ = kMaxHP;
     destructionState_ = DestructionState::Alive;
     hitStopFrames_ = 0;
     hitReactionFrames_ = 0;
@@ -303,7 +302,7 @@ void GroundEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletMan
     // 1. 地上移動とハイジャンプ・重力物理
     UpdateGroundMovement(playerPos, obstacles);
 
-    // 2. 攻撃AI（ミサイル、ガトリング、近接攻撃）
+    // 2. 攻撃AI（砲塔ビーム、近接攻撃）
     if (isChasingPlayer_) {
         UpdateAttackAI(playerPos, bulletManager);
     }
@@ -826,21 +825,26 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
         return;
     }
 
-    // ガトリング連射中の処理
+    // 砲塔ビーム連射中の処理
     if (attackSubState_ == GroundAttackState::Gatling) {
         gatlingIntervalTimer_--;
         if (gatlingIntervalTimer_ <= 0 && bulletManager) {
-            Vector3 muzzlePos = { position_.x + forward_.x * 0.45f, position_.y + 0.15f, position_.z + forward_.z * 0.45f };
             Vector3 shootDir = NormalizeOrFallback(diff, forward_);
-            Vector3 bulletVelocity = { shootDir.x * 0.4f, shootDir.y * 0.4f, shootDir.z * 0.4f };
-            
-            bulletManager->Shoot(muzzlePos, bulletVelocity);
-            gatlingShotCount_++;
-            gatlingIntervalTimer_ = 10; // 弾幕が過密にならないよう、10フレーム毎に発射
+            const Vector3 turretPosition = GetLocalPartPosition(kTurretPivot);
+            const Vector3 muzzlePos = {
+                turretPosition.x + shootDir.x * 0.85f,
+                turretPosition.y + shootDir.y * 0.85f + 0.12f,
+                turretPosition.z + shootDir.z * 0.85f,
+            };
+            const Vector3 beamVelocity = { shootDir.x * 0.72f, shootDir.y * 0.72f, shootDir.z * 0.72f };
 
-            if (gatlingShotCount_ >= 4) { // 4連射で終了
+            bulletManager->ShootGroundBeam(muzzlePos, beamVelocity);
+            gatlingShotCount_++;
+            gatlingIntervalTimer_ = 24;
+
+            if (gatlingShotCount_ >= 2) {
                 attackSubState_ = GroundAttackState::Idle;
-                attackTimer_ = 120; // 次の射撃まで少し間を空ける
+                attackTimer_ = 120;
             }
         }
         return;
@@ -861,7 +865,7 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
         velocityY_ = 0.38f; // 高く前方上にジャンピング
         isGrounded_ = false;
     } else if (dist <= 25.0f) {
-        // 2. 中距離: ガトリング連射攻撃
+        // 2. 中距離: 背部砲塔からビームを2連射
         attackSubState_ = GroundAttackState::Gatling;
         gatlingShotCount_ = 0;
         gatlingIntervalTimer_ = 0;

@@ -302,17 +302,9 @@ bool MissilePresetManager::FirePlayerMissile(MissileType type, Enemy *target, fl
 	};
 
 	Vector3 fireDirection = forward;
-	bool shouldAim = false;
-	if (target) {
-		if (type == MissileType::MissileWithTrail) {
-			shouldAim = true;
-		} else if (type == MissileType::Normal) {
-			PlayerMode mode = scene_->player_->GetCurrentMode();
-			if (scene_->IsTitleBackgroundMode() || mode == PlayerMode::Gerwalk || mode == PlayerMode::Battroid) {
-				shouldAim = true;
-			}
-		}
-	}
+	// ロックオン対象がある弾は、形態を問わず最初から対象へ向けて発射する。
+	// 通常弾も飛行中に弱く追尾するため、ファイター形態で照準がわずかに遅れても外れない。
+	const bool shouldAim = target != nullptr;
 
 	if (shouldAim) {
 		Vector3 targetPosition = target->GetPosition();

@@ -192,7 +192,7 @@ void Input::ResetPlayerActionBindings() {
 	bind(PlayerAction::HomingFire, 0, ControllerInput::LeftTrigger, MouseInput::RightButton);
 	bind(PlayerAction::LockToggle, DIK_TAB, ControllerInput::RightThumb);
 	bind(PlayerAction::LockRelease, DIK_X, ControllerInput::LeftThumb);
-	bind(PlayerAction::SpecialAttack, DIK_C, ControllerInput::Back);
+	bind(PlayerAction::SpecialAttack, DIK_F, ControllerInput::Back);
 	bind(PlayerAction::Song, DIK_V, ControllerInput::Start);
 }
 

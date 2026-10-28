@@ -23,6 +23,7 @@ public:
     void Shoot(const Vector3 &position, const Vector3 &velocity);
     void ShootHeavyCannon(const Vector3 &position, const Vector3 &velocity);
     void ShootBeam(const Vector3 &position, const Vector3 &velocity);
+    void ShootGroundBeam(const Vector3 &position, const Vector3 &velocity);
     void ShootMissile(const Vector3 &position, const Vector3 &velocity);
 
     // 弾1発のデータ構造
@@ -35,6 +36,8 @@ public:
         float collisionRadius = 0.2f;
         int damage = 1;
         bool isHoming = false;
+        // 地上敵のビームだけは、発射後もプレイヤーの現在位置へ滑らかに照準を更新する。
+        bool tracksPlayer = false;
         float speed = 0.25f;
         int elapsedFrames = 0;
         float phaseOffset = 0.0f;
@@ -47,7 +50,8 @@ public:
 
 private:
     void ShootConfigured(const Vector3 &position, const Vector3 &velocity, const Vector3 &scale,
-                         float collisionRadius, int damage, int lifeTimer, const char *modelName);
+                         float collisionRadius, int damage, int lifeTimer, const char *modelName,
+                         bool tracksPlayer = false);
     static const size_t kMaxBullets = 200; // 弾の最大プール数
     static const size_t kMaxVisibleBullets = 96;
     std::vector<Bullet> bullets_;

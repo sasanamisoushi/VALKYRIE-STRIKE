@@ -1,4 +1,5 @@
 #include "GamePlayScene.h"
+#include "Game/Scene/ResultData.h"
 #include "SimulationManager.h"
 #include "MissilePresetManager.h"
 #include "LockOnManager.h"
@@ -158,6 +159,8 @@ void GamePlayScene::ActivateFromWarp() {
 	// 7. ゲーム進行フラグ・物理演算・タイムスケール完全復帰（PDF原因3対策）
 	isGameOver_ = false;
 	gameOverTimer_ = 0;
+	defeatedEnemyCount_ = 0;
+	gameplayElapsedFrames_ = 0;
 	isPaused_ = false;
 	isEditorPreviewPlaying_ = true; // shouldUpdateGame を確実に有効化
 	warpFadeInAlpha_ = 1.0f;
@@ -245,6 +248,9 @@ void GamePlayScene::Initialize() {
 	warpFadeInSprite_ = std::make_unique<Sprite>();
 	warpFadeInSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
 	warpFadeInSprite_->SetAnchorPoint({ 0.0f, 0.0f });
+	gameOverWhiteoutSprite_ = std::make_unique<Sprite>();
+	gameOverWhiteoutSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
+	gameOverWhiteoutSprite_->SetAnchorPoint({ 0.0f, 0.0f });
 	missionStartOverlaySprite_ = std::make_unique<Sprite>();
 	missionStartOverlaySprite_->Initialize(SpriteCommon::GetInstance(), "resources/mission_start_overlay.png");
 	missionStartOverlaySprite_->SetAnchorPoint({ 0.5f, 0.5f });
@@ -325,6 +331,10 @@ void GamePlayScene::Initialize() {
 		digitSprite = std::make_unique<Sprite>();
 		digitSprite->Initialize(SpriteCommon::GetInstance(), hudTexturePaths[4]);
 	}
+	for (auto &digitSprite : lockedTargetHpDigitSprites_) {
+		digitSprite = std::make_unique<Sprite>();
+		digitSprite->Initialize(SpriteCommon::GetInstance(), hudTexturePaths[4]);
+	}
 	for (auto &digitSprite : hudNormalAmmoDigitSprites_) {
 		digitSprite = std::make_unique<Sprite>();
 		digitSprite->Initialize(SpriteCommon::GetInstance(), hudTexturePaths[4]);
@@ -365,6 +375,12 @@ void GamePlayScene::Initialize() {
 	ModelManager::GetInstance()->LoadModel("multiMesh.obj");
 	ModelManager::GetInstance()->CreateSphereModel("Sphere", 16);
 	ModelManager::GetInstance()->CreateSphereModel("EnemyBulletSphere", 6);
+	// 地上敵の射撃用。球を進行方向へ細長く伸ばすことで、箱型ではない丸いビーム芯になる。
+	ModelManager::GetInstance()->CreateSphereModel("GroundBeamCore", 12);
+	if (Model *model = ModelManager::GetInstance()->FindModel("GroundBeamCore")) {
+		model->SetColor({ 0.10f, 0.90f, 1.0f, 1.0f });
+		model->SetEnableLighting(false);
+	}
 
 	//======================================================
 
@@ -498,16 +514,19 @@ void GamePlayScene::Initialize() {
 
 	isGameOver_ = false;
 	gameOverTimer_ = 0;
+	defeatedEnemyCount_ = 0;
+	gameplayElapsedFrames_ = 0;
 	isPaused_ = false;
 	isPauseTitleSelected_ = false;
 	isAbortingToTitle_ = false;
 	abortToTitleTimer_ = 0;
+	attractDemoFrame_ = 0;
 	// 通常のゲーム起動では、編集ツールの再生ボタンを押さなくても最初から操作できる。
 	// シミュレーション専用起動だけは下で停止状態にする。
 	isEditorPreviewPlaying_ = !IsSimulationMode();
 
 	ReloadSceneJson();
-	if (!IsSimulationMode() && !IsTitleBackgroundMode()) {
+	if (!IsSimulationMode() && !IsAutoFlightMode() && !IsAttractDemoMode()) {
 		GameStartTransitionData titleTransition;
 		if (GameStartTransition::Consume(titleTransition) && player_) {
 			// ReloadSceneJson() で Blender の PLAYER オブジェクトを読み込んだ直後の
@@ -554,6 +573,22 @@ void GamePlayScene::Initialize() {
 			player_->SetPresentationClipPlane(warpExitForward_, clipPlaneDistance);
 			player_->UpdatePresentation(warpExitStartPosition_, { -0.04f, warpExitYaw_, 0.0f }, 2.0f, true);
 		}
+	}
+	if (IsAttractDemoMode() && player_) {
+		// タイトル背景の周回軌道ではなく、通常ステージに置かれたPLAYERの
+		// 進行方向を使う。敵構成と攻撃もゲームプレイのものをそのまま使う。
+		attractDemoForward_ = player_->GetForwardVector();
+		const float horizontalLength = std::sqrt(
+			attractDemoForward_.x * attractDemoForward_.x +
+			attractDemoForward_.z * attractDemoForward_.z);
+		if (horizontalLength > 0.0001f) {
+			attractDemoForward_.x /= horizontalLength;
+			attractDemoForward_.z /= horizontalLength;
+		} else {
+			attractDemoForward_ = { 0.0f, 0.0f, 1.0f };
+		}
+		attractDemoForward_.y = 0.0f;
+		attractDemoYaw_ = std::atan2(attractDemoForward_.x, attractDemoForward_.z);
 	}
 
 	if (warpExitActive_ || warpExitGateFrames_ > 0) {
@@ -674,6 +709,31 @@ void GamePlayScene::ResetDebugCameraToPlayer() {
 	debugFlyCamera_->Camera::Update();
 }
 
+void GamePlayScene::UpdateGameOverCinematicCamera(Camera* renderCamera) {
+	if (!renderCamera) {
+		return;
+	}
+
+	const float progress = std::clamp(
+		static_cast<float>(gameOverTimer_) / static_cast<float>(kGameOverCinematicFrames), 0.0f, 1.0f);
+	const float easedProgress = SmoothStep01(progress);
+	// 追従カメラを外し、機体を中心にゆっくり横切る軌道へ切り替える。
+	const float orbitAngle = -0.85f + easedProgress * 2.55f;
+	const float orbitRadius = 10.0f + easedProgress * 7.0f;
+	const Vector3 cameraPosition = {
+		gameOverFocusPosition_.x + std::sin(orbitAngle) * orbitRadius,
+		gameOverFocusPosition_.y + 2.8f + std::sin(easedProgress * 3.14159265f) * 2.4f,
+		gameOverFocusPosition_.z - std::cos(orbitAngle) * orbitRadius,
+	};
+	const Vector3 focus = {
+		gameOverFocusPosition_.x,
+		gameOverFocusPosition_.y + 0.6f,
+		gameOverFocusPosition_.z,
+	};
+	SetCameraLookAt(renderCamera, cameraPosition, focus);
+	renderCamera->SetFovY(0.72f + easedProgress * 0.22f);
+}
+
 void GamePlayScene::ResetDebugCameraToStageOverview() {
 	if (!debugFlyCamera_) {
 		return;
@@ -776,7 +836,7 @@ void GamePlayScene::ReloadSceneJson() {
 	enemySpawns_.clear();
 
 	StageLoader::LoadSceneJson("resources/scene.json", enemies_, obstacles_, player_.get(), &enemySpawns_);
-	if (IsTitleBackgroundMode()) {
+	if (IsAutoFlightMode()) {
 		// タイトル背景は戦闘の見せ場用なので、VF1 以外や増援条件付きの敵を持ち込まない。
 		// VF1 は最初から出しておき、タイトルを開いた瞬間からロックオン対象を作る。
 		enemySpawns_.erase(
@@ -1031,7 +1091,8 @@ MissileTuning GamePlayScene::MakeMissileTuning(MissileType type) const {
 	MissileTuning tuning;
 	if (type == MissileType::Normal) {
 		tuning.speed = missileNormalSpeed;
-		tuning.homingStrength = 0.0f;
+		// ロックオン中の通常弾だけに使う、見た目を崩さない弱い追尾力。
+		tuning.homingStrength = 0.28f;
 		tuning.scale = missileNormalScale;
 		tuning.collisionRadius = missileNormalCollisionRadius;
 		tuning.trailWidth = 0.0f;
@@ -1144,9 +1205,16 @@ void GamePlayScene::Update() {
 	}
 
 	// タイトルメニューの入力を本編背景側へ渡さない。
-	const bool canUseKeyboardInput = !IsTitleBackgroundMode() && !IsImGuiKeyboardCaptureActive();
-	const bool canUseMouseInput = !IsTitleBackgroundMode() && !IsImGuiMouseCaptureActive();
+	const bool canUseKeyboardInput = !IsAutoFlightMode() && !IsAttractDemoMode() && !IsImGuiKeyboardCaptureActive();
+	const bool canUseMouseInput = !IsAutoFlightMode() && !IsAttractDemoMode() && !IsImGuiMouseCaptureActive();
 	const bool canUsePlayerInput = canUseKeyboardInput && canUseMouseInput;
+	// アトラクトデモは、演出中・撃破演出中を問わず TAB で即座にタイトルへ戻れる。
+	if (IsAttractDemoMode() && Input::GetInstance()->TriggerKey(DIK_TAB)) {
+		TitleScene::StopAttractDemo();
+		TitleScene::SetPendingFadeIn(true);
+		SceneManager::GetInstance()->ChangeScene("TITLE");
+		return;
+	}
 	// ポーズメニューからの通信切断・システムシャットダウン演出進行中
 	if (isAbortingToTitle_) {
 		UpdateReturnToTitleTransition();
@@ -1203,9 +1271,16 @@ void GamePlayScene::Update() {
 	// ==========================================
 
 	// ==========================================
+	if (IsAttractDemoMode() && !isGameOver_) {
+		UpdateAttractDemoSequence();
+	}
+
 	if (!IsSimulationMode() && !IsTitleBackgroundMode() && !isGameOver_ && player_ && player_->IsDead()) {
 		isGameOver_ = true;
 		gameOverTimer_ = 0;
+		MissionResultStore::Set({ MissionResultOutcome::Failed, defeatedEnemyCount_, player_->GetHP(), gameplayElapsedFrames_, IsAttractDemoMode() });
+		gameOverFocusPosition_ = player_->GetPosition();
+		player_->SetPresentationThrustersVisible(false);
 
 		std::vector<Vector3> playerHitPos = { player_->GetPosition() };
 		if (explosionManager_) {
@@ -1223,7 +1298,8 @@ void GamePlayScene::Update() {
 	// （固定解除・カーソル非表示）をそのまま使う。
 	const bool isMouseLookActive =
 		!IsSimulationMode() &&
-		!IsTitleBackgroundMode() &&
+		!IsAutoFlightMode() &&
+		!IsAttractDemoMode() &&
 		!isGameOver_ &&
 		!isAbortingToTitle_ &&
 		shouldUpdateGame &&
@@ -1233,6 +1309,25 @@ void GamePlayScene::Update() {
 
 	if (isGameOver_) {
 		gameOverTimer_++;
+		// 装甲の各所が時間差で破裂するよう、機体中心の周りに爆発を散らす。
+		// 更新頻度も1/5にすることで、世界全体がスローになる演出を作る。
+		if (explosionManager_ && gameOverTimer_ <= 108 && gameOverTimer_ % 18 == 0) {
+			const float burstIndex = static_cast<float>(gameOverTimer_ / 18);
+			const Vector3 burstPosition = {
+				gameOverFocusPosition_.x + std::cos(burstIndex * 2.41f) * 1.75f,
+				gameOverFocusPosition_.y + std::sin(burstIndex * 1.73f) * 1.10f,
+				gameOverFocusPosition_.z + std::sin(burstIndex * 2.41f) * 1.75f,
+			};
+			explosionManager_->CreateDestructionEffects({ burstPosition });
+			if (environmentRenderer_) {
+				if (ParticleManager* particles = environmentRenderer_->GetParticleManager()) {
+					particles->EmitDirectionalBurst("test", burstPosition,
+						SubtractVector3(burstPosition, gameOverFocusPosition_), 180,
+						{ 1.0f, 0.34f, 0.05f, 0.95f }, 1.15f,
+						1.35f, 0.75f, 0.055f, 0.035f, 0.70f, 1.45f, 0.95f);
+				}
+			}
+		}
 
 
 		if (PostEffect::GetInstance()) {
@@ -1249,10 +1344,13 @@ void GamePlayScene::Update() {
 		shouldUpdateGame = (gameOverTimer_ % 5 == 0);
 
 
-		if (gameOverTimer_ >= 120) {
+		if (gameOverTimer_ >= kGameOverCinematicFrames) {
 			SceneManager::GetInstance()->ChangeScene("GAMEOVER");
 		}
 	} else {
+		if (!IsSimulationMode() && !IsTitleBackgroundMode() && shouldUpdateGame) {
+			++gameplayElapsedFrames_;
+		}
 
 		if (PostEffect::GetInstance()) {
 			bool isBoosting = false;
@@ -1340,26 +1438,27 @@ void GamePlayScene::Update() {
 		isSpecialAttackActive_ = true;
 		specialAttackFrame_ = 0;
 		if (player_) {
+			player_->ChangeMode(PlayerMode::Gerwalk);
 			player_->SetSpecialAttackActive(true);
 		}
-		// 必殺技発動時にターゲット未選択の場合、最も近い生存敵を自動ロックオンする
+
 		if (!lockedEnemy_ || lockedEnemy_->IsDead()) {
 			lockedEnemy_ = nullptr;
 			float minDistanceSq = 100000000.0f;
 			Enemy* nearestEnemy = nullptr;
-			const Vector3 playerPos = player_ ? player_->GetPosition() : Vector3{ 0.0f, 0.0f, 0.0f };
+			const Vector3 playerPos = player_->GetPosition();
 			for (const auto& enemy : enemies_) {
-				if (enemy && !enemy->IsDead()) {
-					const float dSq = LengthSqVector3(SubtractVector3(enemy->GetPosition(), playerPos));
-					if (dSq < minDistanceSq) {
-						minDistanceSq = dSq;
-						nearestEnemy = enemy.get();
-					}
+				if (!enemy || enemy->IsDead()) {
+					continue;
+				}
+				const Vector3 difference = SubtractVector3(enemy->GetPosition(), playerPos);
+				const float distanceSq = LengthSqVector3(difference);
+				if (distanceSq < minDistanceSq) {
+					minDistanceSq = distanceSq;
+					nearestEnemy = enemy.get();
 				}
 			}
-			if (nearestEnemy) {
-				lockedEnemy_ = nearestEnemy;
-			}
+			lockedEnemy_ = nearestEnemy;
 		}
 	}
 
@@ -1391,31 +1490,27 @@ void GamePlayScene::Update() {
 	}
 
 	if (isSpecialAttackActive_) {
-		// 必殺技中にターゲット敵が死亡した場合、最寄りの次の生存敵へ自動的にターゲットを切り替えて追従を維持する
 		if (!lockedEnemy_ || lockedEnemy_->IsDead()) {
 			lockedEnemy_ = nullptr;
 			float minDistanceSq = 100000000.0f;
 			Enemy* nearestEnemy = nullptr;
-			const Vector3 playerPos = player_ ? player_->GetPosition() : Vector3{ 0.0f, 0.0f, 0.0f };
+			const Vector3 playerPos = player_->GetPosition();
 			for (const auto& enemy : enemies_) {
-				if (enemy && !enemy->IsDead()) {
-					const float dSq = LengthSqVector3(SubtractVector3(enemy->GetPosition(), playerPos));
-					if (dSq < minDistanceSq) {
-						minDistanceSq = dSq;
-						nearestEnemy = enemy.get();
-					}
+				if (!enemy || enemy->IsDead()) {
+					continue;
+				}
+				const Vector3 difference = SubtractVector3(enemy->GetPosition(), playerPos);
+				const float distanceSq = LengthSqVector3(difference);
+				if (distanceSq < minDistanceSq) {
+					minDistanceSq = distanceSq;
+					nearestEnemy = enemy.get();
 				}
 			}
-			if (nearestEnemy) {
-				lockedEnemy_ = nearestEnemy;
-			}
+			lockedEnemy_ = nearestEnemy;
 		}
 
 		if (specialAttackFrame_ % kSpecialAttackFireIntervalFrames == 0 && missilePresetManager_) {
-
-			// 必殺技は SP 消費で成立する攻撃なので、通常弾・誘導弾の残弾には依存させない。
 			missilePresetManager_->FirePlayerMissile(MissileType::Normal, nullptr, -0.3f, false);
-
 			missilePresetManager_->FirePlayerMissile(MissileType::MissileWithTrail, nullptr, 0.3f, false);
 		}
 		++specialAttackFrame_;
@@ -1562,7 +1657,7 @@ void GamePlayScene::Update() {
 			player_->UpdatePresentation(position, { -0.05f, yaw, roll }, 2.2f, true);
 
 			++titleLaunchFrame_;
-		} else if (IsTitleBackgroundMode()) {
+		} else if (IsAutoFlightMode()) {
 			// StageBounds 内を「直線 + 壁際のUターン」で周回する。
 			// 壁の手前で大きくバンクして旋回するため、タイトルを放置しても
 			// フィールド外へ飛び出さず、直線飛行の見せ場も作れる。
@@ -1629,6 +1724,8 @@ void GamePlayScene::Update() {
 			const float pitch = horizontalSpeed > 0.0001f ? -std::atan2(velocity.y, horizontalSpeed) : 0.0f;
 			player_->SetVelocity(velocity);
 			player_->UpdatePresentation(position, { pitch, yaw, roll }, (std::max)(0.9f, horizontalSpeed * 7.0f), false);
+		} else if (IsAttractDemoMode()) {
+			UpdateAttractDemoPilot();
 		} else if (updateSelectedPlayer) {
 			if (warpExitActive_) {
 				const float fadeProgress = SmoothStep01(
@@ -1733,8 +1830,8 @@ void GamePlayScene::Update() {
 		std::vector<Vector3> enemyBulletHits;
 		if (enemyBulletManager_) {
 			// タイトル背景でも敵弾は必ず更新する。プレイヤーを nullptr にして、
-			// 動きは見せつつタイトル画面でダメージを受けないようにする。
-			enemyBulletManager_->Update(IsTitleBackgroundMode() ? nullptr : player_.get(), enemyBulletHits, obstacles_);
+			// 動きは見せつつ、放置デモも決められたタイミングまでダメージを受けないようにする。
+			enemyBulletManager_->Update(IsAutoFlightMode() ? nullptr : player_.get(), enemyBulletHits, obstacles_);
 		}
 
 
@@ -1793,7 +1890,7 @@ void GamePlayScene::Update() {
 
 			// 地上敵の近接攻撃当たり判定
 			GroundEnemy* groundEnemy = dynamic_cast<GroundEnemy*>(it->get());
-			if (!IsTitleBackgroundMode() && groundEnemy && groundEnemy->IsMeleeActive() && player_ && !player_->IsDead()) {
+			if (!IsAutoFlightMode() && groundEnemy && groundEnemy->IsMeleeActive() && player_ && !player_->IsDead()) {
 				OBB meleeOBB = groundEnemy->GetMeleeBoxOBB();
 				OBB playerOBB = player_->GetOBB();
 				if (MyMath::IsCollision(meleeOBB, playerOBB)) {
@@ -1877,7 +1974,7 @@ void GamePlayScene::Update() {
 				const bool defeatedBoss = (*it)->IsBoss();
 				const Vector3 defeatedPosition = (*it)->GetPosition();
 				const size_t spawnPointIndex = (*it)->GetSpawnPointIndex();
-				if (IsTitleBackgroundMode()) {
+				if (IsAutoFlightMode()) {
 					// タイトル背景でも撃破された敵は残さない。倒した後は画面外から再出現させる。
 					ClearEnemyReferences(it->get());
 					it = enemies_.erase(it);
@@ -1895,10 +1992,12 @@ void GamePlayScene::Update() {
 // 					ScheduleEnemySpawn(spawnPointIndex, kEnemyRespawnDelayFrames);
 				}
 				songGauge_ = (std::min)(songGauge_ + 20.0f, 100.0f);
+				++defeatedEnemyCount_;
 				it = enemies_.erase(it);
 
 
-				if (defeatedBoss && !IsSimulationMode() && !IsTitleBackgroundMode() && !isGameOver_) {
+				if (defeatedBoss && !IsSimulationMode() && !IsAutoFlightMode() && !isGameOver_) {
+					MissionResultStore::Set({ MissionResultOutcome::Clear, defeatedEnemyCount_, player_ ? player_->GetHP() : 0, gameplayElapsedFrames_ });
 					SceneManager::GetInstance()->ChangeScene("CLEAR");
 					return;
 				}
@@ -1907,7 +2006,7 @@ void GamePlayScene::Update() {
 			}
 		}
 
-		if (IsTitleBackgroundMode() && player_) {
+		if (IsAutoFlightMode() && player_) {
 			// 生存中の敵がいるか確認
 			if (!lockedEnemy_ || lockedEnemy_->IsDead()) {
 				lockedEnemy_ = nullptr;
@@ -2075,7 +2174,7 @@ void GamePlayScene::Update() {
 			}
 		}
 
-		if (!IsSimulationMode() && !IsTitleBackgroundMode() && !isGameOver_ && hasAnyEnemySpawned && enemies_.empty() && !HasPendingEnemySpawns()) {
+		if (!IsSimulationMode() && !IsAutoFlightMode() && !isGameOver_ && hasAnyEnemySpawned && enemies_.empty() && !HasPendingEnemySpawns()) {
 			if (!bossSpawned_) {
 				OutputDebugStringA("[GamePlayScene] All enemies defeated! Spawning Boss...\n");
 				auto boss = std::make_unique<Boss>();
@@ -2311,8 +2410,10 @@ void GamePlayScene::Update() {
 			}
 		}
 	} else {
-		if (player_) {
-			if (IsTitleBackgroundMode()) {
+		if (isGameOver_ && !isDebugCameraActive_) {
+			UpdateGameOverCinematicCamera(camera.get());
+		} else if (player_) {
+			if (IsAutoFlightMode()) {
 				// 出撃中もタイトル時と同じ追従カメラを使い、地形と飛行方向を連続させる。
 				// タイトル背景でも機体を見失わないよう、通常のプレイヤー追従カメラを使う。
 				// 待機中は緩やかに揺らし、出撃時はワープに吸い込まれるよう視野角を一気に広げる。
@@ -2658,7 +2759,8 @@ void GamePlayScene::Update() {
 
 	if (environmentRenderer_) {
 		// 編集モード停止中は、パーティクル・UVスクロールを含む環境演出も止める。
-		environmentRenderer_->Update(activeCamera, shouldUpdateGame);
+		const bool updateEnvironment = shouldUpdateGame || (isGameOver_ && gameOverTimer_ % 5 == 0);
+		environmentRenderer_->Update(activeCamera, updateEnvironment);
 	}
 
 #ifdef ENABLE_IMGUI
@@ -3151,6 +3253,7 @@ void GamePlayScene::DrawOverlay() {
 		bossHpGaugeFillSprite_->Update();
 		bossHpGaugeFillSprite_->Draw();
 	}
+
 	if (hudNormalAmmoIconSprite_ && hudHomingAmmoIconSprite_) {
 		hudNormalAmmoIconSprite_->SetTextureLeftTop({ 0.0f, 0.0f });
 		hudNormalAmmoIconSprite_->SetTextureSize({ 887.0f, 887.0f });
@@ -3257,15 +3360,6 @@ void GamePlayScene::DrawOverlay() {
 		songGaugeStateSprite_->Draw();
 	}
 
-	// ImGui の有無に関係なく、実行ファイルのゲーム画面にも操作方法を出す。
-	if (!isPaused_ && !isGameOver_ && GameSettings::GetInstance().IsControlGuideVisible() && controlsGuideSprite_) {
-		controlsGuideSprite_->SetPosition({ 18.0f, 18.0f });
-		controlsGuideSprite_->SetSize({ 400.0f, 255.0f });
-		controlsGuideSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.96f });
-		controlsGuideSprite_->Update();
-		controlsGuideSprite_->Draw();
-	}
-
 #ifdef ENABLE_IMGUI
 	// ImGuiの座標はアプリ全体、Spriteの座標はGame View内部なので、
 	// Game Viewの矩形へ変換してHUDの外へ文字がずれないようにする。
@@ -3273,8 +3367,9 @@ void GamePlayScene::DrawOverlay() {
 	float gameViewMinY = 0.0f;
 	float gameViewMaxX = screenWidth;
 	float gameViewMaxY = screenHeight;
-	if (ImGui::GetCurrentContext() &&
-		FlyCamera::GetGameViewBounds(gameViewMinX, gameViewMinY, gameViewMaxX, gameViewMaxY)) {
+	const bool hasGameViewBounds = !ImGuiManager::IsVisible() ||
+		FlyCamera::GetGameViewBounds(gameViewMinX, gameViewMinY, gameViewMaxX, gameViewMaxY);
+	if (ImGui::GetCurrentContext() && hasGameViewBounds) {
 		ImDrawList *hudText = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
 		const float viewScaleX = (gameViewMaxX - gameViewMinX) / (std::max)(screenWidth, 1.0f);
 		const float viewScaleY = (gameViewMaxY - gameViewMinY) / (std::max)(screenHeight, 1.0f);
@@ -3290,11 +3385,13 @@ void GamePlayScene::DrawOverlay() {
 
 		// 常時確認できる操作ガイド。レーダーと重ならない左上に置き、
 		// 操作名とキーを列で分けて、戦闘中でも一目で確認できるようにする。
-		if (false && !isPaused_ && !isGameOver_ && GameSettings::GetInstance().IsControlGuideVisible()) {
+		if (!isPaused_ && !isGameOver_ && GameSettings::GetInstance().IsControlGuideVisible()) {
 			constexpr float kGuideX = 24.0f;
 			constexpr float kGuideY = 24.0f;
 			constexpr float kGuideWidth = 400.0f;
-			constexpr float kGuideHeight = 238.0f;
+			const PlayerMode playerMode = player_ ? player_->GetCurrentMode() : PlayerMode::Fighter;
+			const bool isGerwalkGuide = playerMode == PlayerMode::Gerwalk;
+			const float kGuideHeight = isGerwalkGuide ? 278.0f : 256.0f;
 			hudText->AddRectFilled(
 				toGameView(kGuideX, kGuideY),
 				toGameView(kGuideX + kGuideWidth, kGuideY + kGuideHeight),
@@ -3316,11 +3413,9 @@ void GamePlayScene::DrawOverlay() {
 				IM_COL32(55, 175, 215, 180),
 				1.0f);
 
-			const PlayerMode playerMode = player_ ? player_->GetCurrentMode() : PlayerMode::Fighter;
-			const char *modeName = playerMode == PlayerMode::Fighter ? "FIGHTER"
-				: (playerMode == PlayerMode::Gerwalk ? "GERWALK" : "BATTROID");
+			const char *modeName = isGerwalkGuide ? "GERWALK" : "FIGHTER";
 			const char *lateralKey = playerMode == PlayerMode::Gerwalk ? "A / D  STRAFE"
-				: (playerMode == PlayerMode::Fighter ? "A / D  DODGE" : "-" );
+				: "A / D  DODGE";
 			const ImU32 guideTitleColor = IM_COL32(125, 236, 255, 255);
 			const ImU32 guideModeColor = IM_COL32(255, 218, 105, 255);
 			const ImU32 guideLabelColor = IM_COL32(158, 207, 226, 245);
@@ -3334,14 +3429,23 @@ void GamePlayScene::DrawOverlay() {
 				hudText->AddText(nullptr, kGuideFontSize, toGameView(kGuideX + 16.0f, y), guideLabelColor, label);
 				hudText->AddText(nullptr, kGuideFontSize, toGameView(kGuideX + 170.0f, y), guideKeyColor, key);
 			};
-			drawGuideRow(kGuideY + 54.0f, "前進 / 後退", "W / S");
-			drawGuideRow(kGuideY + 76.0f, "上昇 / 下降", "SPACE / SHIFT");
-			drawGuideRow(kGuideY + 98.0f, "左右移動", lateralKey);
-			drawGuideRow(kGuideY + 124.0f, "機銃発射", "左クリック");
-			drawGuideRow(kGuideY + 146.0f, "ミサイル照準", "右クリック長押し");
-			drawGuideRow(kGuideY + 168.0f, "ロック / 解除", "TAB / X");
-			drawGuideRow(kGuideY + 190.0f, "変形", "1 / 2 / 3");
-			drawGuideRow(kGuideY + 212.0f, "一時停止", "ESC");
+			float guideRowY = kGuideY + 54.0f;
+			const auto addGuideRow = [&](const char *label, const char *key) {
+				drawGuideRow(guideRowY, label, key);
+				guideRowY += 22.0f;
+			};
+			addGuideRow("前進 / 後退", "W / S");
+			addGuideRow("上昇 / 下降", "SPACE / SHIFT");
+			addGuideRow("左右移動", lateralKey);
+			addGuideRow("機銃発射", "左クリック");
+			addGuideRow("ミサイル照準", "右クリック長押し");
+			addGuideRow("ロック / 解除", "TAB / X");
+			addGuideRow("必殺技", "F");
+			addGuideRow("変形", "1 / 2");
+			if (isGerwalkGuide) {
+				addGuideRow("ガード", "B");
+			}
+			addGuideRow("一時停止", "ESC");
 		}
 	}
 #endif
@@ -3358,6 +3462,62 @@ void GamePlayScene::DrawOverlay() {
 		}
 	} else {
 		DrawAimCursorOverlaySprite(aimCursorSprite_.get(), isJammed);
+	}
+
+	// ロックオン中の敵の頭上に、敵と一緒に動く HP バーを表示する。
+	if (lockedEnemy_ && !lockedEnemy_->IsDead() &&
+		bossHpGaugeBackgroundSprite_ && bossHpGaugeFillSprite_) {
+		float minX = 0.0f;
+		float minY = 0.0f;
+		float maxX = 0.0f;
+		float maxY = 0.0f;
+		if (GetOverlayBounds(minX, minY, maxX, maxY)) {
+			const float overlayWidth = maxX - minX;
+			const float overlayHeight = maxY - minY;
+			float collisionRadius = lockedEnemy_->GetCollisionRadius();
+			Vector3 hpBarWorldPosition = lockedEnemy_->GetPosition();
+			hpBarWorldPosition.y += collisionRadius * 1.35f;
+			const Vector3 screenPosition = MyMath::WorldToScreen(
+				hpBarWorldPosition, activeCamera->GetViewProjectionMatrix(), overlayWidth, overlayHeight);
+
+			if (screenPosition.z >= 0.0f && screenPosition.z <= 1.0f &&
+				screenPosition.x >= 0.0f && screenPosition.x <= overlayWidth &&
+				screenPosition.y >= 0.0f && screenPosition.y <= overlayHeight) {
+				const float reticleSize = std::clamp(76.0f + collisionRadius * 12.0f, 76.0f, 116.0f);
+				const float gaugeWidth = std::clamp(120.0f + collisionRadius * 24.0f, 140.0f, 250.0f);
+				constexpr float kGaugeHeight = 10.0f;
+				const float gaugeX = std::clamp(
+					screenPosition.x * screenWidth / overlayWidth - gaugeWidth * 0.5f,
+					48.0f,
+					screenWidth - gaugeWidth - 8.0f);
+				const float gaugeY = std::clamp(
+					screenPosition.y * screenHeight / overlayHeight - reticleSize * 0.5f - 20.0f,
+					30.0f,
+					screenHeight - 20.0f);
+				const int maxHp = (std::max)(1, lockedEnemy_->GetMaxHP());
+				const float hpRatio = std::clamp(
+					static_cast<float>(lockedEnemy_->GetHP()) / static_cast<float>(maxHp),
+					0.0f,
+					1.0f);
+
+				bossHpGaugeBackgroundSprite_->SetPosition({ gaugeX - 2.0f, gaugeY - 2.0f });
+				bossHpGaugeBackgroundSprite_->SetSize({ gaugeWidth + 4.0f, kGaugeHeight + 4.0f });
+				bossHpGaugeBackgroundSprite_->SetColor({ 0.04f, 0.03f, 0.05f, 0.92f });
+				bossHpGaugeBackgroundSprite_->Update();
+				bossHpGaugeBackgroundSprite_->Draw();
+
+				bossHpGaugeFillSprite_->SetPosition({ gaugeX, gaugeY });
+				bossHpGaugeFillSprite_->SetSize({ gaugeWidth * hpRatio, kGaugeHeight });
+				bossHpGaugeFillSprite_->SetColor({ 1.0f, 0.16f, 0.10f, 1.0f });
+				bossHpGaugeFillSprite_->Update();
+				bossHpGaugeFillSprite_->Draw();
+
+				drawLabel(hudHpLabelSprite_.get(), { gaugeX - 42.0f, gaugeY - 5.0f }, { 34.0f, 20.0f });
+				drawText(std::to_string(lockedEnemy_->GetHP()) + "/" + std::to_string(maxHp),
+					lockedTargetHpDigitSprites_, gaugeX + gaugeWidth, gaugeY - 24.0f,
+					{ 1.0f, 0.88f, 0.32f, 1.0f });
+			}
+		}
 	}
 
 	// 赤色のターゲットマーカー：誘導弾操作中 (右クリック長押しマルチロック中) または 飛行中ミサイルが存在する時のみ表示
@@ -3405,6 +3565,167 @@ void GamePlayScene::DrawOverlay() {
 		warpFadeInSprite_->Update();
 		warpFadeInSprite_->Draw();
 	}
+
+	// 機体の爆発中だけ中央に失敗通知を出し、リザルトへ移る前に確実に伝える。
+	// ホワイトアウトの進行と同じ比率で消えるため、次の画面へ文字が残らない。
+	DrawGameOverOverlay(screenWidth, screenHeight);
+	DrawAttractDemoOverlay(screenWidth, screenHeight);
+
+	if (isGameOver_ && gameOverWhiteoutSprite_) {
+		const float whiteoutProgress = SmoothStep01(
+			(static_cast<float>(gameOverTimer_) - 96.0f) /
+			(static_cast<float>(kGameOverCinematicFrames) - 96.0f));
+		gameOverWhiteoutSprite_->SetPosition({ 0.0f, 0.0f });
+		gameOverWhiteoutSprite_->SetSize({ screenWidth, screenHeight });
+		gameOverWhiteoutSprite_->SetColor({ 1.0f, 1.0f, 1.0f, whiteoutProgress });
+		gameOverWhiteoutSprite_->Update();
+		gameOverWhiteoutSprite_->Draw();
+	}
+}
+
+void GamePlayScene::UpdateAttractDemoSequence() {
+	++attractDemoFrame_;
+	// 撃破はここで作らない。通常ステージ上の敵弾／地上敵の攻撃が実際に命中した時だけ
+	// プレイヤーが倒れ、ゲームオーバー演出へ入る。
+}
+
+void GamePlayScene::UpdateAttractDemoPilot() {
+	if (!player_) {
+		return;
+	}
+
+	const float speed = player_->GetModeParams(PlayerMode::Fighter).maxMoveSpeed * 0.78f;
+	Vector3 position = player_->GetPosition();
+	position.x += attractDemoForward_.x * speed;
+	position.y += attractDemoForward_.y * speed;
+	position.z += attractDemoForward_.z * speed;
+	player_->SetVelocity({
+		attractDemoForward_.x * speed,
+		attractDemoForward_.y * speed,
+		attractDemoForward_.z * speed,
+	});
+	player_->UpdatePresentation(position, { 0.0f, attractDemoYaw_, 0.0f }, 2.2f, true);
+}
+
+void GamePlayScene::DrawAttractDemoOverlay(float screenWidth, float screenHeight) {
+	if (!IsAttractDemoMode() || isGameOver_) {
+		return;
+	}
+
+#ifdef ENABLE_IMGUI
+	if (!ImGui::GetCurrentContext()) {
+		return;
+	}
+
+	const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+	const float width = displaySize.x > 1.0f ? displaySize.x : screenWidth;
+	const float height = displaySize.y > 1.0f ? displaySize.y : screenHeight;
+	const char* guide = "[ TAB ]  RETURN TO TITLE";
+	ImFont* guideFont = ImGuiManager::GetGameOverFont();
+	if (!guideFont) {
+		guideFont = ImGui::GetFont();
+	}
+	constexpr float kGuideFontSize = 20.0f;
+	const ImVec2 textSize = guideFont->CalcTextSizeA(kGuideFontSize, 1000.0f, 0.0f, guide);
+	const float textX = (width - textSize.x) * 0.5f;
+	const float textY = height - 62.0f;
+	const float pulse = 0.78f + std::sin(static_cast<float>(attractDemoFrame_) * 0.08f) * 0.16f;
+	const int alpha = static_cast<int>(std::clamp(pulse, 0.0f, 1.0f) * 255.0f);
+	ImDrawList* drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+
+	// リザルトと同じシアン基調の小型HUDにして、戦闘画面の情報を邪魔しない位置に置く。
+	drawList->AddRectFilled(
+		ImVec2(textX - 24.0f, textY - 9.0f),
+		ImVec2(textX + textSize.x + 24.0f, textY + textSize.y + 10.0f),
+		IM_COL32(2, 14, 31, 205), 3.0f);
+	drawList->AddLine(
+		ImVec2(textX - 24.0f, textY - 9.0f), ImVec2(textX + 30.0f, textY - 9.0f),
+		IM_COL32(80, 226, 255, alpha), 2.0f);
+	drawList->AddLine(
+		ImVec2(textX + textSize.x - 30.0f, textY + textSize.y + 10.0f),
+		ImVec2(textX + textSize.x + 24.0f, textY + textSize.y + 10.0f),
+		IM_COL32(80, 226, 255, alpha), 2.0f);
+	drawList->AddText(guideFont, kGuideFontSize, ImVec2(textX + 1.5f, textY + 2.0f), IM_COL32(0, 0, 0, alpha), guide);
+	drawList->AddText(guideFont, kGuideFontSize, ImVec2(textX, textY), IM_COL32(194, 246, 255, alpha), guide);
+#else
+	(void)screenWidth;
+	(void)screenHeight;
+#endif
+}
+
+void GamePlayScene::DrawGameOverOverlay(float screenWidth, float screenHeight) {
+	if (!isGameOver_) {
+		return;
+	}
+
+#ifdef ENABLE_IMGUI
+	if (!ImGui::GetCurrentContext()) {
+		return;
+	}
+
+	constexpr int kRevealStartFrame = 30;
+	constexpr int kRevealFrames = 22;
+	const float reveal = std::clamp(
+		static_cast<float>(gameOverTimer_ - kRevealStartFrame) / static_cast<float>(kRevealFrames),
+		0.0f, 1.0f);
+	if (reveal <= 0.0f) {
+		return;
+	}
+
+	const float whiteout = SmoothStep01(
+		(static_cast<float>(gameOverTimer_) - 96.0f) /
+		(static_cast<float>(kGameOverCinematicFrames) - 96.0f));
+	const float alpha = reveal * (1.0f - whiteout);
+	if (alpha <= 0.001f) {
+		return;
+	}
+
+	const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+	const float width = displaySize.x > 1.0f ? displaySize.x : screenWidth;
+	const float height = displaySize.y > 1.0f ? displaySize.y : screenHeight;
+	const float pulse = 1.0f + (1.0f - reveal) * 0.075f;
+	const float fontSize = 116.0f * pulse;
+	const char* text = "GAME OVER";
+	ImFont* gameOverFont = ImGuiManager::GetGameOverFont();
+	if (!gameOverFont) {
+		gameOverFont = ImGui::GetFont();
+	}
+	const ImVec2 textSize = gameOverFont->CalcTextSizeA(fontSize, 1000.0f, 0.0f, text);
+	const float textX = (width - textSize.x) * 0.5f;
+	const float textY = height * 0.465f - textSize.y * 0.5f;
+	const int textAlpha = static_cast<int>(alpha * 255.0f);
+	ImDrawList* drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+
+	// 機体 HUD のブラケット、スキャン線、警告色を組み合わせ、爆炎の上でも輪郭を保つ。
+	const float plateLeft = textX - 68.0f;
+	const float plateRight = textX + textSize.x + 68.0f;
+	const float plateTop = textY - 34.0f;
+	const float plateBottom = textY + textSize.y + 45.0f;
+	const ImU32 dimPink = IM_COL32(255, 46, 126, static_cast<int>(textAlpha * 0.58f));
+	const ImU32 brightPink = IM_COL32(255, 125, 174, textAlpha);
+	const ImU32 paleText = IM_COL32(255, 231, 240, textAlpha);
+	drawList->AddRectFilled(
+		ImVec2(plateLeft, plateTop), ImVec2(plateRight, plateBottom),
+		IM_COL32(4, 7, 20, static_cast<int>(alpha * 212.0f)), 3.0f);
+	drawList->AddLine(ImVec2(plateLeft, plateTop), ImVec2(plateLeft + 62.0f, plateTop), brightPink, 3.0f);
+	drawList->AddLine(ImVec2(plateRight - 62.0f, plateTop), ImVec2(plateRight, plateTop), brightPink, 3.0f);
+	drawList->AddLine(ImVec2(plateLeft, plateBottom), ImVec2(plateLeft + 62.0f, plateBottom), brightPink, 3.0f);
+	drawList->AddLine(ImVec2(plateRight - 62.0f, plateBottom), ImVec2(plateRight, plateBottom), brightPink, 3.0f);
+	drawList->AddLine(ImVec2(plateLeft, textY + textSize.y + 13.0f), ImVec2(plateRight, textY + textSize.y + 13.0f), dimPink, 1.0f);
+	drawList->AddLine(ImVec2(plateLeft + 16.0f, textY - 12.0f), ImVec2(plateRight - 16.0f, textY - 12.0f), dimPink, 1.0f);
+
+	const char* systemLabel = "[ SYSTEM FAILURE / VF-15C DESTROYED ]";
+	const float systemFontSize = 17.0f;
+	const ImVec2 systemSize = ImGui::GetFont()->CalcTextSizeA(systemFontSize, 1000.0f, 0.0f, systemLabel);
+	drawList->AddText(nullptr, systemFontSize, ImVec2((width - systemSize.x) * 0.5f, plateTop + 7.0f), dimPink, systemLabel);
+	// 黒い縁取り、発光、白に近い本体の順に重ね、解像感と可読性を両立させる。
+	drawList->AddText(gameOverFont, fontSize, ImVec2(textX + 4.0f, textY + 5.0f), IM_COL32(0, 0, 0, textAlpha), text);
+	drawList->AddText(gameOverFont, fontSize, ImVec2(textX - 2.0f, textY), IM_COL32(255, 10, 91, static_cast<int>(textAlpha * 0.50f)), text);
+	drawList->AddText(gameOverFont, fontSize, ImVec2(textX, textY), paleText, text);
+#else
+	(void)screenWidth;
+	(void)screenHeight;
+#endif
 }
 
 void GamePlayScene::DrawPauseOverlay(float screenWidth, float screenHeight) {

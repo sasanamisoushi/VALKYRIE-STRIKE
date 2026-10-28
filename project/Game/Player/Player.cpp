@@ -20,6 +20,9 @@ namespace {
 	constexpr float kBattroidFootSwingAngle = 0.14f;
 	constexpr float kBattroidFootStepDistance = 0.18f;
 	constexpr float kBattroidFootLiftDistance = 0.08f;
+	// 必殺技中にロック対象が変わった瞬間の視線・機体姿勢の飛びを抑える。
+	// 1フレームあたりの追従率なので、約0.3秒でほぼ新しい対象へ向く。
+	constexpr float kSpecialAttackTargetTurnBlend = 0.16f;
 
 	bool UsesNaturalPlayerModelScale(const std::string &modelName) {
 		return modelName != kDefaultPlayerBoxModelName;
@@ -161,6 +164,12 @@ namespace {
 			return 0.0f;
 		}
 		return std::clamp(-std::asin(std::clamp(normalizedForward.y, -1.0f, 1.0f)), -1.2f, 1.2f);
+	}
+
+	float BlendAngleShortestPath(float current, float target, float blend) {
+		constexpr float kTwoPi = 6.28318530717958647692f;
+		const float shortestDifference = std::remainder(target - current, kTwoPi);
+		return current + shortestDifference * std::clamp(blend, 0.0f, 1.0f);
 	}
 
 	void CancelVerticalVelocityIntoPush(Vector3 &velocity, const Vector3 &pushOut) {
@@ -371,7 +380,7 @@ void Player::Initialize(const std::string &modelName) {
     modeParams_[0].maxLockOnDistance = 200.0f;
 
     // ガウォーク（広角ロック標準形態）
-    modeParams_[1].canGuard = false;
+    modeParams_[1].canGuard = true;
     modeParams_[1].canMelee = false;
     modeParams_[1].maxMultiLock = 4;
     modeParams_[1].lockOnAngleDot = -0.2f;
@@ -397,6 +406,11 @@ void Player::Initialize(const std::string &modelName) {
 }
 
 void Player::ChangeMode(PlayerMode newMode) {
+	// バトロイド形態は調整中のため、外部からの切替も含めて一時的に無効化する。
+	if (newMode == PlayerMode::Battroid) {
+		return;
+	}
+
 	const PlayerMode previousMode = currentMode_;
 	if (newMode != PlayerMode::Fighter) {
 		// ガウォーク／バトロイドへ変形した時点でファイター専用回避を終了する。
@@ -628,13 +642,18 @@ void Player::Update(const std::list<std::unique_ptr<Obstacle>> &obstacles, const
 		velocity_ = { 0.0f, 0.0f, 0.0f };
 
 		if (lockOnTarget) {
-			// 必殺技中はロックオンしている敵に向きとカメラ視点を自動追従・固定する
+			// 必殺技中はロックオンしている敵へ追従する。対象を切り替えた際も
+			// 最短方向に補間し、照準・カメラ・機体の向きが一度に飛ばないようにする。
 			Vector3 toTarget = { lockOnTarget->x - position_.x, lockOnTarget->y - position_.y, lockOnTarget->z - position_.z };
 			if (LengthSq(toTarget) > 0.0001f) {
 				Vector3 dir = NormalizeOrZero(toTarget);
-				specialAttackCameraYaw_ = std::atan2(dir.x, dir.z);
-				specialAttackCameraPitch_ = CameraPitchFromForward(dir);
-				quaternion_ = MakeNoRollLookQuaternion(dir);
+				const float targetYaw = std::atan2(dir.x, dir.z);
+				const float targetPitch = CameraPitchFromForward(dir);
+				specialAttackCameraYaw_ = BlendAngleShortestPath(
+					specialAttackCameraYaw_, targetYaw, kSpecialAttackTargetTurnBlend);
+				specialAttackCameraPitch_ +=
+					(targetPitch - specialAttackCameraPitch_) * kSpecialAttackTargetTurnBlend;
+				quaternion_ = MakeNoRollLookQuaternion(GetAttackDirection());
 			}
 		} else {
 			// 機体は固定したまま、ロックオン対象が無い場合のみ手動調整
@@ -718,7 +737,6 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
         const PlayerMode previousMode = currentMode_;
         if (input->TriggerAction(PlayerAction::TransformFighter)) ChangeMode(PlayerMode::Fighter);
         if (input->TriggerAction(PlayerAction::TransformGerwalk)) ChangeMode(PlayerMode::Gerwalk);
-        if (input->TriggerAction(PlayerAction::TransformBattroid)) ChangeMode(PlayerMode::Battroid);
         modeChanged = previousMode != currentMode_;
         if (modeChanged && !advanceState) {
             // 停止中は補間を進めないため、選んだ形態のポーズへ即座にスナップする。
@@ -734,9 +752,9 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
         }
     }
 
-    // Bキーでの既存ガード状態に、左腕のポーズ用ブレンド値を同期する。
+    // Bキーでのガード状態に、左腕のポーズ用ブレンド値を同期する。
     // この時点で更新しておくことで、シールド・無敵判定・モデルの見た目が同じフレームで揃う。
-    // ガードはバトロイドモード限定 (canGuard == true) で可能とする。
+    // ガードはガウォーク形態だけで可能とする。
     if (advanceState) {
         const bool canGuardInCurrentMode = GetModeParams(currentMode_).canGuard;
         isGuarding_ = allowInput && canGuardInCurrentMode && input->PushAction(PlayerAction::Guard) && !isSpecialAttackActive_;
@@ -1201,6 +1219,40 @@ void Player::UpdateCamera(Camera *camera, const Vector3 *targetPos, bool allowIn
 		}
 	}
 
+	// 敵をロックしていた視線を解除と同時に自機の正面へ戻すと、注視点とカメラ位置が
+	// 同フレームに大きく飛んでしまう。最後のロックオン視線を短時間だけ残して自然に戻す。
+	const bool isNormalLockOnCamera = targetPos && !isSpecialAttackActive_;
+	if (isNormalLockOnCamera) {
+		wasCameraLockOnActive_ = true;
+		cameraLockReleaseProgress_ = 1.0f;
+		cameraLockReleaseDirection_ = cameraDirection;
+		const Vector3 playerCenter = GetOBB().center;
+		cameraLockReleaseFocusOffset_ = {
+			lookTarget.x - playerCenter.x,
+			lookTarget.y - playerCenter.y,
+			lookTarget.z - playerCenter.z,
+		};
+	} else if (wasCameraLockOnActive_ && !isSpecialAttackActive_) {
+		wasCameraLockOnActive_ = false;
+		cameraLockReleaseProgress_ = 0.0f;
+	}
+
+	if (!isSpecialAttackActive_ && cameraLockReleaseProgress_ < 1.0f) {
+		constexpr float kLockReleaseCameraBlendSpeed = 0.14f;
+		cameraLockReleaseProgress_ = (std::min)(
+			1.0f, cameraLockReleaseProgress_ + kLockReleaseCameraBlendSpeed);
+		const float t = cameraLockReleaseProgress_ * cameraLockReleaseProgress_ *
+			(3.0f - 2.0f * cameraLockReleaseProgress_);
+
+		cameraDirection = NormalizeOrZero(Add(
+			Scale(cameraLockReleaseDirection_, 1.0f - t),
+			Scale(cameraDirection, t)));
+		if (LengthSq(cameraDirection) <= 0.0001f) {
+			cameraDirection = flatForward;
+		}
+		lookTarget = Add(GetOBB().center, Scale(cameraLockReleaseFocusOffset_, 1.0f - t));
+	}
+
 	lastCameraDirection_ = cameraDirection;
 
 	float backDistance = 12.0f;
@@ -1348,7 +1400,6 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 
     if (input->TriggerAction(PlayerAction::TransformFighter)) ChangeMode(PlayerMode::Fighter);
     if (input->TriggerAction(PlayerAction::TransformGerwalk)) ChangeMode(PlayerMode::Gerwalk);
-    if (input->TriggerAction(PlayerAction::TransformBattroid)) ChangeMode(PlayerMode::Battroid);
 
     PlayerModeParams& p = modeParams_[static_cast<int>(currentMode_)];
 
@@ -1357,7 +1408,7 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 	const bool moveUp = input->PushAction(PlayerAction::MoveUp);
 	const bool moveDown = input->PushAction(PlayerAction::MoveDown);
 	const bool guardInput = input->PushAction(PlayerAction::Guard);
-	isGuarding_ = guardInput;
+	isGuarding_ = guardInput && p.canGuard && !player.IsSpecialAttackActive();
 	isBattroidWalking_ = currentMode_ == PlayerMode::Battroid && (moveForward || moveBackward);
 	if (!isBattroidWalking_) {
 		battroidWalkTime_ = 0.0f;

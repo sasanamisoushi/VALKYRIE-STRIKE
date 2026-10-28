@@ -16,6 +16,7 @@ public:
     void Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles) override;
     void UpdateModel() override;
     void Draw() override;
+    int GetMaxHP() const override { return kMaxHP; }
     int ConsumeSummonRequests();
 
 private:

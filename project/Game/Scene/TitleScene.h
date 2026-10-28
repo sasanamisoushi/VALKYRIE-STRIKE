@@ -20,8 +20,13 @@ public:
 	void Draw() override;
 	// ポーズ等の中断遷移からタイトルへ戻った時のフェードイン制御
 	static void SetPendingFadeIn(bool pending) { isPendingFadeIn_ = pending; }
+	// TAB で開始／終了するアトラクトデモの状態を切り替える。
+	static void StartAttractDemo() { isAttractDemoEnabled_ = true; }
+	static void StopAttractDemo() { isAttractDemoEnabled_ = false; }
 private:
 	static inline bool isPendingFadeIn_ = false;
+	// 起動時は通常タイトル。TAB で開始したデモだけがリザルト後も次周回へ進む。
+	static inline bool isAttractDemoEnabled_ = false;
 	float titleFadeInAlpha_ = 0.0f;
 	enum class MenuItem {
 		Start,
@@ -44,6 +49,7 @@ private:
 	void ToggleBackgroundMode();
 	void UpdateGameplayBackground();
 	void DrawBackgroundModeImGui();
+	void DrawAttractDemoStartPrompt(float screenWidth, float screenHeight);
 	void DrawFoldTransition(float screenWidth, float screenHeight);
 	void DrawWarpCloudLayers(float screenWidth, float screenHeight);
 	std::unique_ptr<Camera> camera;
@@ -91,7 +97,7 @@ private:
 	MenuItem selectedMenuItem_ = MenuItem::Start;
 	SettingsItem selectedSettingsItem_ = SettingsItem::MasterVolume;
 	bool isSettingsOpen_ = false;
-
+	int attractDemoTitleFrames_ = 0;
 };
 
 

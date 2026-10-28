@@ -135,9 +135,10 @@ void Game::Update() {
 		ImGuiManager::SetVisible(showImGui_);
 	}
 
-	//-----ImGuiのフレーム開始処理-----
+	// 編集UIが閉じている通常プレイ中も、ゲーム内操作ガイドなどの
+	// オーバーレイを描画できるよう ImGui フレームだけは開始する。
+	imGuiManager->BeginFrame();
 	if (showImGui_) {
-		imGuiManager->BeginFrame();
 
 		// 画面全体をImGuiの「ドッキングエリア」にする
 		ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
@@ -281,6 +282,11 @@ void Game::Draw() {
 
 		// 深度バッファをDSV（書き込み）に戻す
 		DirectXCommon::GetInstance()->SetDepthStateToDSV();
+
+#ifdef ENABLE_IMGUI
+		// 通常プレイ用の HUD オーバーレイをスワップチェーンへ重ねる。
+		imGuiManager->EndFrame(DirectXCommon::GetInstance()->GetCommandList());
+#endif
 	}
 
 	//描画後処理

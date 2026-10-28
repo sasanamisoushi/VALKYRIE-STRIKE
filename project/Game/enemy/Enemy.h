@@ -24,6 +24,7 @@ class Enemy {
 public:
     virtual ~Enemy() = default;
     static constexpr size_t kNoSpawnPoint = static_cast<size_t>(-1);
+    static constexpr int kMaxHP = 2;
 
     // 初期化（発生位置を渡す）
     virtual void Initialize(const Vector3 &position);
@@ -58,6 +59,7 @@ public:
     // 死んだかどうかのゲッター
     bool IsDead() const { return isDead_; }
     int GetHP() const { return hp_; }
+    virtual int GetMaxHP() const { return kMaxHP; }
 
     // サイズ（スケール）を設定するセッター
     void SetScale(const Vector3 &scale) { scale_ = scale; if (object_) object_->SetScale(scale_); }

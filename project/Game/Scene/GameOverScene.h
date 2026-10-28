@@ -15,5 +15,19 @@ public:
 	void Draw() override;
 private:
 	std::unique_ptr<Camera> camera_;
-	std::unique_ptr<Sprite> gameOverSprite_;
+	std::unique_ptr<Sprite> resultBackgroundSprite_;
+	std::unique_ptr<Sprite> resultFlowingWorldPrimarySprite_;
+	std::unique_ptr<Sprite> resultFlowingWorldSecondarySprite_;
+	std::unique_ptr<Sprite> resultStaticAircraftSprite_;
+	std::unique_ptr<Sprite> resultCloudFlowNearSprite_;
+	std::unique_ptr<Sprite> resultCloudFlowFarSprite_;
+	std::unique_ptr<Sprite> resultHudRingTopRightSprite_;
+	std::unique_ptr<Sprite> resultHudRingBottomLeftSprite_;
+	std::unique_ptr<Sprite> transitionFadeSprite_;
+	int resultAnimationFrame_ = 0;
+	float transitionFadeAlpha_ = 1.0f;
+	bool isReturningToTitle_ = false;
+	bool isAttractDemoResult_ = false;
+	int returnToTitleFrame_ = 0;
+	static constexpr int kShutdownDurationFrames = 38;
 };

@@ -3,6 +3,8 @@
 #include "engine/Graphics/SrvManager.h"
 
 bool ImGuiManager::sIsVisible_ = true;
+ImFont* ImGuiManager::sResultRankFont_ = nullptr;
+ImFont* ImGuiManager::sGameOverFont_ = nullptr;
 
 void ImGuiManager::Initialize(HWND hwnd, ID3D12Device *device, int numFramesInFlight, DXGI_FORMAT rtvFormat, ID3D12DescriptorHeap *srvHeap) {
 #ifdef ENABLE_IMGUI
@@ -16,6 +18,18 @@ void ImGuiManager::Initialize(HWND hwnd, ID3D12Device *device, int numFramesInFl
 	ImGuiIO &io = ImGui::GetIO();
 	if (io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\msgothic.ttc", 13.0f, NULL, io.Fonts->GetGlyphRangesJapanese()) == nullptr) {
 		io.Fonts->AddFontDefault();
+	}
+	// ランクは D/C/B/A/S/SS だけなので、ASCII 範囲だけを大きく焼き込み、
+	// 日本語フォント全体を巨大なアトラスにせず高精細な文字を確保する。
+	static const ImWchar rankGlyphRanges[] = { 0x0020, 0x007E, 0 };
+	sResultRankFont_ = io.Fonts->AddFontFromFileTTF(
+		"C:\\Windows\\Fonts\\msgothic.ttc", 144.0f, nullptr, rankGlyphRanges);
+	// 失敗演出は画面の主役になるため、HUD用の小さいフォントを拡大せず、
+	// 読みやすいコンデンスド寄りの UI フォントを大きなサイズで個別に焼き込む。
+	sGameOverFont_ = io.Fonts->AddFontFromFileTTF(
+		"C:\\Windows\\Fonts\\bahnschrift.ttf", 176.0f, nullptr, rankGlyphRanges);
+	if (!sGameOverFont_) {
+		sGameOverFont_ = sResultRankFont_;
 	}
 
 	// ドッキング機能を有効にする
@@ -44,15 +58,14 @@ void ImGuiManager::Shutdown() {
 	ImGui_ImplDX12_Shutdown();
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
+	sResultRankFont_ = nullptr;
+	sGameOverFont_ = nullptr;
 #endif
 }
 
 void ImGuiManager::BeginFrame() {
-	if (!sIsVisible_) {
-		return;
-	}
 #ifdef ENABLE_IMGUI
-	// ImGuiの新しいフレームを開始
+	// 編集UIが非表示でも、ゲーム内HUD用の描画リストは毎フレーム作成する。
 	ImGui_ImplDX12_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
@@ -60,9 +73,6 @@ void ImGuiManager::BeginFrame() {
 }
 
 void ImGuiManager::EndFrame(ID3D12GraphicsCommandList *commandList) {
-	if (!sIsVisible_) {
-		return;
-	}
 #ifdef ENABLE_IMGUI
 	//描画データを生成
 	ImGui::Render();
