@@ -1,5 +1,6 @@
 #pragma once
 #include "DirectXCommon.h"
+#include <vector>
 
 //SRV管理
 class SrvManager {
@@ -18,6 +19,9 @@ public:
 	ID3D12DescriptorHeap *GetDescriptorHeap() const { return descriptorHeap.Get(); }
 
 	uint32_t Allocate();
+	// フレーム終了時には GPU 完了待ちを行っているため、シーン破棄時に返された
+	// 動的リソース用ディスクリプタは次のシーンで安全に再利用できる。
+	void Release(uint32_t index);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(uint32_t index);
 	D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(uint32_t index);
@@ -60,6 +64,9 @@ private:
 
 	//次に使用するSRVインデックス
 	uint32_t useIndex = 0;
+	// 再利用可能なディスクリプタ番号と、二重解放検出用の使用状態。
+	std::vector<uint32_t> freeIndices_;
+	std::vector<bool> isAllocated_;
 
 };
 

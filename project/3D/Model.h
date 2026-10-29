@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <map>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,13 @@ struct SkinningInformation {
 };
 
 struct SkinCluster {
+	SkinCluster() = default;
+	~SkinCluster();
+	SkinCluster(const SkinCluster&) = delete;
+	SkinCluster& operator=(const SkinCluster&) = delete;
+	SkinCluster(SkinCluster&& other) noexcept;
+	SkinCluster& operator=(SkinCluster&& other) noexcept;
+
 	std::vector<Matrix4x4> inverseBindMatrices;
 	Microsoft::WRL::ComPtr<ID3D12Resource> paletteResource;
 	WellKnownPalette* mappedPalette = nullptr;
@@ -51,13 +59,16 @@ struct SkinCluster {
 	SkinningInformation* mappedSkinningInfo = nullptr;
 
 	// 入力頂点SRV、出力頂点UAV
-	uint32_t srvIndexInputVertex;
-	uint32_t srvIndexPalette;
-	uint32_t uavIndexOutputVertex;
+	uint32_t srvIndexInputVertex = UINT32_MAX;
+	uint32_t srvIndexPalette = UINT32_MAX;
+	uint32_t uavIndexOutputVertex = UINT32_MAX;
 
 	std::vector<int32_t> boneIndexToJointIndex; // モデルのボーンIndexからSkeletonのJointIndexへのマッピング
 	bool isValid = false;
 	bool isUpdated = false; // フレーム内更新フラグ
+
+private:
+	void ReleaseDescriptorIndices() noexcept;
 };
 
 struct MaterialData {

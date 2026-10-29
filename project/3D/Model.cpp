@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <set>
+#include <utility>
 #include <wrl.h>
 #include <cmath>
 #include <assimp/scene.h>
@@ -24,6 +25,57 @@
 #include "engine/base/Logger.h"
 
 using Microsoft::WRL::ComPtr;
+
+void SkinCluster::ReleaseDescriptorIndices() noexcept {
+	SrvManager* srvManager = SrvManager::GetInstance();
+	auto release = [srvManager](uint32_t& index) {
+		if (index != UINT32_MAX) {
+			srvManager->Release(index);
+			index = UINT32_MAX;
+		}
+	};
+	release(srvIndexInputVertex);
+	release(srvIndexPalette);
+	release(uavIndexOutputVertex);
+}
+
+SkinCluster::~SkinCluster() {
+	ReleaseDescriptorIndices();
+}
+
+SkinCluster::SkinCluster(SkinCluster&& other) noexcept {
+	*this = std::move(other);
+}
+
+SkinCluster& SkinCluster::operator=(SkinCluster&& other) noexcept {
+	if (this == &other) {
+		return *this;
+	}
+
+	ReleaseDescriptorIndices();
+	inverseBindMatrices = std::move(other.inverseBindMatrices);
+	paletteResource = std::move(other.paletteResource);
+	mappedPalette = other.mappedPalette;
+	paletteAddress = other.paletteAddress;
+	skinningInfoResource = std::move(other.skinningInfoResource);
+	mappedSkinningInfo = other.mappedSkinningInfo;
+	srvIndexInputVertex = other.srvIndexInputVertex;
+	srvIndexPalette = other.srvIndexPalette;
+	uavIndexOutputVertex = other.uavIndexOutputVertex;
+	boneIndexToJointIndex = std::move(other.boneIndexToJointIndex);
+	isValid = other.isValid;
+	isUpdated = other.isUpdated;
+
+	other.mappedPalette = nullptr;
+	other.paletteAddress = 0;
+	other.mappedSkinningInfo = nullptr;
+	other.srvIndexInputVertex = UINT32_MAX;
+	other.srvIndexPalette = UINT32_MAX;
+	other.uavIndexOutputVertex = UINT32_MAX;
+	other.isValid = false;
+	other.isUpdated = false;
+	return *this;
+}
 
 namespace {
 

@@ -25,6 +25,27 @@ uint32_t ClampEmitCountToCapacity(const ParticleManager::ParticleGroup &group, u
 constexpr bool kEnableGpuParticleSimulation = false;
 }
 
+ParticleManager::~ParticleManager() {
+	ReleaseParticleGroupDescriptors();
+}
+
+void ParticleManager::ReleaseParticleGroupDescriptors() {
+	SrvManager* srvManager = SrvManager::GetInstance();
+	for (auto& [name, group] : particleGroups_) {
+		auto release = [srvManager](uint32_t& index) {
+			if (index != UINT32_MAX) {
+				srvManager->Release(index);
+				index = UINT32_MAX;
+			}
+		};
+		release(group.instancingSrvIndex);
+		release(group.uavIndex);
+		release(group.srvIndex);
+		release(group.freeListIndexUavIndex);
+		release(group.freeListUavIndex);
+	}
+}
+
 IDxcBlob *CompileShader(
 	// CompilerするShaderファイルへのパス
 	const std::wstring &filePath,
@@ -587,7 +608,13 @@ void ParticleManager::CreateParticleGroup(const std::string name, const std::str
 
 
 	// 5. マップに登録
-	particleGroups_[name] = group;
+	particleGroups_[name] = std::move(group);
+
+	// CPUパーティクルだけを使う構成では、GPUシミュレーション用の4種の
+	// リソース／ディスクリプタを確保しない。これらは Draw でも参照されない。
+	if (!kEnableGpuParticleSimulation) {
+		return;
+	}
 
 	// --- GPU Particle 追加分 ---
 	// 1. Resource作成 (DEFAULT)

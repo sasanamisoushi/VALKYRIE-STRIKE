@@ -1,4 +1,5 @@
 #include "SrvManager.h"
+#include <stdexcept>
 
 
 SrvManager *SrvManager::instance = nullptr;
@@ -26,24 +27,38 @@ void SrvManager::Initialize(DirectXCommon *dxCommon) {
 
 	//デスクリプタ1個分のサイズを取得して記録
 	descriptorSize = directXCommon->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	useIndex = 0;
+	freeIndices_.clear();
+	isAllocated_.assign(kMaxSRVCount, false);
 }
 
 uint32_t SrvManager::Allocate() {
-
-	//上限に達していないかチェックしてassert
-	if (useIndex >= kMaxSRVCount) {
-		assert(false && "SRV descriptor heap overflow");
-		return 0;
+	uint32_t index = 0;
+	if (!freeIndices_.empty()) {
+		index = freeIndices_.back();
+		freeIndices_.pop_back();
+	} else {
+		// release ビルドでは assert が無効になるため、0番（ImGuiフォント）を
+		// 返して破壊するのではなく、明示的に失敗させる。
+		if (useIndex >= kMaxSRVCount) {
+			throw std::runtime_error("SRV descriptor heap overflow");
+		}
+		index = useIndex++;
 	}
 
-	//returnする番号を一旦記録する
-	int index = useIndex;
-	//次回のために番号を1進める
-	useIndex++;
-	//上で記録した番号をreturn
+	assert(index < isAllocated_.size() && !isAllocated_[index]);
+	isAllocated_[index] = true;
 	return index;
+}
 
+void SrvManager::Release(uint32_t index) {
+	if (index >= useIndex || index >= isAllocated_.size() || !isAllocated_[index]) {
+		assert(false && "Attempted to release an unallocated SRV descriptor");
+		return;
+	}
 
+	isAllocated_[index] = false;
+	freeIndices_.push_back(index);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE SrvManager::GetCPUDescriptorHandle(uint32_t index) {

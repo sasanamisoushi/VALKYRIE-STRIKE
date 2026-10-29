@@ -1,6 +1,7 @@
 #pragma once
 #include <d3d12.h>
 #include <wrl.h>
+#include <cstdint>
 #include <vector>
 #include <random>
 #include "engine/Graphics/DirectXCommon.h" 
@@ -11,6 +12,7 @@
 
 class ParticleManager {
 public://構造体定義
+	~ParticleManager();
 
 	//パーティクル1粒のデータ構造 (CPU用)
 	struct Particle {
@@ -76,7 +78,7 @@ public://構造体定義
 		//パーティクルのリスト(std::list<Particle>型)
 		std::list<Particle> particle;
 		//インスタンシングデータ用SRVインデックス
-		uint32_t instancingSrvIndex;
+		uint32_t instancingSrvIndex = UINT32_MAX;
 		//インスタンシングリソース
 		Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource;
 		//インスタンス数
@@ -86,14 +88,14 @@ public://構造体定義
 
 		// --- GPU Particle 追加分 ---
 		Microsoft::WRL::ComPtr<ID3D12Resource> particleResource;
-		uint32_t uavIndex;
-		uint32_t srvIndex;
+		uint32_t uavIndex = UINT32_MAX;
+		uint32_t srvIndex = UINT32_MAX;
 		
 		Microsoft::WRL::ComPtr<ID3D12Resource> freeListIndexResource;
-		uint32_t freeListIndexUavIndex;
+		uint32_t freeListIndexUavIndex = UINT32_MAX;
 
 		Microsoft::WRL::ComPtr<ID3D12Resource> freeListResource;
-		uint32_t freeListUavIndex;
+		uint32_t freeListUavIndex = UINT32_MAX;
 
 		bool isGpuInitialized = false;
 	};
@@ -138,6 +140,7 @@ private://メンバ関数
 	//パイプライン生成関数
 	void CreateRootSignature();
 	void CreatePipelineState();
+	void ReleaseParticleGroupDescriptors();
 
 private://メンバ変数
 
