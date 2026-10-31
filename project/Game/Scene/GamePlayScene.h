@@ -399,6 +399,11 @@ private:
 	float songGauge_ = 100.0f;
 	bool isSongActive_ = false;
 	int songFrame_ = 0;
+	// スラスターとは独立した、歌発動中だけの機体移動履歴リボン。
+	std::array<std::unique_ptr<Trail>, 3> songFlightTrails_;
+	std::array<std::unique_ptr<Object3d>, 3> songFlightTrailObjects_;
+	std::array<Vector3, 3> songFlightTrailHeads_{};
+	bool songFlightTrailsInitialized_ = false;
 
 	// 通常弾の長押し連射用
 	int normalFireCooldownTimer_ = 0;

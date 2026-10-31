@@ -1,5 +1,6 @@
 #pragma once
 #include "3D/Object3d.h"
+#include "3D/Trail.h"
 #include "engine/math/MyMath.h"
 #include <vector>
 #include <memory>
@@ -29,6 +30,9 @@ public:
     // 弾1発のデータ構造
     struct Bullet {
         std::unique_ptr<Object3d> object;
+        std::unique_ptr<Trail> thrusterTrail;
+        std::unique_ptr<Object3d> thrusterObject;
+        std::unique_ptr<Object3d> thrusterFlareObject;
         Vector3 position;
         Vector3 velocity;
         bool isDead = true; // デフォルトは非アクティブ
@@ -36,13 +40,14 @@ public:
         float collisionRadius = 0.2f;
         int damage = 1;
         bool isHoming = false;
-        // 地上敵のビームだけは、発射後もプレイヤーの現在位置へ滑らかに照準を更新する。
-        bool tracksPlayer = false;
         float speed = 0.25f;
         int elapsedFrames = 0;
         float phaseOffset = 0.0f;
         float waveSign = 1.0f;
         float spiralSpeed = 0.12f;
+        float beamVisualTime = 0.0f;
+        size_t poolIndex = 0;
+        bool isGroundBeam = false;
     };
 
     // デバッグ表示用のゲッター
@@ -51,7 +56,8 @@ public:
 private:
     void ShootConfigured(const Vector3 &position, const Vector3 &velocity, const Vector3 &scale,
                          float collisionRadius, int damage, int lifeTimer, const char *modelName,
-                         bool tracksPlayer = false);
+                         bool isGroundBeam = false);
+    void EnsureGroundBeamVisual(Bullet &bullet);
     static const size_t kMaxBullets = 200; // 弾の最大プール数
     static const size_t kMaxVisibleBullets = 96;
     std::vector<Bullet> bullets_;

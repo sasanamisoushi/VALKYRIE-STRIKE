@@ -12,14 +12,26 @@
 namespace {
     constexpr float kGroundSpeed = 0.08f;
     constexpr float kTrackSpeed = 0.16f;
+    // ビーム射程（25）に入る前から脚を展開し、滑走状態のまま接敵しないようにする。
+    constexpr float kQuadrupedEngageDistance = 28.0f;
     constexpr float kHighJumpPower = 0.38f;
-    constexpr char kGroundEnemyRiggedModel[] = "EnemyR_Rig/EnemyR_Rig.gltf";
+    // 結合済み脚メッシュを既存EnemyRigへ再バインドしたモデル。各脚を腰ボーンへ
+    // 100%固定ウェイトで割り当てているため、歩行時に部品の隙間が開かない。
+    constexpr char kGroundEnemyRiggedModel[] = "EnemyR_Joined_Rig/EnemyR_Joined_Rig.gltf";
     // EnemyR は部位が別オブジェクトで出力されている。砲塔(38-48)だけを
     // 分離して独立照準させ、その他は元の形状のままメインボディとして描画する。
     constexpr char kGroundEnemyBodyModel[] = "EnemyR.obj#exclude=1-32,38-48";
     constexpr char kGroundEnemyTurretModel[] = "EnemyR.obj#groups=38-48;pivot=0.45,2.18,0.0";
     constexpr Vector3 kTurretPivot = { 0.45f, 2.18f, 0.0f };
     constexpr float kModelForwardYaw = 1.57079632679f;
+    // Blender上の砲台Y回転を、glTF変換後のZ軸回転として扱う。
+    // -2°が水平の写真3、-45°が砲身を持ち上げた写真2になる。
+    constexpr float kTurretPitchMin = -0.78539816339f;
+    constexpr float kTurretPitchMax = -0.03490658504f;
+    // EnemyRの左右砲身の先端。砲塔支点からのゲーム内実寸に合わせた発射位置。
+    constexpr float kTurretMuzzleForwardDistance = 0.98f;
+    constexpr float kTurretMuzzleSideDistance = 0.44f;
+    constexpr float kTurretMuzzleHeight = 0.12f;
     constexpr std::array<const char*, 4> kGroundEnemyLegModels = {
         "EnemyR.obj#groups=1-8;pivot=-0.62,1.35,0.76",
         "EnemyR.obj#groups=9-16;pivot=-0.62,1.35,-0.76",
@@ -218,6 +230,8 @@ void GroundEnemy::Initialize(const Vector3 &position) {
     isGrounded_ = true;
     jumpTimer_ = 0;
     terrainClearance_ = 0.0f;
+    turretPitch_ = kTurretPitchMax;
+    turretAimError_ = 0.0f;
 
     isDead_ = false;
     hp_ = kMaxHP;
@@ -303,10 +317,12 @@ void GroundEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletMan
     UpdateGroundMovement(playerPos, obstacles);
 
     // 2. 攻撃AI（砲塔ビーム、近接攻撃）
+    // 照準対象をAIより先に更新する。これによりビーム開始フレームから砲塔は
+    // 現在位置のプレイヤーへ旋回し、前フレームの位置へ向き続けない。
+    turretTarget_ = playerPos;
     if (isChasingPlayer_) {
         UpdateAttackAI(playerPos, bulletManager);
     }
-    turretTarget_ = playerPos;
 
     // 3. 当たり判定（障害物押し出し）
     // UpdateGroundMovement() 内で地形への接地まで済ませているため、ここで
@@ -628,13 +644,14 @@ void GroundEnemy::UpdateGroundMovement(const Vector3 &playerPos, const std::list
         float distH = std::sqrt(distHorizontalSq);
         Vector3 targetDir = { toPlayerHorizontal.x / distH, 0.0f, toPlayerHorizontal.z / distH };
 
-        // 遠距離では脚を畳んだ低姿勢の履帯モードへ。近距離に入ると四足へ戻す。
+        // 遠距離では脚を畳んだ低姿勢の履帯モードへ。ビーム射程より手前から
+        // 四足へ戻すため、接敵してから急に走り始める見た目にならない。
         // 近接跳躍中は必ず四足モードを維持する。
-        locomotionMode_ = (attackSubState_ != GroundAttackState::Melee && distH > 20.0f)
+        locomotionMode_ = (attackSubState_ != GroundAttackState::Melee && distH > kQuadrupedEngageDistance)
             ? LocomotionMode::Track
             : LocomotionMode::Quadruped;
         const float targetTrackBlend = locomotionMode_ == LocomotionMode::Track ? 1.0f : 0.0f;
-        trackBlend_ += (targetTrackBlend - trackBlend_) * 0.08f;
+        trackBlend_ += (targetTrackBlend - trackBlend_) * 0.12f;
         
         // 履帯走行は超信地旋回せず、前進しながら緩く曲がる。
         const float turnRate = 0.08f - trackBlend_ * 0.05f;
@@ -648,8 +665,9 @@ void GroundEnemy::UpdateGroundMovement(const Vector3 &playerPos, const std::list
         rotation_.z = 0.0f;
 
         // 基本移動速度の設定（空中であってもプレイヤーへ接近・着地移動を行う）
-        if (attackSubState_ == GroundAttackState::Melee || attackSubState_ == GroundAttackState::Gatling) {
-            // 近接・ガトリング中は水平移動を行わない（MeleeはUpdateAttackAIで直接制御される）
+        if (attackSubState_ == GroundAttackState::Melee) {
+            // 近接中だけはUpdateAttackAI()が跳躍軌道を直接制御する。
+            // 砲塔ビーム中は移動を継続し、走りながら狙いを付けて射撃する。
             velocity_.x = 0.0f;
             velocity_.z = 0.0f;
         } else {
@@ -827,18 +845,37 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
 
     // 砲塔ビーム連射中の処理
     if (attackSubState_ == GroundAttackState::Gatling) {
+        // 砲塔がプレイヤーを十分に捉えるまでは発射しない。弾道だけが相手へ
+        // 飛び、見た目の砲身が別方向を向く状態を防ぐ。
+        if (turretAimError_ > 0.045f) {
+            return;
+        }
         gatlingIntervalTimer_--;
         if (gatlingIntervalTimer_ <= 0 && bulletManager) {
-            Vector3 shootDir = NormalizeOrFallback(diff, forward_);
-            const Vector3 turretPosition = GetLocalPartPosition(kTurretPivot);
-            const Vector3 muzzlePos = {
-                turretPosition.x + shootDir.x * 0.85f,
-                turretPosition.y + shootDir.y * 0.85f + 0.12f,
-                turretPosition.z + shootDir.z * 0.85f,
+            // 写真2〜3で指定された動きは左右旋回ではなく、砲身を上下させる
+            // ピッチ回転である。描画に使う砲身角から弾道も作り、見た目と弾を
+            // 常に一致させる。
+            const Vector3 bodyForward = {
+                std::sin(rotation_.y), 0.0f, std::cos(rotation_.y)
             };
+            const Vector3 shootDir = NormalizeOrFallback({
+                bodyForward.x * std::cos(turretPitch_), -std::sin(turretPitch_),
+                bodyForward.z * std::cos(turretPitch_),
+            }, bodyForward);
+            const Vector3 bodyRight = { std::cos(rotation_.y), 0.0f, -std::sin(rotation_.y) };
+            const Vector3 turretPosition = GetLocalPartPosition(kTurretPivot);
             const Vector3 beamVelocity = { shootDir.x * 0.72f, shootDir.y * 0.72f, shootDir.z * 0.72f };
 
-            bulletManager->ShootGroundBeam(muzzlePos, beamVelocity);
+            // 左右の砲口を別々に計算する。二つのビームを同時に作るため、中央
+            // から一本だけ出たり、砲身の根元から発射されたりしない。
+            for (float side : { -1.0f, 1.0f }) {
+                const Vector3 muzzlePos = {
+                    turretPosition.x + shootDir.x * kTurretMuzzleForwardDistance + bodyRight.x * side * kTurretMuzzleSideDistance,
+                    turretPosition.y + shootDir.y * kTurretMuzzleForwardDistance + kTurretMuzzleHeight,
+                    turretPosition.z + shootDir.z * kTurretMuzzleForwardDistance + bodyRight.z * side * kTurretMuzzleSideDistance,
+                };
+                bulletManager->ShootGroundBeam(muzzlePos, beamVelocity);
+            }
             gatlingShotCount_++;
             gatlingIntervalTimer_ = 24;
 
@@ -865,10 +902,14 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
         velocityY_ = 0.38f; // 高く前方上にジャンピング
         isGrounded_ = false;
     } else if (dist <= 25.0f) {
-        // 2. 中距離: 背部砲塔からビームを2連射
+        // 2. 中距離: 背部砲塔を写真2の-45°まで戻してから、写真3の水平寄り
+        // （最大-2°）へ旋回させる。胴体が先に敵へ正対しても、各射撃開始時に
+        // 砲台の可動が必ず見えるようにする。
         attackSubState_ = GroundAttackState::Gatling;
         gatlingShotCount_ = 0;
         gatlingIntervalTimer_ = 0;
+        turretPitch_ = kTurretPitchMin;
+        turretAimError_ = kTurretPitchMax - kTurretPitchMin;
     } else {
         // 3. 遠距離: VF3は誘導弾を使わない。距離を詰めるまで待機する。
         attackSubState_ = GroundAttackState::Idle;
@@ -1014,21 +1055,23 @@ void GroundEnemy::UpdateRiggedPose() {
         AddRigJointRotation(rigSkeleton_, (prefix + "_Toe").c_str(), { 0.0f, 0.0f, 1.0f }, toeAngle);
     }
 
-    // 独立 OBJ だった砲塔も同じスケルトン上で旋回させる。
-    const Vector3 toTarget = { turretTarget_.x - position_.x, 0.0f, turretTarget_.z - position_.z };
-    if (toTarget.x * toTarget.x + toTarget.z * toTarget.z > 0.001f) {
-        const float desiredWorldYaw = std::atan2(toTarget.x, toTarget.z);
-        auto wrapRadians = [](float angle) {
-            constexpr float kPi = 3.14159265359f;
-            while (angle > kPi) angle -= kPi * 2.0f;
-            while (angle < -kPi) angle += kPi * 2.0f;
-            return angle;
-        };
-        const float targetRelativeYaw = std::clamp(wrapRadians(desiredWorldYaw - rotation_.y), -1.25f, 1.25f);
-        turretYaw_ += wrapRadians(targetRelativeYaw - turretYaw_) * 0.16f;
+    // Blenderで指定されたY回転は、glTFのゲーム座標では砲身の上下ピッチになる。
+    // 胴体はプレイヤーへ正対したまま、背中の砲身だけを上下させて狙いを付ける。
+    const Vector3 toTarget = { turretTarget_.x - position_.x, turretTarget_.y - position_.y, turretTarget_.z - position_.z };
+    const float horizontalDistance = std::sqrt(toTarget.x * toTarget.x + toTarget.z * toTarget.z);
+    if (horizontalDistance > 0.001f) {
+        const float targetPitch = std::clamp(
+            -std::atan2(toTarget.y, horizontalDistance), kTurretPitchMin, kTurretPitchMax);
+        const float pitchDifference = targetPitch - turretPitch_;
+        // ビーム開始時は左端から砲身が旋回する動きを見せてから発射する。
+        // 速過ぎると1フレームで目標を向いてしまい、砲台が動いていないように
+        // 見えるため、発射中も約0.5秒かけて照準へ近づける。
+        const float turnRate = attackSubState_ == GroundAttackState::Gatling ? 0.10f : 0.16f;
+        turretPitch_ += pitchDifference * turnRate;
+        turretAimError_ = std::abs(targetPitch - turretPitch_);
     }
     if (!turretDetached_) {
-        AddRigJointRotation(rigSkeleton_, "Turret", { 0.0f, 1.0f, 0.0f }, turretYaw_);
+        AddRigJointRotation(rigSkeleton_, "Turret", { 0.0f, 0.0f, 1.0f }, turretPitch_);
     }
 
     ::Update(rigSkeleton_);
@@ -1038,17 +1081,15 @@ void GroundEnemy::UpdateRiggedPose() {
 void GroundEnemy::UpdateTurretPose() {
     if (!turret_ || turretDetached_) return;
 
-    const Vector3 toTarget = { turretTarget_.x - position_.x, 0.0f, turretTarget_.z - position_.z };
-    if (toTarget.x * toTarget.x + toTarget.z * toTarget.z > 0.001f) {
-        const float desiredWorldYaw = std::atan2(toTarget.x, toTarget.z);
-        auto wrapRadians = [](float angle) {
-            constexpr float kPi = 3.14159265359f;
-            while (angle > kPi) angle -= kPi * 2.0f;
-            while (angle < -kPi) angle += kPi * 2.0f;
-            return angle;
-        };
-        const float targetRelativeYaw = std::clamp(wrapRadians(desiredWorldYaw - rotation_.y), -1.25f, 1.25f);
-        turretYaw_ += wrapRadians(targetRelativeYaw - turretYaw_) * 0.16f;
+    const Vector3 toTarget = { turretTarget_.x - position_.x, turretTarget_.y - position_.y, turretTarget_.z - position_.z };
+    const float horizontalDistance = std::sqrt(toTarget.x * toTarget.x + toTarget.z * toTarget.z);
+    if (horizontalDistance > 0.001f) {
+        const float targetPitch = std::clamp(
+            -std::atan2(toTarget.y, horizontalDistance), kTurretPitchMin, kTurretPitchMax);
+        const float pitchDifference = targetPitch - turretPitch_;
+        const float turnRate = attackSubState_ == GroundAttackState::Gatling ? 0.10f : 0.16f;
+        turretPitch_ += pitchDifference * turnRate;
+        turretAimError_ = std::abs(targetPitch - turretPitch_);
     }
 
     // 分離OBJは砲塔の旋回支点を原点としてロード済み。メインボディ上の元位置へ戻してから回転する。
@@ -1062,7 +1103,7 @@ void GroundEnemy::UpdateTurretPose() {
         position_.z - pivotX * s + pivotZ * c
     };
     Vector3 turretRotation = visualRotation_;
-    turretRotation.y += turretYaw_;
+    turretRotation.z += turretPitch_;
     turret_->SetTranslate(turretPosition);
     turret_->SetRotate(turretRotation);
     turret_->SetScale(visualScale_);

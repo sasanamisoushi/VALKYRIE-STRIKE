@@ -1,4 +1,5 @@
 ﻿#include "EnemyBulletManager.h"
+#include "3D/ModelManager.h"
 #include "3D/Object3dCommon.h"
 #include "engine/Camera/Camera.h"
 #include "Game/Player/Player.h"
@@ -45,7 +46,8 @@ namespace {
 void EnemyBulletManager::Initialize() {
     bullets_.clear();
     bullets_.resize(kMaxBullets);
-    for (auto &bullet : bullets_) {
+    for (size_t index = 0; index < bullets_.size(); ++index) {
+        auto &bullet = bullets_[index];
         bullet.object = std::make_unique<Object3d>();
         bullet.object->Initialize(Object3dCommon::GetInstance());
         bullet.object->SetModel("EnemyBulletSphere");
@@ -54,12 +56,14 @@ void EnemyBulletManager::Initialize() {
             bullet.object->GetModel()->SetColor({ 1.0f, 1.0f, 0.0f, 1.0f }); // 通常弾と同じ黄色
         }
         bullet.isDead = true; // 最初は非アクティブに設定
-        bullet.tracksPlayer = false;
         bullet.position = { -9999.0f, -9999.0f, -9999.0f }; // 中心(0,0,0)に残らないよう画面外に退避
         bullet.elapsedFrames = 0;
         bullet.phaseOffset = 0.0f;
         bullet.waveSign = 1.0f;
         bullet.spiralSpeed = 0.12f;
+        bullet.beamVisualTime = 0.0f;
+        bullet.poolIndex = index;
+        bullet.isGroundBeam = false;
         bullet.object->SetTranslate(bullet.position);
         bullet.object->Update();
     }
@@ -77,52 +81,7 @@ void EnemyBulletManager::Update(Player *player, std::vector<Vector3> &hitPositio
         }
 
         // 1. 移動処理
-        if (bullet.tracksPlayer && player && !player->IsDead()) {
-            // 地上ビームは発射時の古い座標を使い続けない。毎フレーム現在位置へ向け、
-            // ただし急旋回し過ぎないよう進行方向を補間してビームらしい軌跡を保つ。
-            const Vector3 playerPosition = player->GetPosition();
-            Vector3 toPlayer = {
-                playerPosition.x - bullet.position.x,
-                playerPosition.y - bullet.position.y,
-                playerPosition.z - bullet.position.z,
-            };
-            const float targetLengthSq = toPlayer.x * toPlayer.x + toPlayer.y * toPlayer.y + toPlayer.z * toPlayer.z;
-            if (targetLengthSq > 0.0001f) {
-                const float targetLength = std::sqrt(targetLengthSq);
-                const Vector3 desiredDirection = {
-                    toPlayer.x / targetLength,
-                    toPlayer.y / targetLength,
-                    toPlayer.z / targetLength,
-                };
-                const float currentSpeedSq = bullet.velocity.x * bullet.velocity.x + bullet.velocity.y * bullet.velocity.y + bullet.velocity.z * bullet.velocity.z;
-                const float currentSpeed = currentSpeedSq > 0.0001f ? std::sqrt(currentSpeedSq) : bullet.speed;
-                const Vector3 currentDirection = currentSpeedSq > 0.0001f
-                    ? Vector3{ bullet.velocity.x / currentSpeed, bullet.velocity.y / currentSpeed, bullet.velocity.z / currentSpeed }
-                    : desiredDirection;
-                Vector3 steeredDirection = {
-                    currentDirection.x * 0.72f + desiredDirection.x * 0.28f,
-                    currentDirection.y * 0.72f + desiredDirection.y * 0.28f,
-                    currentDirection.z * 0.72f + desiredDirection.z * 0.28f,
-                };
-                const float steeredLength = std::sqrt(
-                    steeredDirection.x * steeredDirection.x +
-                    steeredDirection.y * steeredDirection.y +
-                    steeredDirection.z * steeredDirection.z);
-                if (steeredLength > 0.0001f) {
-                    steeredDirection = {
-                        steeredDirection.x / steeredLength,
-                        steeredDirection.y / steeredLength,
-                        steeredDirection.z / steeredLength,
-                    };
-                    bullet.velocity = {
-                        steeredDirection.x * bullet.speed,
-                        steeredDirection.y * bullet.speed,
-                        steeredDirection.z * bullet.speed,
-                    };
-                    bullet.object->SetQuaternionRotate(MakeBeamRotation(bullet.velocity));
-                }
-            }
-        } else if (bullet.isHoming && player && !player->IsDead()) {
+        if (bullet.isHoming && player && !player->IsDead()) {
             bullet.elapsedFrames++;
             if (bullet.elapsedFrames >= 15) { // 15フレーム目から本格的に誘導開始
                 Vector3 toPlayer = { player->GetPosition().x - bullet.position.x, player->GetPosition().y - bullet.position.y, player->GetPosition().z - bullet.position.z };
@@ -206,6 +165,13 @@ void EnemyBulletManager::Update(Player *player, std::vector<Vector3> &hitPositio
         bullet.position.x += bullet.velocity.x;
         bullet.position.y += bullet.velocity.y;
         bullet.position.z += bullet.velocity.z;
+
+        if (bullet.isGroundBeam && bullet.thrusterTrail) {
+            // 弾の移動履歴を使うことで、直進・横移動中のどちらでも
+            // スラスター炎が後方へ自然に流れる。
+            bullet.beamVisualTime += 0.34f;
+            bullet.thrusterTrail->Update(bullet.position);
+        }
 
         bullet.object->SetTranslate(bullet.position);
         bullet.object->Update();
@@ -308,7 +274,7 @@ void EnemyBulletManager::Draw(Camera *camera) {
     const Vector3 cameraPosition = camera->GetTranslate();
 
     // 距離順にして、弾が大量にある場合でもプレイヤーの近くにある弾を優先して描画する。
-    std::array<std::pair<float, Object3d *>, kMaxBullets> visibleBullets{};
+    std::array<std::pair<float, Bullet *>, kMaxBullets> visibleBullets{};
     size_t visibleCount = 0;
     for (auto &bullet : bullets_) {
         if (bullet.isDead || !bullet.object) {
@@ -323,7 +289,7 @@ void EnemyBulletManager::Draw(Camera *camera) {
         const float dx = bullet.position.x - cameraPosition.x;
         const float dy = bullet.position.y - cameraPosition.y;
         const float dz = bullet.position.z - cameraPosition.z;
-        visibleBullets[visibleCount++] = { dx * dx + dy * dy + dz * dz, bullet.object.get() };
+        visibleBullets[visibleCount++] = { dx * dx + dy * dy + dz * dz, &bullet };
     }
 
     const size_t drawCount = (std::min)(visibleCount, kMaxVisibleBullets);
@@ -336,8 +302,57 @@ void EnemyBulletManager::Draw(Camera *camera) {
     }
 
     for (size_t index = 0; index < drawCount; ++index) {
-        visibleBullets[index].second->Draw();
+        visibleBullets[index].second->object->Draw();
     }
+
+    // 地上ビームの後端へ、プレイヤー機と同じ三層のスラスター炎を重ねる。
+    Object3dCommon *object3dCommon = Object3dCommon::GetInstance();
+    object3dCommon->SetThrusterDrawSettings();
+    for (size_t index = 0; index < drawCount; ++index) {
+        Bullet *bullet = visibleBullets[index].second;
+        if (!bullet->isGroundBeam || !bullet->thrusterTrail || !bullet->thrusterObject || !bullet->thrusterFlareObject ||
+            !bullet->thrusterObject->GetModel() || !bullet->thrusterFlareObject->GetModel()) {
+            continue;
+        }
+
+        // 炎は三角形リスト、フレアは三角形ストリップ用の描画設定を使う。
+        object3dCommon->SetThrusterDrawSettings();
+
+        const float speedSq = bullet->velocity.x * bullet->velocity.x + bullet->velocity.y * bullet->velocity.y +
+            bullet->velocity.z * bullet->velocity.z;
+        const float inverseSpeed = speedSq > 0.0001f ? 1.0f / std::sqrt(speedSq) : 1.0f;
+        const Vector3 exhaustDirection = {
+            -bullet->velocity.x * inverseSpeed,
+            -bullet->velocity.y * inverseSpeed,
+            -bullet->velocity.z * inverseSpeed,
+        };
+        const std::vector<VertexData> flameVertices = bullet->thrusterTrail->GenerateThrusterVertices(
+            camera, 0.34f, exhaustDirection, 2.60f, bullet->beamVisualTime, 0.96f, 0.52f, 1.15f);
+        if (!flameVertices.empty()) {
+            bullet->thrusterObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
+            bullet->thrusterObject->SetScale({ 1.0f, 1.0f, 1.0f });
+            bullet->thrusterObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+            bullet->thrusterObject->GetModel()->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+            bullet->thrusterObject->GetModel()->UpdateTrailVertices(flameVertices, false);
+            bullet->thrusterObject->Update(camera);
+            bullet->thrusterObject->Draw();
+        }
+
+        const std::vector<VertexData> flareVertices = bullet->thrusterTrail->GenerateThrusterFlareVertices(
+            camera, bullet->position, 0.54f, 0.78f);
+        if (!flareVertices.empty()) {
+            object3dCommon->SetSpeedTrailDrawSettings();
+            bullet->thrusterFlareObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
+            bullet->thrusterFlareObject->SetScale({ 1.0f, 1.0f, 1.0f });
+            bullet->thrusterFlareObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+            bullet->thrusterFlareObject->GetModel()->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+            bullet->thrusterFlareObject->GetModel()->UpdateTrailVertices(flareVertices, true);
+            bullet->thrusterFlareObject->Update(camera);
+            bullet->thrusterFlareObject->Draw();
+        }
+    }
+    // 後続の敵モデルは通常の不透明パスで描画する。
+    object3dCommon->SetCommonDrawSettings();
 }
 
 void EnemyBulletManager::Shoot(const Vector3 &position, const Vector3 &velocity) {
@@ -354,7 +369,8 @@ void EnemyBulletManager::ShootBeam(const Vector3 &position, const Vector3 &veloc
 }
 
 void EnemyBulletManager::ShootGroundBeam(const Vector3 &position, const Vector3 &velocity) {
-    // 箱ではなく丸い芯を長く伸ばした、細いシアンビーム。命中判定も見た目に合わせて少し広げる。
+    // ラゴゥのビームのように、砲塔が発射時に向いた角度のまま直進する。
+    // 丸いシアンの芯の後端には、プレイヤーのスラスター形状の発光炎を重ねる。
     ShootConfigured(position, velocity, { 0.30f, 0.30f, 5.6f }, 0.60f, 1, 105, "GroundBeamCore", true);
 }
 
@@ -388,7 +404,8 @@ void EnemyBulletManager::ShootMissile(const Vector3 &position, const Vector3 &ve
             bullet.collisionRadius = 0.5f;
             bullet.damage = 1;
             bullet.isHoming = true;
-            bullet.tracksPlayer = false;
+            bullet.isGroundBeam = false;
+            bullet.beamVisualTime = 0.0f;
             
             float newSpeedSq = initialVel.x * initialVel.x + initialVel.y * initialVel.y + initialVel.z * initialVel.z;
             bullet.speed = (newSpeedSq > 0.0001f) ? std::sqrt(newSpeedSq) : 0.35f;
@@ -415,7 +432,7 @@ void EnemyBulletManager::ShootMissile(const Vector3 &position, const Vector3 &ve
 
 void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 &velocity, const Vector3 &scale,
                                          float collisionRadius, int damage, int lifeTimer, const char *modelName,
-                                         bool tracksPlayer) {
+                                         bool isGroundBeam) {
     for (auto &bullet : bullets_) {
         if (bullet.isDead) { // 使用可能な弾を検索
             bullet.position = position;
@@ -424,8 +441,9 @@ void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 
             bullet.collisionRadius = collisionRadius;
             bullet.damage = damage;
             bullet.isHoming = false;
-            bullet.tracksPlayer = tracksPlayer;
+            bullet.isGroundBeam = isGroundBeam;
             bullet.elapsedFrames = 0;
+            bullet.beamVisualTime = 0.0f;
             const float speedSq = velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z;
             bullet.speed = speedSq > 0.0001f ? std::sqrt(speedSq) : 0.72f;
             bullet.isDead = false;
@@ -446,9 +464,36 @@ void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 
             }
             bullet.object->SetTranslate(position);
             bullet.object->Update();
+            if (bullet.isGroundBeam) {
+                EnsureGroundBeamVisual(bullet);
+                bullet.thrusterTrail->SetOrigin(position);
+            }
             break; // 発射したので終了
         }
     }
+}
+
+void EnemyBulletManager::EnsureGroundBeamVisual(Bullet &bullet) {
+    if (bullet.thrusterTrail && bullet.thrusterObject && bullet.thrusterFlareObject) {
+        return;
+    }
+
+    // トレイルの頂点データはモデルごとに保持されるため、プール番号ごとの専用モデルにする。
+    const std::string modelSuffix = std::to_string(bullet.poolIndex);
+    ModelManager *modelManager = ModelManager::GetInstance();
+    const std::string flameModelName = "GroundBeamThrusterFlame_" + modelSuffix;
+    const std::string flareModelName = "GroundBeamThrusterFlare_" + modelSuffix;
+    modelManager->CreateTrailModel(flameModelName);
+    modelManager->CreateTrailModel(flareModelName);
+
+    bullet.thrusterTrail = std::make_unique<Trail>();
+    bullet.thrusterTrail->Initialize(32);
+    bullet.thrusterObject = std::make_unique<Object3d>();
+    bullet.thrusterObject->Initialize(Object3dCommon::GetInstance());
+    bullet.thrusterObject->SetModel(flameModelName);
+    bullet.thrusterFlareObject = std::make_unique<Object3d>();
+    bullet.thrusterFlareObject->Initialize(Object3dCommon::GetInstance());
+    bullet.thrusterFlareObject->SetModel(flareModelName);
 }
 
 

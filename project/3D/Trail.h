@@ -26,7 +26,9 @@ public:
     // 立体炎とは別の平面レイヤーで、帯の幅と色は専用シェーダーで滑らかに落とす。
     std::vector<VertexData> GenerateSpeedTrailVertices(Camera* camera, float thickness,
         const Vector3& fixedFlameStart, const Vector3& exhaustDirection,
-        float intensity, float lifeTime);
+        float intensity, float lifeTime,
+        const Vector4& outerColor = Vector4{ 0.90f, 0.02f, 1.00f, 1.0f },
+        const Vector4& coreColor = Vector4{ 1.04f, 0.74f, 1.00f, 1.0f });
 
     // 固定炎の代わりに、光跡と同じ空間曲線へ沿わせる立体的な噴射炎を生成する。
     std::vector<VertexData> GenerateCurvedThrusterVertices(Camera* camera, float thickness,

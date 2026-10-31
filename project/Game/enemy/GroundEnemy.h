@@ -124,7 +124,11 @@ private:
     float terrainRoll_ = 0.0f;
     // 傾斜で最も低くなる脚先が地表を貫かないための、全パーツ共通の描画リフト量。
     float terrainClearance_ = 0.0f;
-    float turretYaw_ = 0.0f;
+    // BlenderのY回転（ゲーム内ではZ軸回転）に対応する、砲身の上下角度。
+    float turretPitch_ = 0.0f;
+    // 前フレームで更新した砲塔の目標との上下角度差。ビームを砲塔が向く前に
+    // 発射しないために使用する。
+    float turretAimError_ = 0.0f;
     std::array<float, 4> legGroundOffsets_{};
 
     enum class DestructionState {

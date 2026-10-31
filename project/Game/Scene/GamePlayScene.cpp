@@ -41,6 +41,8 @@ namespace {
 	constexpr float kSpGaugeRecoveryPerFrame = 3.0f / 60.0f;
 	constexpr int kSpecialAttackDurationFrames = 180;
 	constexpr int kSpecialAttackFireIntervalFrames = 6;
+	constexpr int kSongDurationFrames = 900;
+	constexpr char kSongParticleGroup[] = "songSparkle";
 	constexpr int kBossMaxActiveMinions = 6;
 
 	float SmoothStep01(float value) {
@@ -167,6 +169,12 @@ void GamePlayScene::ActivateFromWarp() {
 }
 
 bool GamePlayScene::TryConsumeAmmo(MissileType type) {
+	// 歌が有効な間は、全武器の弾倉を消費せず発射を許可する。
+	// 弾倉を毎フレーム補充する方式ではリロード中の武器が撃てないため、
+	// 消費処理そのものを通さないことで本当の無限弾にする。
+	if (isSongActive_) {
+		return true;
+	}
 	return ammoManager_ && ammoManager_->TryConsume(type);
 }
 
@@ -267,7 +275,6 @@ void GamePlayScene::Initialize() {
 	songGaugeFillSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
 	songGaugeStateSprite_ = std::make_unique<Sprite>();
 	songGaugeStateSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
-
 	const char *hudTexturePaths[] = {
 		"resources/hud_panel_frame.png",
 		"resources/hud_label_hp.png",
@@ -454,6 +461,8 @@ void GamePlayScene::Initialize() {
 
 	environmentRenderer_->GetParticleManager()->CreateParticleGroup("test", "resources/circle.png");
 	environmentRenderer_->GetParticleManager()->CreateParticleGroup("smoke", "resources/circle.png");
+	// 歌の最中だけプレイヤーの後方へ流す、黄色いスラスター状の残光。
+	environmentRenderer_->GetParticleManager()->CreateParticleGroup(kSongParticleGroup, "resources/circle.png");
 
 
 	soundData1 = AudioManager::GetInstance()->LoadWave("resources/Alarm01.wav");
@@ -479,6 +488,17 @@ void GamePlayScene::Initialize() {
 	trailObject = std::make_unique<Object3d>();
 	trailObject->Initialize(Object3dCommon::GetInstance());
 	trailObject->SetModel("SmokeTrail");
+
+	// 歌の残像はノズルの炎と共有せず、胴体と両翼端の飛行履歴を別々に保持する。
+	for (size_t index = 0; index < songFlightTrails_.size(); ++index) {
+		const std::string modelName = "SongFlightTrail" + std::to_string(index);
+		ModelManager::GetInstance()->CreateTrailModel(modelName);
+		songFlightTrails_[index] = std::make_unique<Trail>();
+		songFlightTrails_[index]->Initialize(128);
+		songFlightTrailObjects_[index] = std::make_unique<Object3d>();
+		songFlightTrailObjects_[index]->Initialize(Object3dCommon::GetInstance());
+		songFlightTrailObjects_[index]->SetModel(modelName);
+	}
 
 
 	ModelManager::GetInstance()->CreateBoxModel("PlayerBox");
@@ -1228,6 +1248,14 @@ void GamePlayScene::Update() {
 			if (isPaused_) {
 				isPauseTitleSelected_ = false;
 			}
+			// 歌のループ音もゲーム進行と同じタイミングで止める。
+			if (isSongActive_ && pSongVoice) {
+				if (isPaused_) {
+					pSongVoice->Stop();
+				} else {
+					pSongVoice->Start();
+				}
+			}
 		} else if (isPaused_) {
 			if (Input::GetInstance()->TriggerKey(DIK_UP) ||
 				Input::GetInstance()->TriggerKey(DIK_DOWN) ||
@@ -1241,6 +1269,9 @@ void GamePlayScene::Update() {
 					return;
 				}
 				isPaused_ = false;
+				if (isSongActive_ && pSongVoice) {
+					pSongVoice->Start();
+				}
 			}
 		}
 	}
@@ -1469,18 +1500,33 @@ void GamePlayScene::Update() {
 		songGauge_ = 0.0f;
 		isSongActive_ = true;
 		songFrame_ = 0;
+		songFlightTrailsInitialized_ = false;
 		if (player_) {
 			player_->SetSongActive(true);
+		}
+		// 発動直前にリロード中だった弾倉も即座に満タンへ戻す。以降は
+		// TryConsumeAmmo() が消費を通さないので、歌の終了まで弾数は減らない。
+		if (ammoManager_) {
+			ammoManager_->ReloadAll();
+		}
+		if (player_ && environmentRenderer_ && environmentRenderer_->GetParticleManager()) {
+			const Vector3 forward = NormalizeOrVector3(player_->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
+			const Vector3 burstOrigin = AddVector3(player_->GetPosition(), { 0.0f, 0.20f, 0.0f });
+			environmentRenderer_->GetParticleManager()->EmitDirectionalBurst(
+				kSongParticleGroup, burstOrigin, { -forward.x, 0.34f - forward.y, -forward.z }, 40,
+				{ 1.0f, 0.76f, 0.08f, 1.0f }, 0.86f,
+				0.20f, 0.10f, 0.090f, 0.038f, 0.35f, 0.72f, 0.35f);
 		}
 		if (pVoice2) pVoice2->SetVolume(0.0f);
 		if (pSongVoice) pSongVoice->SetVolume(1.0f);
 	}
 
-	if (isSongActive_) {
+	if (isSongActive_ && shouldUpdateGame) {
 		++songFrame_;
-		if (songFrame_ >= 900) { // 15 seconds
+		if (songFrame_ >= kSongDurationFrames) { // 15 seconds
 			isSongActive_ = false;
 			songFrame_ = 0;
+			songFlightTrailsInitialized_ = false;
 			if (player_) {
 				player_->SetSongActive(false);
 			}
@@ -2465,6 +2511,38 @@ void GamePlayScene::Update() {
 		}
 	}
 
+	// プレイヤーの移動・加速処理が完了した後の座標を履歴に入れる。
+	// これにより、高速移動時にも残像リボンの先端が機体から離れない。
+	if (isSongActive_ && shouldUpdateGame && player_) {
+		// ワールド上方向から右軸を作るとロール時に翼端が追従しないため、
+		// OBBのローカル3軸をそのまま使う。これでピッチ・ヨー・ロールを
+		// すべて含めた機体上の正しい取付位置になる。
+		const OBB playerObb = player_->GetOBB();
+		const Vector3 right = NormalizeOrVector3(playerObb.orientations[0], { 1.0f, 0.0f, 0.0f });
+		const Vector3 up = NormalizeOrVector3(playerObb.orientations[1], { 0.0f, 1.0f, 0.0f });
+		const Vector3 forward = NormalizeOrVector3(playerObb.orientations[2], { 0.0f, 0.0f, 1.0f });
+		const Vector3 halfExtents = playerObb.size;
+		const float wingSpan = (std::max)(halfExtents.x * 0.82f, 0.55f);
+		const float bodyLength = (std::max)(halfExtents.z, 0.50f);
+		const Vector3 bodyAnchor = AddVector3(playerObb.center, AddVector3(
+			ScaleVector3(up, halfExtents.y * 0.14f), ScaleVector3(forward, -bodyLength * 0.20f)));
+		songFlightTrailHeads_[0] = bodyAnchor;
+		songFlightTrailHeads_[1] = AddVector3(bodyAnchor, ScaleVector3(right, wingSpan));
+		songFlightTrailHeads_[2] = AddVector3(bodyAnchor, ScaleVector3(right, -wingSpan));
+
+		for (size_t index = 0; index < songFlightTrails_.size(); ++index) {
+			if (!songFlightTrails_[index]) {
+				continue;
+			}
+			if (!songFlightTrailsInitialized_) {
+				songFlightTrails_[index]->SetOrigin(songFlightTrailHeads_[index]);
+			} else {
+				songFlightTrails_[index]->Update(songFlightTrailHeads_[index], 1.0f / 60.0f, 0.72f);
+			}
+		}
+		songFlightTrailsInitialized_ = true;
+	}
+
 	UpdateWarpExitGate(activeCamera);
 
 	if (isSelectedOnlyPreview) {
@@ -2930,6 +3008,41 @@ void GamePlayScene::Draw() {
 	if (environmentRenderer_) environmentRenderer_->Draw();
 	DrawWarpExitGate();
 
+	// 歌の発動中だけ、ノズルではなく胴体・翼端が通った軌跡をリボンとして描く。
+	// 曲線で残るため、旋回時にも機体の残像が空間へ描かれる。
+	if (isSongActive_ && player_) {
+		const Vector3 forward = NormalizeOrVector3(player_->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
+		// スラスターより控えめな薄い黄の残像にし、機体を隠さない。
+		const float baseThickness = std::clamp(player_->GetCollisionRadius() * 0.032f, 0.028f, 0.085f);
+		Object3dCommon::GetInstance()->SetSpeedTrailDrawSettings();
+		for (size_t index = 0; index < songFlightTrails_.size(); ++index) {
+			Trail *trail = songFlightTrails_[index].get();
+			Object3d *trailObject = songFlightTrailObjects_[index].get();
+			if (!trail || !trailObject || !trailObject->GetModel()) {
+				continue;
+			}
+			const float width = index == 0 ? baseThickness * 1.15f : baseThickness;
+			const std::vector<VertexData> vertices = trail->GenerateSpeedTrailVertices(
+				renderCamera, width, songFlightTrailHeads_[index],
+				{ -forward.x, -forward.y, -forward.z }, 0.50f, 0.72f,
+				{ 1.0f, 0.54f, 0.04f, 0.50f }, { 1.0f, 0.90f, 0.24f, 0.60f });
+			if (vertices.empty()) {
+				continue;
+			}
+			trailObject->GetModel()->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+			trailObject->GetModel()->SetUvTransform(MyMath::MakeAffineMatrix(
+				Vector3{ 1.0f, 4.5f, 1.0f }, Vector3{ 0.0f, 0.0f, 0.0f },
+				Vector3{ 0.0f, -static_cast<float>(songFrame_) * 0.018f, 0.0f }));
+			trailObject->GetModel()->UpdateTrailVertices(vertices, true);
+			trailObject->SetTranslate({ 0.0f, 0.0f, 0.0f });
+			trailObject->SetScale({ 1.0f, 1.0f, 1.0f });
+			trailObject->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
+			trailObject->Update(renderCamera);
+			trailObject->Draw();
+		}
+		Object3dCommon::GetInstance()->SetEffectDrawSettings();
+	}
+
 	// すべての不透明オブジェクトの後に、実際の噴射を加算する。
 	// Z-Test は有効、Z-Write は無効のまま、前景の翼・地形には正しく隠れる。
 	if (shouldDrawPlayer) {
@@ -3161,17 +3274,24 @@ void GamePlayScene::DrawOverlay() {
 	const float statusPanelY = screenHeight - 180.0f;
 	const float ammoPanelX = screenWidth - 420.0f;
 	const float ammoPanelY = screenHeight - 170.0f;
+	const float songHudPulse = isSongActive_
+		? 0.84f + 0.16f * (0.5f + 0.5f * std::sin(static_cast<float>(songFrame_) * 0.19f))
+		: 1.0f;
 	if (hudPanelSprite_) {
 		hudPanelSprite_->SetPosition({ statusPanelX, statusPanelY });
 		hudPanelSprite_->SetSize({ 390.0f, 160.0f });
-		hudPanelSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.92f });
+		hudPanelSprite_->SetColor(isSongActive_
+			? Vector4{ 1.0f, 0.72f + songHudPulse * 0.20f, 1.0f, 0.96f }
+			: Vector4{ 1.0f, 1.0f, 1.0f, 0.92f });
 		hudPanelSprite_->Update();
 		hudPanelSprite_->Draw();
 	}
 	if (hudAmmoPanelSprite_) {
 		hudAmmoPanelSprite_->SetPosition({ ammoPanelX, ammoPanelY });
 		hudAmmoPanelSprite_->SetSize({ 400.0f, 150.0f });
-		hudAmmoPanelSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.92f });
+		hudAmmoPanelSprite_->SetColor(isSongActive_
+			? Vector4{ 1.0f, 0.78f + songHudPulse * 0.14f, 0.92f, 0.96f }
+			: Vector4{ 1.0f, 1.0f, 1.0f, 0.92f });
 		hudAmmoPanelSprite_->Update();
 		hudAmmoPanelSprite_->Draw();
 	}
@@ -3268,12 +3388,16 @@ void GamePlayScene::DrawOverlay() {
 		hudHomingAmmoIconSprite_->Update();
 		hudHomingAmmoIconSprite_->Draw();
 	}
-	const Vector4 normalAmmoColor = ammoManager_->IsNormalReloading()
+	const Vector4 normalAmmoColor = isSongActive_
+		? Vector4{ 1.0f, 0.88f, 0.12f, 1.0f }
+		: (ammoManager_->IsNormalReloading()
 		? Vector4{ 1.0f, 1.0f, 0.65f, 1.0f }
-		: Vector4{ 1.0f, 0.78f, 0.08f, 1.0f };
-	const Vector4 homingAmmoColor = ammoManager_->IsHomingReloading()
+		: Vector4{ 1.0f, 0.78f, 0.08f, 1.0f });
+	const Vector4 homingAmmoColor = isSongActive_
+		? Vector4{ 1.0f, 0.88f, 0.12f, 1.0f }
+		: (ammoManager_->IsHomingReloading()
 		? Vector4{ 1.0f, 0.65f, 0.65f, 1.0f }
-		: Vector4{ 1.0f, 0.18f, 0.12f, 1.0f };
+		: Vector4{ 1.0f, 0.18f, 0.12f, 1.0f });
 	drawText(std::to_string(ammoManager_->GetNormalMagazine()), hudNormalAmmoDigitSprites_, ammoPanelX + 365.0f, ammoPanelY + 60.0f, normalAmmoColor);
 	drawText(std::to_string(ammoManager_->GetHomingMagazine()), hudHomingAmmoDigitSprites_, ammoPanelX + 365.0f, ammoPanelY + 98.0f, homingAmmoColor);
 	if (ammoManager_->IsNormalReloading() && hudNormalReloadGaugeSprite_) {
@@ -3326,7 +3450,6 @@ void GamePlayScene::DrawOverlay() {
 	const float songGaugeY = statusPanelY + 122.0f;
 	// 状態表示用の余白を右に残し、READY / LIVE がパネルの外へ出ないようにする。
 	const float songGaugeWidth = gaugeWidth - 40.0f;
-	constexpr int kSongDurationFrames = 900;
 	const float songRatio = isSongActive_
 		? std::clamp(1.0f - static_cast<float>(songFrame_) / static_cast<float>(kSongDurationFrames), 0.0f, 1.0f)
 		: std::clamp(songGauge_ / 100.0f, 0.0f, 1.0f);
@@ -3382,6 +3505,99 @@ void GamePlayScene::DrawOverlay() {
 		hudText->AddText(toGameView(statusPanelX + 30.0f, songGaugeY + 1.0f), songTextColor, "SONG");
 		const char *songState = isSongActive_ ? "LIVE" : (songGauge_ >= 100.0f ? "READY" : "CHG");
 		hudText->AddText(toGameView(gaugeX + songGaugeWidth + 26.0f, songGaugeY + 1.0f), songTextColor, songState);
+		if (isSongActive_) {
+			const ImU32 infiniteAmmoColor = IM_COL32(255, 230, 86, 255);
+			hudText->AddText(toGameView(ammoPanelX + 118.0f, ammoPanelY + 18.0f), infiniteAmmoColor, "SONG LIVE - UNLIMITED AMMO");
+
+			// 参照画像のようなネオンHUDを、既存の照準や戦闘情報を隠さない
+			// 画面端・下中央だけに重ねる。バーの高さが常に変わるため、
+			// 歌が鳴っている最中であることを視覚的にも伝えられる。
+			const float liveTime = static_cast<float>(songFrame_);
+			const float livePulse = 0.5f + 0.5f * std::sin(liveTime * 0.19f);
+			const ImU32 neonCyan = IM_COL32(52, 239, 255, 220);
+			const ImU32 neonPink = IM_COL32(255, 66, 210, 225);
+			const ImU32 neonGold = IM_COL32(255, 226, 79, 240);
+			const ImU32 neonWhite = IM_COL32(240, 255, 255, 230);
+
+			// 画面端の小さな棒グラフではなく、参照画像のような斜めに連なる
+			// 音程ウィングを左右上部の内側へ配置する。中央の照準とは十分離す。
+			const ImU32 wingColors[] = { neonCyan, neonPink, neonGold, neonPink, neonCyan };
+			constexpr int kWingColorCount = 5;
+			constexpr int kWingBarCount = 13;
+			const float wingTop = 74.0f;
+			const float wingInset = (std::max)(screenWidth * 0.095f, 130.0f);
+			const float wingLength = (std::min)(screenWidth * 0.135f, 250.0f);
+			const auto drawPitchWing = [&](bool isLeft) {
+				for (int index = 0; index < kWingBarCount; ++index) {
+					const float phase = liveTime * 0.18f + static_cast<float>(index) * 0.63f;
+					const float length = wingLength * (0.52f + 0.48f * (0.5f + 0.5f * std::sin(phase)));
+					const float y = wingTop + static_cast<float>(index) * 8.0f;
+					const float x = isLeft
+						? wingInset + static_cast<float>(index) * 12.0f
+						: screenWidth - wingInset - static_cast<float>(index) * 12.0f;
+					const ImU32 color = wingColors[index % kWingColorCount];
+					if (isLeft) {
+						hudText->AddQuadFilled(toGameView(x, y), toGameView(x + length, y),
+							toGameView(x + length - 8.0f, y + 5.0f), toGameView(x - 8.0f, y + 5.0f), color);
+					} else {
+						hudText->AddQuadFilled(toGameView(x, y), toGameView(x - length, y),
+							toGameView(x - length + 8.0f, y + 5.0f), toGameView(x + 8.0f, y + 5.0f), color);
+					}
+				}
+			};
+			drawPitchWing(true);
+			drawPitchWing(false);
+
+			const char *liveStatus = "SONG OVERDRIVE";
+			const ImVec2 liveStatusSize = ImGui::CalcTextSize(liveStatus);
+			const float liveStatusX = (screenWidth - liveStatusSize.x) * 0.5f;
+			hudText->AddText(nullptr, 16.0f, toGameView(liveStatusX + 1.0f, 23.0f), IM_COL32(10, 0, 20, 210), liveStatus);
+			hudText->AddText(nullptr, 16.0f, toGameView(liveStatusX, 22.0f), neonGold, liveStatus);
+
+			// 照準の周囲にだけ置く薄いリング。敵を覆う塗りつぶしにはせず、
+			// 回転するセグメントで「ライブモードの出力が上がっている」印象を作る。
+			const float centerX = screenWidth * 0.5f;
+			const float centerY = screenHeight * 0.5f;
+			const float centerScale = (std::min)(viewScaleX, viewScaleY);
+			const float ringRadius = 92.0f + livePulse * 12.0f;
+			hudText->AddCircle(toGameView(centerX, centerY), ringRadius * centerScale,
+				IM_COL32(74, 232, 255, 82), 48, 1.2f * centerScale);
+			hudText->AddCircle(toGameView(centerX, centerY), (ringRadius + 18.0f) * centerScale,
+				IM_COL32(255, 63, 204, 76), 48, 1.0f * centerScale);
+			for (int index = 0; index < 10; ++index) {
+				const float angle = liveTime * 0.042f + static_cast<float>(index) * 0.6283185f;
+				const float segmentStart = ringRadius + 6.0f + (index % 2) * 15.0f;
+				const float segmentEnd = segmentStart + 18.0f + livePulse * 10.0f;
+				const ImU32 segmentColor = index % 2 == 0 ? neonCyan : neonPink;
+				hudText->AddLine(
+					toGameView(centerX + std::cos(angle) * segmentStart, centerY + std::sin(angle) * segmentStart),
+					toGameView(centerX + std::cos(angle) * segmentEnd, centerY + std::sin(angle) * segmentEnd),
+					segmentColor,
+					2.5f * centerScale);
+			}
+
+			// 発動直後は大きい見出しと拡散リングを短く出し、通常時との差を
+			// はっきり作る。残りの時間はリングだけにして視界をすぐ戻す。
+			if (songFrame_ < 90) {
+				const float activateRatio = static_cast<float>(songFrame_) / 90.0f;
+				const float burstRadius = 48.0f + activateRatio * 260.0f;
+				const int burstAlpha = static_cast<int>((1.0f - activateRatio) * 210.0f);
+				hudText->AddCircle(toGameView(centerX, centerY), burstRadius * centerScale,
+					IM_COL32(255, 224, 72, burstAlpha), 64, 4.0f * centerScale);
+
+				const char *activateText = "SONG LIVE";
+				const ImVec2 activateSize = ImGui::CalcTextSize(activateText);
+				const float activateX = centerX - activateSize.x * 0.5f;
+				const float activateY = centerY - 74.0f - activateRatio * 20.0f;
+				const int titleAlpha = static_cast<int>((1.0f - activateRatio * 0.40f) * 255.0f);
+				hudText->AddText(nullptr, 30.0f, toGameView(activateX + 2.0f, activateY + 3.0f),
+					IM_COL32(20, 0, 32, titleAlpha), activateText);
+				hudText->AddText(nullptr, 30.0f, toGameView(activateX, activateY),
+					IM_COL32(255, 236, 102, titleAlpha), activateText);
+			}
+
+			hudText->AddCircleFilled(toGameView(centerX, centerY), 2.5f * centerScale, neonWhite);
+		}
 
 		// 常時確認できる操作ガイド。レーダーと重ならない左上に置き、
 		// 操作名とキーを列で分けて、戦闘中でも一目で確認できるようにする。

@@ -361,7 +361,7 @@ std::vector<Trail::TrailPoint> Trail::BuildSpeedTrailCurve(const Vector3& nozzle
 
 std::vector<VertexData> Trail::GenerateSpeedTrailVertices(Camera* camera, float thickness,
     const Vector3& fixedFlameStart, const Vector3& exhaustDirection,
-    float intensity, float lifeTime) {
+    float intensity, float lifeTime, const Vector4& outerColor, const Vector4& coreColor) {
     std::vector<VertexData> vertices;
     if (!camera || points_.size() < 2 || thickness <= 0.0f || intensity <= 0.01f) return vertices;
 
@@ -485,7 +485,7 @@ std::vector<VertexData> Trail::GenerateSpeedTrailVertices(Camera* camera, float 
             toCamera, std::clamp(curvePoints[index].age / safeLifeTime, 0.0f, 1.0f) });
     }
 
-    const auto appendLayer = [&](float widthScale, float alphaScale, const Vector3& color) {
+    const auto appendLayer = [&](float widthScale, float alphaScale, const Vector4& color) {
         if (!vertices.empty()) {
             vertices.push_back(vertices.back());
             vertices.push_back(vertices.back());
@@ -493,7 +493,7 @@ std::vector<VertexData> Trail::GenerateSpeedTrailVertices(Camera* camera, float 
         for (const RibbonSample& sample : samples) {
             const float survivor = 1.0f - sample.ageRatio;
             const float halfWidth = thickness * widthScale * (0.10f + 0.90f * std::pow(survivor, 0.58f));
-            const float alpha = intensity * alphaScale * std::pow(survivor, 1.35f);
+            const float alpha = intensity * alphaScale * color.w * std::pow(survivor, 1.35f);
             VertexData left{};
             left.position = { sample.position.x - sample.side.x * halfWidth,
                 sample.position.y - sample.side.y * halfWidth,
@@ -512,8 +512,8 @@ std::vector<VertexData> Trail::GenerateSpeedTrailVertices(Camera* camera, float 
     };
 
     // 先に幅広く淡い外炎、次に白熱した細い芯を重ねる。
-    appendLayer(2.65f, 0.34f, { 0.90f, 0.02f, 1.00f });
-    appendLayer(1.10f, 0.92f, { 1.04f, 0.74f, 1.00f });
+    appendLayer(2.65f, 0.34f, outerColor);
+    appendLayer(1.10f, 0.92f, coreColor);
     return vertices;
 }
 
