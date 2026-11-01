@@ -44,6 +44,8 @@ namespace {
 }
 
 void EnemyBulletManager::Initialize() {
+	attackSerial_ = 0;
+	lastAttackPosition_ = {};
     bullets_.clear();
     bullets_.resize(kMaxBullets);
     for (size_t index = 0; index < bullets_.size(); ++index) {
@@ -425,6 +427,8 @@ void EnemyBulletManager::ShootMissile(const Vector3 &position, const Vector3 &ve
             }
             bullet.object->SetTranslate(position);
             bullet.object->Update();
+			lastAttackPosition_ = position;
+			++attackSerial_;
             break;
         }
     }
@@ -468,6 +472,8 @@ void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 
                 EnsureGroundBeamVisual(bullet);
                 bullet.thrusterTrail->SetOrigin(position);
             }
+			lastAttackPosition_ = position;
+			++attackSerial_;
             break; // 発射したので終了
         }
     }

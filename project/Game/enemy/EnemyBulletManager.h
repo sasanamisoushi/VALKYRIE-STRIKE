@@ -6,6 +6,7 @@
 #include <memory>
 #include <list>
 #include <array>
+#include <cstdint>
 
 class Player; // 前方宣言
 class Obstacle; // 前方宣言
@@ -52,6 +53,10 @@ public:
 
     // デバッグ表示用のゲッター
     const std::vector<Bullet>& GetBullets() const { return bullets_; }
+    // 発射ごとに増える通番。HUD側が新しい敵攻撃だけを検出するために使う。
+    uint64_t GetAttackSerial() const { return attackSerial_; }
+    // 直近の攻撃の発射地点。画面端アラートの方角計算に使う。
+    const Vector3& GetLastAttackPosition() const { return lastAttackPosition_; }
 
 private:
     void ShootConfigured(const Vector3 &position, const Vector3 &velocity, const Vector3 &scale,
@@ -61,4 +66,6 @@ private:
     static const size_t kMaxBullets = 200; // 弾の最大プール数
     static const size_t kMaxVisibleBullets = 96;
     std::vector<Bullet> bullets_;
+    uint64_t attackSerial_ = 0;
+    Vector3 lastAttackPosition_{};
 };

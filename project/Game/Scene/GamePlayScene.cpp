@@ -175,7 +175,21 @@ bool GamePlayScene::TryConsumeAmmo(MissileType type) {
 	if (isSongActive_) {
 		return true;
 	}
-	return ammoManager_ && ammoManager_->TryConsume(type);
+	if (!ammoManager_) {
+		return false;
+	}
+	if (ammoManager_->TryConsume(type)) {
+		return true;
+	}
+
+	const bool isNormal = type == MissileType::Normal;
+	const bool isReloading = isNormal ? ammoManager_->IsNormalReloading() : ammoManager_->IsHomingReloading();
+	if (isReloading) {
+		// 複数ロックで複数回呼ばれても、表示時間を同じ長さへ戻すだけにする。
+		reloadWarningFrames_ = 72;
+		isHomingReloadWarning_ = !isNormal;
+	}
+	return false;
 }
 
 void GamePlayScene::UpdateAutoReload() {
@@ -290,8 +304,10 @@ void GamePlayScene::Initialize() {
 	TextureManager::GetInstance()->LoadTexture("resources/pause_menu_labels.png");
 	hudPanelSprite_ = std::make_unique<Sprite>();
 	hudPanelSprite_->Initialize(SpriteCommon::GetInstance(), hudTexturePaths[0]);
-	hudAmmoPanelSprite_ = std::make_unique<Sprite>();
-	hudAmmoPanelSprite_->Initialize(SpriteCommon::GetInstance(), hudTexturePaths[0]);
+	hudNormalAmmoPanelSprite_ = std::make_unique<Sprite>();
+	hudNormalAmmoPanelSprite_->Initialize(SpriteCommon::GetInstance(), hudTexturePaths[0]);
+	hudHomingAmmoPanelSprite_ = std::make_unique<Sprite>();
+	hudHomingAmmoPanelSprite_->Initialize(SpriteCommon::GetInstance(), hudTexturePaths[0]);
 	hpGaugeBackgroundSprite_ = std::make_unique<Sprite>();
 	hpGaugeBackgroundSprite_->Initialize(SpriteCommon::GetInstance(), "resources/white1x1.png");
 	hpGaugeFillSprite_ = std::make_unique<Sprite>();
@@ -1189,6 +1205,12 @@ void GamePlayScene::Finalize() {
 }
 
 void GamePlayScene::Update() {
+	if (reloadWarningFrames_ > 0) {
+		--reloadWarningFrames_;
+	}
+	if (enemyAttackAlertFrames_ > 0) {
+		--enemyAttackAlertFrames_;
+	}
 	Camera* activeCamera = isDebugCameraActive_ ? static_cast<Camera*>(debugFlyCamera_.get()) : camera.get();
 	if (activeCamera) {
 		Object3dCommon::GetInstance()->SetDefaultCamera(activeCamera);
@@ -1878,6 +1900,14 @@ void GamePlayScene::Update() {
 			// タイトル背景でも敵弾は必ず更新する。プレイヤーを nullptr にして、
 			// 動きは見せつつ、放置デモも決められたタイミングまでダメージを受けないようにする。
 			enemyBulletManager_->Update(IsAutoFlightMode() ? nullptr : player_.get(), enemyBulletHits, obstacles_);
+			const uint64_t attackSerial = enemyBulletManager_->GetAttackSerial();
+			if (!IsAutoFlightMode() && attackSerial > observedEnemyAttackSerial_) {
+				// 発射された敵弾を検出した時だけ、回避を促すアラートを点灯する。
+				enemyAttackAlertFrames_ = 90;
+				enemyAttackAlertSource_ = enemyBulletManager_->GetLastAttackPosition();
+			}
+			// ステージ再読み込みで弾マネージャが初期化され、通番が0へ戻った場合も同期する。
+			observedEnemyAttackSerial_ = attackSerial;
 		}
 
 
@@ -1923,6 +1953,37 @@ void GamePlayScene::Update() {
 		}
 
 		for (auto it = enemies_.begin(); it != enemies_.end(); ) {
+			// 機体同士の接触判定。敵・プレイヤーのモデル由来の衝突半径を使うため、
+			// 機種ごとのスケール変更にも追従する。接触ダメージは発生させず、
+			// めり込みだけを即座に解消する。
+			if (!IsAutoFlightMode() && player_ && !player_->IsDead() &&
+				(*it)->CanReceiveDamage()) {
+				const Vector3 playerPosition = player_->GetPosition();
+				const Vector3 enemyPosition = (*it)->GetPosition();
+				const Vector3 separation = {
+					playerPosition.x - enemyPosition.x,
+					playerPosition.y - enemyPosition.y,
+					playerPosition.z - enemyPosition.z,
+				};
+				const float minimumDistance = player_->GetCollisionRadius() + (*it)->GetCollisionRadius();
+				const float distanceSq = separation.x * separation.x + separation.y * separation.y + separation.z * separation.z;
+				if (distanceSq < minimumDistance * minimumDistance) {
+					const float distance = std::sqrt((std::max)(distanceSq, 0.0001f));
+					const Vector3 pushDirection = distanceSq > 0.0001f
+						? Vector3{ separation.x / distance, separation.y / distance, separation.z / distance }
+						: player_->GetForwardVector();
+					const float penetration = minimumDistance - distance;
+					constexpr float kContactSeparationMargin = 0.03f;
+					player_->SetPosition({
+						playerPosition.x + pushDirection.x * (penetration + kContactSeparationMargin),
+						playerPosition.y + pushDirection.y * (penetration + kContactSeparationMargin),
+						playerPosition.z + pushDirection.z * (penetration + kContactSeparationMargin),
+					});
+					playerPos = player_->GetPosition();
+
+				}
+			}
+
 			// 近接攻撃の当たり判定
 			if (player_ && player_->IsMeleeAttacking()) {
 				OBB meleeHitbox = player_->GetMeleeHitbox();
@@ -1937,6 +1998,9 @@ void GamePlayScene::Update() {
 			// 地上敵の近接攻撃当たり判定
 			GroundEnemy* groundEnemy = dynamic_cast<GroundEnemy*>(it->get());
 			if (!IsAutoFlightMode() && groundEnemy && groundEnemy->IsMeleeActive() && player_ && !player_->IsDead()) {
+				// 飛び蹴りの有効フレーム中は、弾と同じ危険アラートを維持する。
+				enemyAttackAlertFrames_ = 90;
+				enemyAttackAlertSource_ = groundEnemy->GetPosition();
 				OBB meleeOBB = groundEnemy->GetMeleeBoxOBB();
 				OBB playerOBB = player_->GetOBB();
 				if (MyMath::IsCollision(meleeOBB, playerOBB)) {
@@ -3272,8 +3336,10 @@ void GamePlayScene::DrawOverlay() {
 	const float statusPanelX = 20.0f;
 	// 左下は機体の生存・必殺技・歌をまとめた戦闘ステータスパネルにする。
 	const float statusPanelY = screenHeight - 180.0f;
-	const float ammoPanelX = screenWidth - 420.0f;
-	const float ammoPanelY = screenHeight - 170.0f;
+	// 通常弾・誘導弾をそれぞれ独立した大型カードにする。
+	const float ammoPanelX = screenWidth - 440.0f;
+	const float normalAmmoPanelY = screenHeight - 350.0f;
+	const float homingAmmoPanelY = normalAmmoPanelY + 165.0f;
 	const float songHudPulse = isSongActive_
 		? 0.84f + 0.16f * (0.5f + 0.5f * std::sin(static_cast<float>(songFrame_) * 0.19f))
 		: 1.0f;
@@ -3286,14 +3352,18 @@ void GamePlayScene::DrawOverlay() {
 		hudPanelSprite_->Update();
 		hudPanelSprite_->Draw();
 	}
-	if (hudAmmoPanelSprite_) {
-		hudAmmoPanelSprite_->SetPosition({ ammoPanelX, ammoPanelY });
-		hudAmmoPanelSprite_->SetSize({ 400.0f, 150.0f });
-		hudAmmoPanelSprite_->SetColor(isSongActive_
-			? Vector4{ 1.0f, 0.78f + songHudPulse * 0.14f, 0.92f, 0.96f }
-			: Vector4{ 1.0f, 1.0f, 1.0f, 0.92f });
-		hudAmmoPanelSprite_->Update();
-		hudAmmoPanelSprite_->Draw();
+	if (hudNormalAmmoPanelSprite_ && hudHomingAmmoPanelSprite_) {
+		auto drawAmmoPanelBackground = [&](Sprite *panelSprite, float panelY) {
+			panelSprite->SetPosition({ ammoPanelX, panelY });
+			panelSprite->SetSize({ 420.0f, 150.0f });
+			panelSprite->SetColor(isSongActive_
+				? Vector4{ 1.0f, 0.78f + songHudPulse * 0.14f, 0.92f, 0.96f }
+				: Vector4{ 1.0f, 1.0f, 1.0f, 0.92f });
+			panelSprite->Update();
+			panelSprite->Draw();
+		};
+		drawAmmoPanelBackground(hudNormalAmmoPanelSprite_.get(), normalAmmoPanelY);
+		drawAmmoPanelBackground(hudHomingAmmoPanelSprite_.get(), homingAmmoPanelY);
 	}
 
 	auto drawLabel = [](Sprite *label, const Vector2 &position, const Vector2 &size) {
@@ -3305,11 +3375,11 @@ void GamePlayScene::DrawOverlay() {
 	};
 	drawLabel(hudHpLabelSprite_.get(), { statusPanelX + 30.0f, statusPanelY + 29.0f }, { 42.0f, 25.0f });
 	drawLabel(hudSpLabelSprite_.get(), { statusPanelX + 30.0f, statusPanelY + 77.0f }, { 39.0f, 25.0f });
-	drawLabel(hudAmmoLabelSprite_.get(), { ammoPanelX + 32.0f, ammoPanelY + 22.0f }, { 82.0f, 25.0f });
+	// 弾薬欄は下で MAIN / SUB の個別カードとして描く。
 
 	auto drawText = [](const std::string &text, auto &sprites, float rightX, float y, const Vector4 &color) {
 		constexpr float digitWidth = 22.0f;
-		constexpr float digitHeight = 28.0f;
+		constexpr float digitHeight = 30.0f;
 		const float startX = rightX - digitWidth * static_cast<float>(text.size());
 		for (size_t index = 0; index < text.size() && index < sprites.size(); ++index) {
 			Sprite *digitSprite = sprites[index].get();
@@ -3377,14 +3447,14 @@ void GamePlayScene::DrawOverlay() {
 	if (hudNormalAmmoIconSprite_ && hudHomingAmmoIconSprite_) {
 		hudNormalAmmoIconSprite_->SetTextureLeftTop({ 0.0f, 0.0f });
 		hudNormalAmmoIconSprite_->SetTextureSize({ 887.0f, 887.0f });
-		hudNormalAmmoIconSprite_->SetPosition({ ammoPanelX + 34.0f, ammoPanelY + 53.0f });
-		hudNormalAmmoIconSprite_->SetSize({ 48.0f, 48.0f });
+		hudNormalAmmoIconSprite_->SetPosition({ ammoPanelX + 50.0f, normalAmmoPanelY + 67.0f });
+		hudNormalAmmoIconSprite_->SetSize({ 42.0f, 42.0f });
 		hudNormalAmmoIconSprite_->Update();
 		hudNormalAmmoIconSprite_->Draw();
 		hudHomingAmmoIconSprite_->SetTextureLeftTop({ 887.0f, 0.0f });
 		hudHomingAmmoIconSprite_->SetTextureSize({ 887.0f, 887.0f });
-		hudHomingAmmoIconSprite_->SetPosition({ ammoPanelX + 34.0f, ammoPanelY + 91.0f });
-		hudHomingAmmoIconSprite_->SetSize({ 48.0f, 48.0f });
+		hudHomingAmmoIconSprite_->SetPosition({ ammoPanelX + 50.0f, homingAmmoPanelY + 67.0f });
+		hudHomingAmmoIconSprite_->SetSize({ 42.0f, 42.0f });
 		hudHomingAmmoIconSprite_->Update();
 		hudHomingAmmoIconSprite_->Draw();
 	}
@@ -3398,18 +3468,28 @@ void GamePlayScene::DrawOverlay() {
 		: (ammoManager_->IsHomingReloading()
 		? Vector4{ 1.0f, 0.65f, 0.65f, 1.0f }
 		: Vector4{ 1.0f, 0.18f, 0.12f, 1.0f });
-	drawText(std::to_string(ammoManager_->GetNormalMagazine()), hudNormalAmmoDigitSprites_, ammoPanelX + 365.0f, ammoPanelY + 60.0f, normalAmmoColor);
-	drawText(std::to_string(ammoManager_->GetHomingMagazine()), hudHomingAmmoDigitSprites_, ammoPanelX + 365.0f, ammoPanelY + 98.0f, homingAmmoColor);
+	// 歌の効果中は実際に弾を消費しない。数値の残弾を出すと有限に見えるため、
+	// 数字スプライトを隠し、下のHUDテキスト描画で無限大記号に差し替える。
+	const float normalAmmoTextY = normalAmmoPanelY + 73.0f;
+	const float homingAmmoTextY = homingAmmoPanelY + 73.0f;
+	if (!isSongActive_) {
+		drawText(
+			std::to_string(ammoManager_->GetNormalMagazine()) + "/" + std::to_string(ammoManager_->GetNormalMagazineCapacity()),
+			hudNormalAmmoDigitSprites_, ammoPanelX + 400.0f, normalAmmoTextY, normalAmmoColor);
+		drawText(
+			std::to_string(ammoManager_->GetHomingMagazine()) + "/" + std::to_string(ammoManager_->GetHomingMagazineCapacity()),
+			hudHomingAmmoDigitSprites_, ammoPanelX + 400.0f, homingAmmoTextY, homingAmmoColor);
+	}
 	if (ammoManager_->IsNormalReloading() && hudNormalReloadGaugeSprite_) {
-		hudNormalReloadGaugeSprite_->SetPosition({ ammoPanelX + 90.0f, ammoPanelY + 89.0f });
-		hudNormalReloadGaugeSprite_->SetSize({ 275.0f * static_cast<float>(ammoManager_->GetNormalReloadFrame()) / static_cast<float>(AmmoManager::kReloadDurationFrames), 4.0f });
+		hudNormalReloadGaugeSprite_->SetPosition({ ammoPanelX + 142.0f, normalAmmoPanelY + 118.0f });
+		hudNormalReloadGaugeSprite_->SetSize({ 150.0f * static_cast<float>(ammoManager_->GetNormalReloadFrame()) / static_cast<float>(AmmoManager::kReloadDurationFrames), 5.0f });
 		hudNormalReloadGaugeSprite_->SetColor({ 1.0f, 0.78f, 0.08f, 1.0f });
 		hudNormalReloadGaugeSprite_->Update();
 		hudNormalReloadGaugeSprite_->Draw();
 	}
 	if (ammoManager_->IsHomingReloading() && hudHomingReloadGaugeSprite_) {
-		hudHomingReloadGaugeSprite_->SetPosition({ ammoPanelX + 90.0f, ammoPanelY + 127.0f });
-		hudHomingReloadGaugeSprite_->SetSize({ 275.0f * static_cast<float>(ammoManager_->GetHomingReloadFrame()) / static_cast<float>(AmmoManager::kReloadDurationFrames), 4.0f });
+		hudHomingReloadGaugeSprite_->SetPosition({ ammoPanelX + 142.0f, homingAmmoPanelY + 118.0f });
+		hudHomingReloadGaugeSprite_->SetSize({ 150.0f * static_cast<float>(ammoManager_->GetHomingReloadFrame()) / static_cast<float>(AmmoManager::kReloadDurationFrames), 5.0f });
 		hudHomingReloadGaugeSprite_->SetColor({ 1.0f, 0.18f, 0.12f, 1.0f });
 		hudHomingReloadGaugeSprite_->Update();
 		hudHomingReloadGaugeSprite_->Draw();
@@ -3499,6 +3579,143 @@ void GamePlayScene::DrawOverlay() {
 		auto toGameView = [=](float x, float y) {
 			return ImVec2(gameViewMinX + x * viewScaleX, gameViewMinY + y * viewScaleY);
 		};
+		if (enemyAttackAlertFrames_ > 0) {
+			const float fadeIn = std::clamp((90.0f - static_cast<float>(enemyAttackAlertFrames_)) / 8.0f, 0.0f, 1.0f);
+			const float fadeOut = std::clamp(static_cast<float>(enemyAttackAlertFrames_) / 15.0f, 0.0f, 1.0f);
+			const int alertAlpha = static_cast<int>(255.0f * (std::min)(fadeIn, fadeOut));
+			const ImU32 alertColor = IM_COL32(255, 72, 92, alertAlpha);
+			const Vector3 sourceOnScreen = MyMath::WorldToScreen(
+				enemyAttackAlertSource_, activeCamera->GetViewProjectionMatrix(), screenWidth, screenHeight);
+			const float screenCenterX = screenWidth * 0.5f;
+			const float screenCenterY = screenHeight * 0.5f;
+			float directionX = sourceOnScreen.x - screenCenterX;
+			float directionY = sourceOnScreen.y - screenCenterY;
+			// 背後の敵は投影座標が反転するため、端のインジケーターだけは正しい方角へ反転する。
+			if (sourceOnScreen.z < 0.0f) {
+				directionX = -directionX;
+				directionY = -directionY;
+			}
+			float directionLength = std::sqrt(directionX * directionX + directionY * directionY);
+			if (directionLength < 0.001f) {
+				directionY = -1.0f;
+				directionLength = 1.0f;
+			}
+			directionX /= directionLength;
+			directionY /= directionLength;
+
+			// 攻撃元のスクリーン方角へ伸ばして、必ず表示領域の端へ配置する。
+			constexpr float alertWidth = 214.0f;
+			constexpr float alertHeight = 46.0f;
+			constexpr float edgeInset = 26.0f;
+			const float horizontalLimit = (std::max)(1.0f, screenCenterX - alertWidth * 0.5f - edgeInset);
+			const float verticalLimit = (std::max)(1.0f, screenCenterY - alertHeight * 0.5f - edgeInset);
+			const float horizontalScale = std::abs(directionX) > 0.001f ? horizontalLimit / std::abs(directionX) : (std::numeric_limits<float>::max)();
+			const float verticalScale = std::abs(directionY) > 0.001f ? verticalLimit / std::abs(directionY) : (std::numeric_limits<float>::max)();
+			const float edgeScale = (std::min)(horizontalScale, verticalScale);
+			const float alertCenterX = screenCenterX + directionX * edgeScale;
+			const float alertCenterY = screenCenterY + directionY * edgeScale;
+			const float alertLeft = alertCenterX - alertWidth * 0.5f;
+			const float alertTop = alertCenterY - alertHeight * 0.5f;
+			const float perpendicularX = -directionY;
+			const float perpendicularY = directionX;
+
+			// 参考画像のように中央を塞がず、攻撃元の方角にだけ出す危険インジケーター。
+			hudText->AddRectFilled(
+				toGameView(alertLeft, alertTop), toGameView(alertLeft + alertWidth, alertTop + alertHeight),
+				IM_COL32(37, 4, 12, static_cast<int>(alertAlpha * 0.78f)), 4.0f);
+			hudText->AddRect(
+				toGameView(alertLeft, alertTop), toGameView(alertLeft + alertWidth, alertTop + alertHeight),
+				alertColor, 4.0f, 0, 2.0f * (std::min)(viewScaleX, viewScaleY));
+			hudText->AddTriangleFilled(
+				toGameView(alertCenterX + directionX * 29.0f, alertCenterY + directionY * 29.0f),
+				toGameView(alertCenterX - directionX * 18.0f + perpendicularX * 13.0f, alertCenterY - directionY * 18.0f + perpendicularY * 13.0f),
+				toGameView(alertCenterX - directionX * 18.0f - perpendicularX * 13.0f, alertCenterY - directionY * 18.0f - perpendicularY * 13.0f), alertColor);
+			hudText->AddText(nullptr, 16.0f, toGameView(alertLeft + 16.0f, alertTop + 14.0f), alertColor, "INCOMING");
+		}
+		// 参考UIのように、武器ごとの状態を独立したカードで読ませる。
+		// 数字は既存のデジタル数字スプライトを残し、カードはその周囲を整理する。
+		const ImU32 weaponTitleColor = IM_COL32(205, 236, 255, 255);
+		const ImU32 normalWeaponColor = isSongActive_
+			? IM_COL32(255, 230, 86, 255)
+			: IM_COL32(154, 255, 69, 255);
+		const ImU32 homingWeaponColor = isSongActive_
+			? IM_COL32(255, 230, 86, 255)
+			: IM_COL32(67, 226, 255, 255);
+		const float weaponPanelLeft = ammoPanelX + 18.0f;
+		const float weaponPanelWidth = 385.0f;
+		const float weaponPanelHeight = 112.0f;
+		auto drawWeaponAmmoCard = [&](const char *slot, const char *weaponName, float top, float fillRatio, ImU32 color) {
+			const float cardRight = weaponPanelLeft + weaponPanelWidth;
+			const float dividerX = weaponPanelLeft + 88.0f;
+			// 数値部分は透明にして、先に描いたデジタル残弾表示を鮮明に残す。
+			hudText->AddRect(
+				toGameView(weaponPanelLeft, top), toGameView(cardRight, top + weaponPanelHeight),
+				color, 4.0f, 0, 2.0f * (std::min)(viewScaleX, viewScaleY));
+			hudText->AddRectFilled(
+				toGameView(weaponPanelLeft + 5.0f, top + 5.0f), toGameView(weaponPanelLeft + 77.0f, top + 28.0f),
+				IM_COL32(12, 32, 54, 235), 2.0f);
+			hudText->AddLine(toGameView(dividerX, top + 4.0f), toGameView(dividerX, top + weaponPanelHeight - 4.0f), color, 1.5f);
+			hudText->AddLine(toGameView(dividerX + 12.0f, top + 42.0f), toGameView(cardRight - 12.0f, top + 42.0f), IM_COL32(47, 95, 118, 230), 1.0f);
+			hudText->AddText(nullptr, 17.0f, toGameView(weaponPanelLeft + 11.0f, top + 7.0f), color, slot);
+			hudText->AddText(nullptr, 20.0f, toGameView(weaponPanelLeft + 108.0f, top + 10.0f), weaponTitleColor, weaponName);
+			hudText->AddText(toGameView(weaponPanelLeft + 108.0f, top + 51.0f), IM_COL32(126, 181, 205, 255), "AMMUNITION");
+
+			// 中央の8セルは、残弾の割合をひと目で分かる補助表示にする。
+			constexpr int kMagazineCellCount = 8;
+			const int filledCellCount = static_cast<int>(std::ceil(std::clamp(fillRatio, 0.0f, 1.0f) * kMagazineCellCount));
+			for (int cellIndex = 0; cellIndex < kMagazineCellCount; ++cellIndex) {
+				const float cellLeft = weaponPanelLeft + 108.0f + static_cast<float>(cellIndex) * 20.0f;
+				const ImU32 cellColor = cellIndex < filledCellCount ? color : IM_COL32(33, 63, 82, 210);
+				hudText->AddRectFilled(
+					toGameView(cellLeft, top + 77.0f), toGameView(cellLeft + 14.0f, top + 86.0f), cellColor, 1.5f);
+			}
+		};
+		drawWeaponAmmoCard(
+			"MAIN", "NORMAL SHOT", normalAmmoPanelY + 20.0f,
+			static_cast<float>(ammoManager_->GetNormalMagazine()) /
+				static_cast<float>((std::max)(ammoManager_->GetNormalMagazineCapacity(), 1)),
+			normalWeaponColor);
+		drawWeaponAmmoCard(
+			"SUB", "HOMING MISSILE", homingAmmoPanelY + 20.0f,
+			static_cast<float>(ammoManager_->GetHomingMagazine()) /
+				static_cast<float>((std::max)(ammoManager_->GetHomingMagazineCapacity(), 1)),
+			homingWeaponColor);
+		if (reloadWarningFrames_ > 0) {
+			const float fadeIn = std::clamp((72.0f - static_cast<float>(reloadWarningFrames_)) / 8.0f, 0.0f, 1.0f);
+			const float fadeOut = std::clamp(static_cast<float>(reloadWarningFrames_) / 12.0f, 0.0f, 1.0f);
+			const int warningAlpha = static_cast<int>(255.0f * (std::min)(fadeIn, fadeOut));
+			const ImU32 warningColor = isHomingReloadWarning_
+				? IM_COL32(77, 228, 255, warningAlpha)
+				: IM_COL32(255, 214, 70, warningAlpha);
+			const float warningWidth = 360.0f;
+			const float warningHeight = 78.0f;
+			const float warningLeft = (screenWidth - warningWidth) * 0.5f;
+			const float warningTop = screenHeight * 0.45f;
+			const char *weaponLabel = isHomingReloadWarning_ ? "HOMING MISSILE" : "NORMAL SHOT";
+			ImFont *reloadFont = ImGuiManager::GetResultRankFont();
+			constexpr float reloadFontSize = 38.0f;
+			const ImVec2 reloadSize = reloadFont
+				? reloadFont->CalcTextSizeA(reloadFontSize, 1000.0f, 0.0f, "RELOADING")
+				: ImGui::CalcTextSize("RELOADING");
+
+			// 照準の中央で、発射できない理由と対象武器を一瞬で伝える警告パネル。
+			hudText->AddRectFilled(
+				toGameView(warningLeft, warningTop), toGameView(warningLeft + warningWidth, warningTop + warningHeight),
+				IM_COL32(3, 16, 33, static_cast<int>(warningAlpha * 0.88f)), 4.0f);
+			hudText->AddRect(
+				toGameView(warningLeft, warningTop), toGameView(warningLeft + warningWidth, warningTop + warningHeight),
+				warningColor, 4.0f, 0, 2.0f * (std::min)(viewScaleX, viewScaleY));
+			hudText->AddLine(
+				toGameView(warningLeft + 18.0f, warningTop + 55.0f), toGameView(warningLeft + warningWidth - 18.0f, warningTop + 55.0f),
+				warningColor, 1.0f * (std::min)(viewScaleX, viewScaleY));
+			hudText->AddText(
+				reloadFont, reloadFontSize,
+				toGameView(warningLeft + (warningWidth - reloadSize.x) * 0.5f, warningTop + 6.0f),
+				warningColor, "RELOADING");
+			hudText->AddText(
+				toGameView(warningLeft + (warningWidth - ImGui::CalcTextSize(weaponLabel).x) * 0.5f, warningTop + 59.0f),
+				warningColor, weaponLabel);
+		}
 		const ImU32 songTextColor = isSongActive_
 			? IM_COL32(255, 95, 215, 255)
 			: (songGauge_ >= 100.0f ? IM_COL32(125, 255, 125, 255) : IM_COL32(105, 225, 240, 255));
@@ -3507,7 +3724,35 @@ void GamePlayScene::DrawOverlay() {
 		hudText->AddText(toGameView(gaugeX + songGaugeWidth + 26.0f, songGaugeY + 1.0f), songTextColor, songState);
 		if (isSongActive_) {
 			const ImU32 infiniteAmmoColor = IM_COL32(255, 230, 86, 255);
-			hudText->AddText(toGameView(ammoPanelX + 118.0f, ammoPanelY + 18.0f), infiniteAmmoColor, "SONG LIVE - UNLIMITED AMMO");
+			// 数字用テクスチャには無限大記号がないため、2つのループを描いて
+			// 弾数欄そのものを ∞ にする。解像度に応じてゲーム画面の座標へ変換する。
+			auto drawInfiniteAmmoMarker = [&](float rightX, float y) {
+				const float centerX = rightX - 27.0f;
+				const float centerY = y + 15.0f;
+				const float halfWidth = 24.0f;
+				const float halfHeight = 14.0f;
+				const float strokeWidth = 4.0f * (std::min)(viewScaleX, viewScaleY);
+				hudText->PathLineTo(toGameView(centerX, centerY));
+				hudText->PathBezierCubicCurveTo(
+					toGameView(centerX - 8.0f, centerY - halfHeight),
+					toGameView(centerX - halfWidth, centerY - halfHeight),
+					toGameView(centerX - halfWidth, centerY));
+				hudText->PathBezierCubicCurveTo(
+					toGameView(centerX - halfWidth, centerY + halfHeight),
+					toGameView(centerX - 8.0f, centerY + halfHeight),
+					toGameView(centerX, centerY));
+				hudText->PathBezierCubicCurveTo(
+					toGameView(centerX + 8.0f, centerY - halfHeight),
+					toGameView(centerX + halfWidth, centerY - halfHeight),
+					toGameView(centerX + halfWidth, centerY));
+				hudText->PathBezierCubicCurveTo(
+					toGameView(centerX + halfWidth, centerY + halfHeight),
+					toGameView(centerX + 8.0f, centerY + halfHeight),
+					toGameView(centerX, centerY));
+				hudText->PathStroke(infiniteAmmoColor, 0, strokeWidth);
+			};
+			drawInfiniteAmmoMarker(ammoPanelX + 400.0f, normalAmmoTextY);
+			drawInfiniteAmmoMarker(ammoPanelX + 400.0f, homingAmmoTextY);
 
 			// 参照画像のようなネオンHUDを、既存の照準や戦闘情報を隠さない
 			// 画面端・下中央だけに重ねる。バーの高さが常に変わるため、

@@ -34,6 +34,7 @@
 #include <string>
 #include <filesystem>
 #include <array>
+#include <cstdint>
 
 
 
@@ -138,7 +139,8 @@ private:
 	std::unique_ptr<Sprite> songGaugeFillSprite_;
 	std::unique_ptr<Sprite> songGaugeStateSprite_;
 	std::unique_ptr<Sprite> hudPanelSprite_;
-	std::unique_ptr<Sprite> hudAmmoPanelSprite_;
+	std::unique_ptr<Sprite> hudNormalAmmoPanelSprite_;
+	std::unique_ptr<Sprite> hudHomingAmmoPanelSprite_;
 	std::unique_ptr<Sprite> hpGaugeBackgroundSprite_;
 	std::unique_ptr<Sprite> hpGaugeFillSprite_;
 	std::unique_ptr<Sprite> bossHpGaugeBackgroundSprite_;
@@ -407,5 +409,11 @@ private:
 
 	// 通常弾の長押し連射用
 	int normalFireCooldownTimer_ = 0;
+	uint64_t observedEnemyAttackSerial_ = 0;
+	int enemyAttackAlertFrames_ = 0;
+	Vector3 enemyAttackAlertSource_{};
+	// リロード中に発射を試みた時だけ、中央へ短時間表示する警告。
+	int reloadWarningFrames_ = 0;
+	bool isHomingReloadWarning_ = false;
 
 };

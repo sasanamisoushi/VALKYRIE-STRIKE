@@ -34,12 +34,14 @@ inline const char* CalculateRank(int totalScore, MissionResultOutcome outcome) {
 }
 
 inline float CalculateRankGaugeTarget(const char* rank) {
-	if (rank[0] == 'D') return 0.10f;
-	if (rank[0] == 'C') return 0.28f;
-	if (rank[0] == 'B') return 0.45f;
-	if (rank[0] == 'A') return 0.62f;
-	if (rank[0] == 'S' && rank[1] == 'S') return 0.96f;
-	return 0.80f;
+	// 目盛りの位置（D/C/B/A/S/SS = 0/1/2/3/4/5）と、
+	// ゲージの終点・マーカーを必ず一致させる。
+	if (rank[0] == 'D') return 0.0f;
+	if (rank[0] == 'C') return 1.0f / 5.0f;
+	if (rank[0] == 'B') return 2.0f / 5.0f;
+	if (rank[0] == 'A') return 3.0f / 5.0f;
+	if (rank[0] == 'S' && rank[1] == 'S') return 1.0f;
+	return 4.0f / 5.0f;
 }
 
 inline float ClampAnimation(int frame, int startFrame, int durationFrames) {
