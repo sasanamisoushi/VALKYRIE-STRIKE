@@ -3579,6 +3579,50 @@ void GamePlayScene::DrawOverlay() {
 		auto toGameView = [=](float x, float y) {
 			return ImVec2(gameViewMinX + x * viewScaleX, gameViewMinY + y * viewScaleY);
 		};
+		// ステージ境界へ近付いたときは、参考画像のような小さな上中央の
+		// 警告バッジを出す。視界中央を塞がず、ワールド上の境界マーカーと
+		// 同じ条件で点滅するため、どちらの方向へ戻るべきかも把握しやすい。
+		if (player_ && player_->IsNearBoundary()) {
+			const float wallIntensity = player_->IsNearWallBoundary()
+				? player_->GetWallBoundaryWarningIntensity() : 0.0f;
+			const float ceilingIntensity = player_->IsNearCeilingBoundary()
+				? player_->GetCeilingBoundaryWarningIntensity() : 0.0f;
+			const float boundaryIntensity = std::clamp((std::max)(wallIntensity, ceilingIntensity), 0.0f, 1.0f);
+			const float pulse = 0.72f + 0.28f * std::sin(static_cast<float>(gameplayElapsedFrames_) * 0.17f);
+			const int alertAlpha = static_cast<int>((150.0f + 105.0f * boundaryIntensity) * pulse);
+			const ImU32 alertOutline = IM_COL32(255, 128, 38, alertAlpha);
+			const ImU32 alertFill = IM_COL32(98, 24, 4, static_cast<int>(alertAlpha * 0.82f));
+			const ImU32 alertInner = IM_COL32(255, 194, 100, static_cast<int>(alertAlpha * 0.76f));
+			const float centerX = screenWidth * 0.5f;
+			const float top = 20.0f;
+
+			const ImVec2 outer[5] = {
+				toGameView(centerX - 72.0f, top), toGameView(centerX + 72.0f, top),
+				toGameView(centerX + 45.0f, top + 36.0f), toGameView(centerX, top + 59.0f),
+				toGameView(centerX - 45.0f, top + 36.0f),
+			};
+			const ImVec2 inner[5] = {
+				toGameView(centerX - 60.0f, top + 7.0f), toGameView(centerX + 60.0f, top + 7.0f),
+				toGameView(centerX + 36.0f, top + 34.0f), toGameView(centerX, top + 51.0f),
+				toGameView(centerX - 36.0f, top + 34.0f),
+			};
+			hudText->AddConvexPolyFilled(outer, 5, alertFill);
+			hudText->AddPolyline(outer, 5, alertOutline, ImDrawFlags_Closed, 2.0f * (std::min)(viewScaleX, viewScaleY));
+			hudText->AddPolyline(inner, 5, alertInner, ImDrawFlags_Closed, 1.0f * (std::min)(viewScaleX, viewScaleY));
+			hudText->AddLine(
+				toGameView(centerX - 46.0f, top + 31.0f), toGameView(centerX + 46.0f, top + 31.0f),
+				alertInner, 1.0f * (std::min)(viewScaleX, viewScaleY));
+
+			ImFont* alertFont = ImGuiManager::GetResultRankFont();
+			constexpr float alertFontSize = 23.0f;
+			const ImVec2 alertTextSize = alertFont
+				? alertFont->CalcTextSizeA(alertFontSize, 1000.0f, 0.0f, "ALERT")
+				: ImGui::CalcTextSize("ALERT");
+			hudText->AddText(
+				alertFont, alertFontSize,
+				toGameView(centerX - alertTextSize.x * 0.5f, top + 8.0f),
+				IM_COL32(255, 224, 174, alertAlpha), "ALERT");
+		}
 		if (enemyAttackAlertFrames_ > 0) {
 			const float fadeIn = std::clamp((90.0f - static_cast<float>(enemyAttackAlertFrames_)) / 8.0f, 0.0f, 1.0f);
 			const float fadeOut = std::clamp(static_cast<float>(enemyAttackAlertFrames_) / 15.0f, 0.0f, 1.0f);

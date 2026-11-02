@@ -2,7 +2,9 @@
 param(
     [ValidateSet("Debug", "Development", "Release")]
     [string]$Configuration = "Release",
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    # デモ専用の起動ファイルも配布パッケージへ含める。
+    [switch]$IncludeDemoPlay
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,6 +35,11 @@ $requiredFiles = @(
     "dxil.dll"
 )
 
+$demoExecutable = "ValkyrieStrikeCodexDemo.exe"
+if ($IncludeDemoPlay -and -not (Test-Path -LiteralPath (Join-Path $buildOutput $demoExecutable))) {
+    throw "デモプレイ用ファイルが見つかりません。先にビルドしてください: $demoExecutable"
+}
+
 if (-not (Test-Path -LiteralPath (Join-Path $buildOutput "resources"))) {
     throw "resources フォルダーが見つかりません。先にビルドしてください: $buildOutput"
 }
@@ -55,6 +62,9 @@ New-Item -ItemType Directory -Path $packagePath | Out-Null
 foreach ($file in $requiredFiles) {
     Copy-Item -LiteralPath (Join-Path $buildOutput $file) -Destination $packagePath
 }
+if ($IncludeDemoPlay) {
+    Copy-Item -LiteralPath (Join-Path $buildOutput $demoExecutable) -Destination $packagePath
+}
 Copy-Item -LiteralPath (Join-Path $buildOutput "resources") -Destination $packagePath -Recurse
 
 @"
@@ -63,6 +73,14 @@ Valkyrie Strike 実行版
 ValkyrieStrike.exe をダブルクリックして起動してください。
 Windows 10/11 (x64) 用です。
 "@ | Set-Content -LiteralPath (Join-Path $packagePath "README.txt") -Encoding UTF8
+
+if ($IncludeDemoPlay) {
+    Add-Content -LiteralPath (Join-Path $packagePath "README.txt") -Encoding UTF8 -Value @"
+
+デモプレイ
+ValkyrieStrikeCodexDemo.exe を起動すると、デモプレイを開始します。
+"@
+}
 
 Compress-Archive -Path (Join-Path $packagePath "*") -DestinationPath $zipPath -CompressionLevel Optimal
 

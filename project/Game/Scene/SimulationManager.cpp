@@ -40,7 +40,7 @@ std::filesystem::path GetExecutablePackageZipPath() {
 		projectRoot / "generated" / "packages" / "ValkyrieStrike_Playable-Release.zip";
 }
 
-bool LaunchExecutablePackageCreation(bool skipBuild, HANDLE& processHandle) {
+bool LaunchExecutablePackageCreation(bool skipBuild, bool includeDemoPlay, HANDLE& processHandle) {
 	const std::filesystem::path projectRoot = FindProjectRoot();
 	if (projectRoot.empty()) {
 		return false;
@@ -51,6 +51,9 @@ bool LaunchExecutablePackageCreation(bool skipBuild, HANDLE& processHandle) {
 		L"\" -Configuration Release";
 	if (skipBuild) {
 		parameters += L" -SkipBuild";
+	}
+	if (includeDemoPlay) {
+		parameters += L" -IncludeDemoPlay";
 	}
 
 	SHELLEXECUTEINFOW executeInfo{};
@@ -1123,6 +1126,7 @@ void SimulationManager::DrawSimulationScreenUI() {
 	} else if (scene_->uiManager_->currentSimulationTarget_ == 7) {
 		static std::string packageMessage;
 		static HANDLE packageProcess = nullptr;
+		static bool includeDemoPlay = false;
 		const bool projectFound = !FindProjectRoot().empty();
 		const bool runningRelease = IsCurrentExecutableReleaseBuild();
 		const std::filesystem::path zipPath = GetExecutablePackageZipPath();
@@ -1130,6 +1134,11 @@ void SimulationManager::DrawSimulationScreenUI() {
 		const bool packageCreationRunning = packageProcess != nullptr;
 		ImGui::Text("実行ファイル生成");
 		ImGui::TextWrapped("Release版のValkyrieStrike.exe、実行用DLL、resourcesをまとめ、配布用ZIPを作成します。");
+		ImGui::Separator();
+		ImGui::BeginDisabled(packageCreationRunning);
+		ImGui::Checkbox("デモプレイを含める", &includeDemoPlay);
+		ImGui::EndDisabled();
+		ImGui::TextDisabled("ONにすると ValkyrieStrikeCodexDemo.exe もZIPへ同梱します。");
 		ImGui::Separator();
 		if (!projectFound) {
 			ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.25f, 1.0f), "プロジェクトフォルダー内から起動した場合のみ使用できます。");
@@ -1139,12 +1148,12 @@ void SimulationManager::DrawSimulationScreenUI() {
 			if (runningRelease) {
 				ImGui::TextDisabled("現在Release版を実行中のため、実行ファイルを上書きするビルドはできません。");
 				if (ImGui::Button("現在のRelease版をZIP作成")) {
-					packageMessage = LaunchExecutablePackageCreation(true, packageProcess)
+					packageMessage = LaunchExecutablePackageCreation(true, includeDemoPlay, packageProcess)
 						? "ZIP作成中です。完了を確認しています。"
 						: "ZIP作成を開始できませんでした。";
 				}
 			} else if (ImGui::Button("ReleaseビルドしてZIP作成")) {
-				packageMessage = LaunchExecutablePackageCreation(false, packageProcess)
+				packageMessage = LaunchExecutablePackageCreation(false, includeDemoPlay, packageProcess)
 					? "ReleaseビルドとZIP作成中です。完了を確認しています。"
 					: "実行ファイル生成を開始できませんでした。";
 			}
