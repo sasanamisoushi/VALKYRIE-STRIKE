@@ -3187,10 +3187,12 @@ void GamePlayScene::Draw() {
 	}
 
 	if (tutorialGoalActive_ && tutorialGoalRing_) {
-		const float pulse = 1.0f + 0.14f * std::sin(static_cast<float>(tutorialPhaseFrames_) * 0.12f);
+		// 遠方からでも見失わないよう、通常のリングより大きく、はっきり明滅させる。
+		const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(tutorialPhaseFrames_) * 0.12f);
 		tutorialGoalRing_->SetTranslate(tutorialGoalPosition_);
-		tutorialGoalRing_->SetRotate({ 0.0f, 0.0f, 0.0f });
-		tutorialGoalRing_->SetScale({ 3.3f * pulse, 3.3f * pulse, 1.0f });
+		tutorialGoalRing_->SetRotate({ 0.0f, 0.0f, static_cast<float>(tutorialPhaseFrames_) * 0.018f });
+		const float ringScale = 4.6f + pulse * 0.9f;
+		tutorialGoalRing_->SetScale({ ringScale, ringScale, 1.0f });
 		tutorialGoalRing_->Update();
 		Object3dCommon::GetInstance()->SetEffectDrawSettings();
 		tutorialGoalRing_->Draw();
@@ -3682,15 +3684,23 @@ void GamePlayScene::ActivateTutorialGoal() {
 		return;
 	}
 
-	const Vector3 forward = NormalizeOrVector3(player_->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
-	tutorialGoalPosition_ = AddVector3(player_->GetPosition(), AddVector3(ScaleVector3(forward, 18.0f), { 0.0f, 1.0f, 0.0f }));
+	// 離脱ポイントはプレイヤーの前方ではなく、常にマップ（StageBounds）の水平中心へ
+	// 出す。高さだけは現在の飛行高度を維持して、地面や天井へ不意に誘導しない。
+	Vector3 stageCenter{};
+	for (const auto& obstacle : obstacles_) {
+		if (obstacle && obstacle->IsStageBounds()) {
+			stageCenter = obstacle->GetPosition();
+			break;
+		}
+	}
+	tutorialGoalPosition_ = { stageCenter.x, player_->GetPosition().y, stageCenter.z };
 	tutorialGoalActive_ = true;
 	if (!tutorialGoalRing_) {
 		tutorialGoalRing_ = std::make_unique<Primitive>();
 		tutorialGoalRing_->Initialize(Object3dCommon::GetInstance(), PrimitiveType::Ring);
 	}
 	if (Model* model = tutorialGoalRing_->GetModel()) {
-		model->SetColor({ 0.25f, 0.96f, 1.0f, 0.95f });
+		model->SetColor({ 0.12f, 0.90f, 1.0f, 1.0f });
 		model->SetEnableLighting(false);
 	}
 }
@@ -3912,11 +3922,16 @@ void GamePlayScene::DrawTutorialOverlay(float screenWidth, float screenHeight) {
 		break;
 	case TutorialPhase::Navigation:
 		step = 3;
-		title = "離脱ポイントへ移動";
-		message = "青いリングへ進入するとシミュレーションを終了します。";
-		supportText = "Move into the blue ring to complete the tutorial";
-		progressText = "目標地点  " + std::string(tutorialGoalActive_ ? "案内中" : "到達") ;
-		inputHint = "リングへ向かう";
+		title = "チュートリアル完了まであと少し！";
+		message = "矢印をたどり、マップ中央の青いリングの中へ飛び込んでください。";
+		supportText = "Follow the GOAL arrow and fly through the blue ring at the map centre";
+		if (tutorialGoalActive_ && player_) {
+			const int distance = static_cast<int>(MyMath::Length(SubtractVector3(tutorialGoalPosition_, player_->GetPosition())));
+			progressText = "中央の青いリングまで  " + std::to_string(distance) + " m";
+		} else {
+			progressText = "目標地点  到達";
+		}
+		inputHint = "GOAL矢印の方向へ飛行  →  青いリングを通過";
 		break;
 	case TutorialPhase::Complete:
 		step = 3;
@@ -3970,6 +3985,63 @@ void GamePlayScene::DrawTutorialOverlay(float screenWidth, float screenHeight) {
 		IM_COL32(255, 226, 112, 255), inputHint.c_str());
 	drawList->AddText(nullptr, 12.0f * scale, toGameView(panelX + panelWidth - 97.0f, panelY + 9.0f),
 		IM_COL32(130, 178, 195, 225), "F8: SKIP");
+
+	// 最終目標は、リングが画面外にあっても方向を失わないように常時ナビゲーション
+	// 矢印を出す。画面内ではリングの上、画面外では画面端に GOAL を固定する。
+	if (tutorialPhase_ == TutorialPhase::Navigation && tutorialGoalActive_ && player_) {
+		const Vector3 toGoal = SubtractVector3(tutorialGoalPosition_, player_->GetPosition());
+		const Vector3 forward = NormalizeOrVector3(player_->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
+		const Vector3 right = NormalizeOrVector3({ forward.z, 0.0f, -forward.x }, { 1.0f, 0.0f, 0.0f });
+		float directionX = MyMath::Dot(toGoal, right);
+		float directionY = -MyMath::Dot(toGoal, forward);
+		const float directionLength = std::sqrt(directionX * directionX + directionY * directionY);
+		if (directionLength > 0.001f) {
+			directionX /= directionLength;
+			directionY /= directionLength;
+		} else {
+			directionX = 0.0f;
+			directionY = -1.0f;
+		}
+
+		float indicatorX = screenWidth * 0.5f + directionX * screenWidth * 0.38f;
+		float indicatorY = screenHeight * 0.5f + directionY * screenHeight * 0.32f;
+		bool goalIsOnScreen = false;
+		Camera* navigationCamera = isDebugCameraActive_ ? static_cast<Camera*>(debugFlyCamera_.get()) : camera.get();
+		if (navigationCamera) {
+			const Vector3 goalScreen = MyMath::WorldToScreen(
+				tutorialGoalPosition_, navigationCamera->GetViewProjectionMatrix(), screenWidth, screenHeight);
+			goalIsOnScreen = goalScreen.z >= 0.0f && goalScreen.z <= 1.0f &&
+				goalScreen.x >= 42.0f && goalScreen.x <= screenWidth - 42.0f &&
+				goalScreen.y >= 72.0f && goalScreen.y <= screenHeight - 42.0f;
+			if (goalIsOnScreen) {
+				indicatorX = goalScreen.x;
+				indicatorY = goalScreen.y - 54.0f;
+				directionX = 0.0f;
+				directionY = 1.0f;
+			}
+		}
+
+		indicatorX = std::clamp(indicatorX, 48.0f, screenWidth - 48.0f);
+		indicatorY = std::clamp(indicatorY, 64.0f, screenHeight - 48.0f);
+		const float arrowPulse = 0.82f + 0.18f * std::sin(static_cast<float>(tutorialPhaseFrames_) * 0.18f);
+		const float arrowSize = 25.0f * arrowPulse;
+		const float perpendicularX = -directionY;
+		const float perpendicularY = directionX;
+		const ImVec2 tip = toGameView(indicatorX + directionX * arrowSize, indicatorY + directionY * arrowSize);
+		const ImVec2 left = toGameView(indicatorX - directionX * arrowSize * 0.55f + perpendicularX * arrowSize * 0.62f,
+			indicatorY - directionY * arrowSize * 0.55f + perpendicularY * arrowSize * 0.62f);
+		const ImVec2 rightPoint = toGameView(indicatorX - directionX * arrowSize * 0.55f - perpendicularX * arrowSize * 0.62f,
+			indicatorY - directionY * arrowSize * 0.55f - perpendicularY * arrowSize * 0.62f);
+		const ImU32 goalColor = IM_COL32(74, 238, 255, static_cast<int>(255.0f * arrowPulse));
+		drawList->AddCircleFilled(toGameView(indicatorX, indicatorY), 34.0f * scale, IM_COL32(3, 40, 68, 205), 28);
+		drawList->AddCircle(toGameView(indicatorX, indicatorY), 34.0f * scale, goalColor, 28, 2.5f * scale);
+		drawList->AddTriangleFilled(tip, left, rightPoint, goalColor);
+		const char* goalLabel = goalIsOnScreen ? "GOAL  ↓" : "GOAL";
+		const ImVec2 labelSize = ImGui::CalcTextSize(goalLabel);
+		drawList->AddText(nullptr, 15.0f * scale,
+			toGameView(indicatorX - labelSize.x * 0.5f, indicatorY - 58.0f),
+			IM_COL32(220, 253, 255, 255), goalLabel);
+	}
 #else
 	(void)screenWidth;
 	(void)screenHeight;
