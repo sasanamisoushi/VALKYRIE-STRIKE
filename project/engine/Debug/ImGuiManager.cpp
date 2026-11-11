@@ -5,6 +5,7 @@
 bool ImGuiManager::sIsVisible_ = true;
 ImFont* ImGuiManager::sResultRankFont_ = nullptr;
 ImFont* ImGuiManager::sGameOverFont_ = nullptr;
+ImFont* ImGuiManager::sJapaneseDisplayFont_ = nullptr;
 
 void ImGuiManager::Initialize(HWND hwnd, ID3D12Device *device, int numFramesInFlight, DXGI_FORMAT rtvFormat, ID3D12DescriptorHeap *srvHeap) {
 #ifdef ENABLE_IMGUI
@@ -30,6 +31,13 @@ void ImGuiManager::Initialize(HWND hwnd, ID3D12Device *device, int numFramesInFl
 		"C:\\Windows\\Fonts\\bahnschrift.ttf", 176.0f, nullptr, rankGlyphRanges);
 	if (!sGameOverFont_) {
 		sGameOverFont_ = sResultRankFont_;
+	}
+	// 13px の通常フォントを大きく拡大すると日本語の字形が崩れるため、ステージ名は
+	// 日本語グリフを含む専用サイズで焼き込む。
+	sJapaneseDisplayFont_ = io.Fonts->AddFontFromFileTTF(
+		"C:\\Windows\\Fonts\\msgothic.ttc", 72.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+	if (!sJapaneseDisplayFont_) {
+		sJapaneseDisplayFont_ = io.FontDefault;
 	}
 
 	// ドッキング機能を有効にする
@@ -60,6 +68,7 @@ void ImGuiManager::Shutdown() {
 	ImGui::DestroyContext();
 	sResultRankFont_ = nullptr;
 	sGameOverFont_ = nullptr;
+	sJapaneseDisplayFont_ = nullptr;
 #endif
 }
 

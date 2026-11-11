@@ -22,7 +22,8 @@ public:
     void Draw();
 
     // ミサイルを発射する（GamePlaySceneから呼ばれる）
-    void Shoot(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning, Enemy* target = nullptr);
+    void Shoot(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning,
+        Enemy* target = nullptr, const Vector3* targetPoint = nullptr);
 
     // デバッグ表示用のゲッター
     const std::list<std::unique_ptr<Missile>>& GetMissiles() const { return missiles_; }

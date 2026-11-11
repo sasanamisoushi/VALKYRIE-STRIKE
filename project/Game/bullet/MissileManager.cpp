@@ -1,4 +1,4 @@
-﻿#include "MissileManager.h"
+#include "MissileManager.h"
 #include "Game/enemy/Enemy.h"
 #include "Game/obstacle/Obstacle.h" // 追加
 #include <cmath>
@@ -155,15 +155,22 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
         if (!hitObstacle) {
             for (auto &enemy : enemies) {
                 if (enemy->CanReceiveDamage() && !missile->IsDead()) {
-                    OBB enemyOBB = enemy->GetOBB();
-                    if (MyMath::IsCollision(bulletSphere, enemyOBB)) {
+                    // ボスなどは、船体 OBB の外へ張り出す砲台も個別に判定する。
+                    if (enemy->IsHitBy(bulletSphere)) {
                         missile->OnCollision();
-                        enemy->TakeDamage(1, missile->GetVelocity());
+                        // ボスなど部位ごとの当たり判定を持つ敵へ、実際の着弾位置を渡す。
+                        // 通常敵は Enemy::TakeDamageAt が既存の本体ダメージへ委譲する。
+                        if (missile->HasTargetPoint() && missile->GetTarget() == enemy.get()) {
+                            enemy->TakeDamageAtTargetPoint(1, missile->GetTargetPoint(),
+                                missile->GetPosition(), missile->GetVelocity());
+                        } else {
+                            enemy->TakeDamageAt(1, missile->GetPosition(), missile->GetVelocity());
+                        }
 
                         if (enemy->IsDead()) {
-                            destroyedPositions.push_back(enemy->GetPosition());
+                            destroyedPositions.push_back(enemy->GetAimPosition());
                         } else {
-                            hitPositions.push_back(enemy->GetPosition());
+                            hitPositions.push_back(missile->GetPosition());
                         }
                     }
                 }
@@ -193,10 +200,11 @@ void MissileManager::Draw() {
 	}
 }
 
-void MissileManager::Shoot(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning, Enemy* target) {
+void MissileManager::Shoot(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning,
+    Enemy* target, const Vector3* targetPoint) {
 	// 新しいミサイルを生み出してリストに追加する
 	auto newMissile = std::make_unique<Missile>();
-	newMissile->Initialize(position, velocity, type, tuning, particleManager_, target);
+	newMissile->Initialize(position, velocity, type, tuning, particleManager_, target, targetPoint);
 
 	missiles_.push_back(std::move(newMissile));
 }

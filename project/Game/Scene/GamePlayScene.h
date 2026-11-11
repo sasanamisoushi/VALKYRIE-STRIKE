@@ -27,6 +27,7 @@
 #include "GamePlayUIManager.h"
 #include "EnvironmentRenderer.h"
 #include "AmmoManager.h"
+#include "MultiLockTarget.h"
 #include "Game/base/GameStartTransition.h"
 #include <memory>
 #include <vector>
@@ -90,6 +91,11 @@ private:
 	bool IsAutoFlightMode() const { return IsTitleBackgroundMode(); }
 	void DrawOverlay();
 	void DrawRadar();
+	// 初回プレイ時に、飛行・変形・武装・標的撃破・離脱地点までを案内する。
+	void UpdateTutorial();
+	void DrawTutorialOverlay(float screenWidth, float screenHeight);
+	void BeginTutorialCombat();
+	void ActivateTutorialGoal();
 	void DrawPauseOverlay(float screenWidth, float screenHeight);
 	void SetDebugCameraActive(bool isActive);
 	void ResetDebugCameraToPlayer();
@@ -113,6 +119,9 @@ private:
 	void UpdateWarpExitGate(Camera* renderCamera);
 	void DrawWarpExitGate();
 	void DrawMissionStartOverlay();
+	// ステージの現在の攻略目標と、ボス出現時の警告カットを HUD 上へ表示する。
+	void DrawStageObjectiveOverlay(float screenWidth, float screenHeight);
+	void DrawBossIntroOverlay(float screenWidth, float screenHeight);
 	void DrawGameOverOverlay(float screenWidth, float screenHeight);
 	void DrawAttractDemoOverlay(float screenWidth, float screenHeight);
 	void UpdateAttractDemoSequence();
@@ -315,7 +324,12 @@ private:
 	std::vector<int> enemyRespawnTimers_;
 	EnemyEventManager enemyEventManager_;
 	Enemy *lockedEnemy_ = nullptr;
+	// -1 は敵本体。0 以上は Boss の前方砲台をロックしている。
+	int lockedBossTurretIndex_ = -1;
 	bool bossSpawned_ = false;
+	// ボスを配置してから戦闘を始めるまでの短い警告カット。0 なら通常戦闘。
+	int bossIntroFrames_ = 0;
+	static constexpr int kBossIntroDurationFrames = 120;
 	bool isPaused_ = false;
 	// false: ゲームに戻る / true: タイトルに戻る
 	bool isPauseTitleSelected_ = false;
@@ -386,7 +400,7 @@ private:
 	// JSONファイルが最後に更新された日時を記録する変数
 	std::filesystem::file_time_type lastJsonWriteTime_;
 	Enemy* aimAssistEnemy_ = nullptr;
-	std::vector<Enemy*> multiLockTargets_;
+	std::vector<MultiLockTarget> multiLockTargets_;
 	bool isMultiLockCharging_ = false;
 	int multiLockChargeFrames_ = 0;
 	// シーンを開く操作に使ったクリックを、初弾として扱わない。
@@ -401,6 +415,36 @@ private:
 	float songGauge_ = 100.0f;
 	bool isSongActive_ = false;
 	int songFrame_ = 0;
+
+	// チュートリアルは通常の Gameplay でだけ動作する。各フェーズは実際の
+	// 入力／ゲーム状態で完了するため、時間経過だけでは次へ進まない。
+	enum class TutorialPhase {
+		Disabled,
+		Flight,
+		Gerwalk,
+		LockOn,
+		NormalFire,
+		MultiLock,
+		Combat,
+		Navigation,
+		Complete,
+	};
+	TutorialPhase tutorialPhase_ = TutorialPhase::Disabled;
+	bool tutorialEnabled_ = false;
+	int tutorialPhaseFrames_ = 0;
+	int tutorialForwardFrames_ = 0;
+	bool tutorialAltitudeObserved_ = false;
+	bool tutorialTurnObserved_ = false;
+	bool tutorialGerwalkHoverObserved_ = false;
+	bool tutorialGerwalkStrafeObserved_ = false;
+	bool tutorialLockObserved_ = false;
+	bool tutorialFighterReengaged_ = false;
+	int tutorialNormalShotsFired_ = 0;
+	int tutorialHomingLaunches_ = 0;
+	bool tutorialCombatTargetsSpawned_ = false;
+	bool tutorialGoalActive_ = false;
+	Vector3 tutorialGoalPosition_{};
+	std::unique_ptr<Primitive> tutorialGoalRing_;
 	// スラスターとは独立した、歌発動中だけの機体移動履歴リボン。
 	std::array<std::unique_ptr<Trail>, 3> songFlightTrails_;
 	std::array<std::unique_ptr<Object3d>, 3> songFlightTrailObjects_;

@@ -7,6 +7,12 @@ enum class MissionResultOutcome {
 	Failed,
 };
 
+// リザルトは訓練と本編で、撃破数・達成点・ランクの基準を分ける。
+enum class MissionStage {
+	Standard,
+	Tutorial,
+};
+
 // シーン切り替え後も、直前のミッションで得た数値をリザルト画面へ渡す。
 struct MissionResultData {
 	MissionResultOutcome outcome = MissionResultOutcome::Failed;
@@ -15,6 +21,7 @@ struct MissionResultData {
 	int elapsedFrames = 0;
 	// リリース版の放置デモから渡された結果か。リザルト後は自動でタイトルへ戻す。
 	bool isAttractDemo = false;
+	MissionStage stage = MissionStage::Standard;
 };
 
 class MissionResultStore {

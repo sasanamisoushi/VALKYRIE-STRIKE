@@ -31,10 +31,13 @@ public:
 	static ImFont* GetResultRankFont() { return sResultRankFont_; }
 	// ゲームオーバー演出用。大きな警告文字を輪郭まで鮮明に描くための専用フォント。
 	static ImFont* GetGameOverFont() { return sGameOverFont_; }
+	// ステージ選択など、日本語を大きく表示する画面用のフォント。
+	static ImFont* GetJapaneseDisplayFont() { return sJapaneseDisplayFont_; }
 
 private:
 	static bool sIsVisible_;
 	static ImFont* sResultRankFont_;
 	static ImFont* sGameOverFont_;
+	static ImFont* sJapaneseDisplayFont_;
 };
 

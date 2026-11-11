@@ -208,14 +208,22 @@ void TitleScene::Update() {
 	} else if (canAcceptInput) {
 		const int itemCount = static_cast<int>(MenuItem::Count);
 		int selection = static_cast<int>(selectedMenuItem_);
-		if (input->TriggerKey(DIK_UP) || input->TriggerKey(DIK_W)) {
+		const bool navUp = input->TriggerKey(DIK_UP) || input->TriggerKey(DIK_W) ||
+			input->TriggerControllerInput(ControllerInput::DPadUp) || input->TriggerControllerInput(ControllerInput::LeftStickUp);
+		const bool navDown = input->TriggerKey(DIK_DOWN) || input->TriggerKey(DIK_S) ||
+			input->TriggerControllerInput(ControllerInput::DPadDown) || input->TriggerControllerInput(ControllerInput::LeftStickDown);
+
+		if (navUp) {
 			selection = (selection + itemCount - 1) % itemCount;
-		} else if (input->TriggerKey(DIK_DOWN) || input->TriggerKey(DIK_S)) {
+		} else if (navDown) {
 			selection = (selection + 1) % itemCount;
 		}
 		selectedMenuItem_ = static_cast<MenuItem>(selection);
 
-		if (input->TriggerKey(DIK_SPACE)) {
+		const bool confirm = input->TriggerKey(DIK_SPACE) || input->TriggerKey(DIK_RETURN) ||
+			input->TriggerControllerButton(XINPUT_GAMEPAD_A) || input->TriggerControllerButton(XINPUT_GAMEPAD_START);
+
+		if (confirm) {
 			switch (selectedMenuItem_) {
 			case MenuItem::Start:
 				BeginLaunchSequence();
@@ -440,34 +448,43 @@ void TitleScene::UpdateTitleFlight() {
 
 void TitleScene::UpdateSettingsInput() {
 	Input* input = Input::GetInstance();
-	if (input->TriggerKey(DIK_ESCAPE)) {
+	if (input->TriggerKey(DIK_ESCAPE) || input->TriggerControllerButton(XINPUT_GAMEPAD_B)) {
 		isSettingsOpen_ = false;
 		return;
 	}
 
 	const int itemCount = static_cast<int>(SettingsItem::Count);
 	int selection = static_cast<int>(selectedSettingsItem_);
-	if (input->TriggerKey(DIK_UP) || input->TriggerKey(DIK_W)) {
+	const bool navUp = input->TriggerKey(DIK_UP) || input->TriggerKey(DIK_W) ||
+		input->TriggerControllerInput(ControllerInput::DPadUp) || input->TriggerControllerInput(ControllerInput::LeftStickUp);
+	const bool navDown = input->TriggerKey(DIK_DOWN) || input->TriggerKey(DIK_S) ||
+		input->TriggerControllerInput(ControllerInput::DPadDown) || input->TriggerControllerInput(ControllerInput::LeftStickDown);
+
+	if (navUp) {
 		selection = (selection + itemCount - 1) % itemCount;
-	} else if (input->TriggerKey(DIK_DOWN) || input->TriggerKey(DIK_S)) {
+	} else if (navDown) {
 		selection = (selection + 1) % itemCount;
 	}
 	selectedSettingsItem_ = static_cast<SettingsItem>(selection);
 
-	const bool decrease = input->TriggerKey(DIK_LEFT) || input->TriggerKey(DIK_A);
-	const bool increase = input->TriggerKey(DIK_RIGHT) || input->TriggerKey(DIK_D);
+	const bool decrease = input->TriggerKey(DIK_LEFT) || input->TriggerKey(DIK_A) ||
+		input->TriggerControllerInput(ControllerInput::DPadLeft) || input->TriggerControllerInput(ControllerInput::LeftStickLeft);
+	const bool increase = input->TriggerKey(DIK_RIGHT) || input->TriggerKey(DIK_D) ||
+		input->TriggerControllerInput(ControllerInput::DPadRight) || input->TriggerControllerInput(ControllerInput::LeftStickRight);
+	const bool confirm = input->TriggerKey(DIK_SPACE) || input->TriggerKey(DIK_RETURN) ||
+		input->TriggerControllerButton(XINPUT_GAMEPAD_A);
+
 	GameSettings& settings = GameSettings::GetInstance();
 	if (selectedSettingsItem_ == SettingsItem::MasterVolume && (decrease || increase)) {
 		settings.SetMasterVolume(settings.GetMasterVolume() + (increase ? 0.05f : -0.05f));
 		AudioManager::GetInstance()->SetMasterVolume(settings.GetMasterVolume());
 	} else if (selectedSettingsItem_ == SettingsItem::MouseSensitivity && (decrease || increase)) {
 		settings.SetMouseSensitivity(settings.GetMouseSensitivity() + (increase ? 0.0005f : -0.0005f));
-	} else if (selectedSettingsItem_ == SettingsItem::ControlGuide && (decrease || increase ||
-		input->TriggerKey(DIK_SPACE))) {
+	} else if (selectedSettingsItem_ == SettingsItem::ControlGuide && (decrease || increase || confirm)) {
 		settings.SetControlGuideVisible(!settings.IsControlGuideVisible());
 	}
 
-	if (input->TriggerKey(DIK_SPACE) && selectedSettingsItem_ == SettingsItem::Back) {
+	if (confirm && selectedSettingsItem_ == SettingsItem::Back) {
 		isSettingsOpen_ = false;
 	}
 }

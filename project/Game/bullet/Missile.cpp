@@ -45,11 +45,16 @@ namespace {
 
 }
 
-void Missile::Initialize(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning, ParticleManager* pManager, Enemy* target) {
+void Missile::Initialize(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning,
+    ParticleManager* pManager, Enemy* target, const Vector3* targetPoint) {
 	type_ = type;
 	tuning_ = tuning;
 	particleManager_ = pManager;
 	target_ = target;
+	hasTargetPoint_ = targetPoint != nullptr;
+	if (targetPoint) {
+		targetPoint_ = *targetPoint;
+	}
 
 	object_ = std::make_unique<Object3d>();
 	object_->Initialize(Object3dCommon::GetInstance());
@@ -71,7 +76,8 @@ void Missile::Initialize(const Vector3 &position, const Vector3 &velocity, Missi
 	if (type_ == MissileType::MissileWithTrail) {
 		Vector3 forward = NormalizeOr(velocity_, { 0.0f, 0.0f, 1.0f });
 		if (target_ && !target_->IsDead()) {
-			Vector3 toTarget = Subtract(target_->GetPosition(), position_);
+            const Vector3 targetPosition = hasTargetPoint_ ? targetPoint_ : target_->GetAimPosition();
+			Vector3 toTarget = Subtract(targetPosition, position_);
 			forward = NormalizeOr(toTarget, forward);
 			const float speed = Length(velocity_);
 			velocity_ = Scale(forward, speed > 0.001f ? speed : (std::max)(0.01f, tuning_.speed));
@@ -102,8 +108,8 @@ void Missile::Update(Camera *camera) {
 		if (target_->IsDead()) {
 			target_ = nullptr;
 		} else {
-			Vector3 targetPos = target_->GetPosition();
-			targetPos.y += target_->GetCollisionRadius() * 0.3f;
+            Vector3 targetPos = hasTargetPoint_ ? targetPoint_ : target_->GetAimPosition();
+			if (!hasTargetPoint_ && !target_->IsBoss()) targetPos.y += target_->GetCollisionRadius() * 0.3f;
 			const Vector3 toTarget = Subtract(targetPos, position_);
 			const float distanceToTarget = Length(toTarget);
 			const Vector3 desiredDirection = NormalizeOr(toTarget, NormalizeOr(velocity_, { 0.0f, 0.0f, 1.0f }));
@@ -129,7 +135,7 @@ void Missile::Update(Camera *camera) {
 			if (target_->IsDead()) {
 				target_ = nullptr;
 			} else {
-				targetPos = target_->GetPosition();
+                targetPos = hasTargetPoint_ ? targetPoint_ : target_->GetAimPosition();
 				hasTarget = true;
 			}
 		}

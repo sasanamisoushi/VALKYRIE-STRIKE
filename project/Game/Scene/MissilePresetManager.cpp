@@ -281,7 +281,8 @@ void MissilePresetManager::DrawMissileSettingsUI() {
 #endif
 }
 
-bool MissilePresetManager::FirePlayerMissile(MissileType type, Enemy *target, float horizontalOffset, bool consumeAmmo) {
+bool MissilePresetManager::FirePlayerMissile(MissileType type, Enemy *target, float horizontalOffset, bool consumeAmmo,
+	const Vector3* targetPoint) {
 	if (!scene_->player_ || !scene_->missileManager_) {
 		return false;
 	}
@@ -304,15 +305,17 @@ bool MissilePresetManager::FirePlayerMissile(MissileType type, Enemy *target, fl
 	Vector3 fireDirection = forward;
 	// ロックオン対象がある弾は、形態を問わず最初から対象へ向けて発射する。
 	// 通常弾も飛行中に弱く追尾するため、ファイター形態で照準がわずかに遅れても外れない。
-	const bool shouldAim = target != nullptr;
+	const bool shouldAim = target != nullptr || targetPoint != nullptr;
 
 	if (shouldAim) {
-		Vector3 targetPosition = target->GetPosition();
-		float collisionRadius = 1.0f;
-		try {
-			collisionRadius = target->GetCollisionRadius();
-		} catch (...) {}
-		targetPosition.y += collisionRadius * 0.3f;
+		Vector3 targetPosition = targetPoint ? *targetPoint : target->GetAimPosition();
+		if (!targetPoint) {
+			float collisionRadius = 1.0f;
+			try {
+				collisionRadius = target->GetCollisionRadius();
+			} catch (...) {}
+			targetPosition.y += collisionRadius * 0.3f;
+		}
 		fireDirection = NormalizeOrVector3(SubtractVector3(targetPosition, muzzlePos), forward);
 	}
 
@@ -323,7 +326,7 @@ bool MissilePresetManager::FirePlayerMissile(MissileType type, Enemy *target, fl
 		fireDirection.z * (std::max)(0.01f, tuning.speed) + playerVelocity.z,
 	};
 
-	scene_->missileManager_->Shoot(muzzlePos, velocity, type, tuning, target);
+	scene_->missileManager_->Shoot(muzzlePos, velocity, type, tuning, target, targetPoint);
 	return true;
 }
 

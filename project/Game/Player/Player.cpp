@@ -373,6 +373,13 @@ void Player::Initialize(const std::string &modelName) {
 	actionAnimations_.clear();
     // モードパラメータの初期化
     // ファイター（ミサイル乱射特化）
+	// 高速・慣性重視。Wでの加速と回避の伸びを明確にする。
+	modeParams_[0].maxMoveSpeed = 0.24f;
+	modeParams_[0].moveAcceleration = 0.020f;
+	modeParams_[0].moveDamping = 0.96f;
+	modeParams_[0].pitchSpeed = 0.018f;
+	modeParams_[0].yawSpeed = 0.017f;
+	modeParams_[0].rollSpeed = 0.030f;
     modeParams_[0].canGuard = false;
     modeParams_[0].canMelee = false;
     modeParams_[0].maxMultiLock = 8;
@@ -380,6 +387,13 @@ void Player::Initialize(const std::string &modelName) {
     modeParams_[0].maxLockOnDistance = 200.0f;
 
     // ガウォーク（広角ロック標準形態）
+	// 低速・即停止重視。横移動と上下移動で照準を維持する役割を明確にする。
+	modeParams_[1].maxMoveSpeed = 0.14f;
+	modeParams_[1].moveAcceleration = 0.030f;
+	modeParams_[1].moveDamping = 0.76f;
+	modeParams_[1].pitchSpeed = 0.020f;
+	modeParams_[1].yawSpeed = 0.024f;
+	modeParams_[1].rollSpeed = 0.010f;
     modeParams_[1].canGuard = true;
     modeParams_[1].canMelee = false;
     modeParams_[1].maxMultiLock = 4;
@@ -736,7 +750,13 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
     if (allowInput) {
         const PlayerMode previousMode = currentMode_;
         if (input->TriggerAction(PlayerAction::TransformFighter)) ChangeMode(PlayerMode::Fighter);
-        if (input->TriggerAction(PlayerAction::TransformGerwalk)) ChangeMode(PlayerMode::Gerwalk);
+        if (input->TriggerAction(PlayerAction::TransformGerwalk) ||
+            input->TriggerControllerButton(XINPUT_GAMEPAD_DPAD_LEFT)) ChangeMode(PlayerMode::Gerwalk);
+        if (input->TriggerAction(PlayerAction::TransformBattroid)) ChangeMode(PlayerMode::Battroid);
+        if (input->TriggerControllerButton(XINPUT_GAMEPAD_Y)) {
+            PlayerMode nextMode = static_cast<PlayerMode>((static_cast<int>(currentMode_) + 1) % 3);
+            ChangeMode(nextMode);
+        }
         modeChanged = previousMode != currentMode_;
         if (modeChanged && !advanceState) {
             // 停止中は補間を進めないため、選んだ形態のポーズへ即座にスナップする。
@@ -1399,7 +1419,13 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 	auto input = Input::GetInstance();
 
     if (input->TriggerAction(PlayerAction::TransformFighter)) ChangeMode(PlayerMode::Fighter);
-    if (input->TriggerAction(PlayerAction::TransformGerwalk)) ChangeMode(PlayerMode::Gerwalk);
+    if (input->TriggerAction(PlayerAction::TransformGerwalk) ||
+        input->TriggerControllerButton(XINPUT_GAMEPAD_DPAD_LEFT)) ChangeMode(PlayerMode::Gerwalk);
+    if (input->TriggerAction(PlayerAction::TransformBattroid)) ChangeMode(PlayerMode::Battroid);
+    if (input->TriggerControllerButton(XINPUT_GAMEPAD_Y)) {
+        PlayerMode nextMode = static_cast<PlayerMode>((static_cast<int>(currentMode_) + 1) % 3);
+        ChangeMode(nextMode);
+    }
 
     PlayerModeParams& p = modeParams_[static_cast<int>(currentMode_)];
 
@@ -1413,6 +1439,9 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 	if (!isBattroidWalking_) {
 		battroidWalkTime_ = 0.0f;
 	}
+
+	const StickState leftStick = input->GetControllerLeftStick();
+	const StickState rightStick = input->GetControllerRightStick();
 
 	float pitch = 0.0f;
 	float yaw = 0.0f;
@@ -1428,6 +1457,20 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 		} else if (input->TriggerAction(PlayerAction::DodgeRight)) {
 			dodgeTimer_ = Player::kDodgeDurationFrames;
 			dodgeDirection_ = 1.0f;
+		}
+	}
+
+	// 右スティック：カメラ操作・視点移動（全形態共通で視点・旋回操作）
+	if (!rotationLocked) {
+		if (std::abs(rightStick.x) > 0.0001f) {
+			yaw += rightStick.x * p.yawSpeed * 1.5f;
+		}
+		if (std::abs(rightStick.y) > 0.0001f) {
+			if (usesDetachedCameraPitch) {
+				cameraPitchDelta -= rightStick.y * p.pitchSpeed * 1.5f;
+			} else {
+				pitch -= rightStick.y * p.pitchSpeed * 0.75f;
+			}
 		}
 	}
 
@@ -1448,9 +1491,25 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 	}
 	if (!rotationLocked && input->PushAction(PlayerAction::TurnRight)) yaw += p.yawSpeed;
 	if (!rotationLocked && input->PushAction(PlayerAction::TurnLeft)) yaw -= p.yawSpeed;
+	// ファイターでは A / D を機体の旋回入力としても使う。ガウォークでは同じ
+	// 入力が横移動になるため、形態を切り替えた時に操作目的がはっきり変わる。
+	if (!rotationLocked && currentMode_ == PlayerMode::Fighter) {
+		if (input->PushAction(PlayerAction::DodgeLeft)) yaw -= p.yawSpeed;
+		if (input->PushAction(PlayerAction::DodgeRight)) yaw += p.yawSpeed;
+	}
 	if (!usesDetachedCameraPitch) {
 		if (!rotationLocked && input->PushAction(PlayerAction::RollRight)) roll -= p.rollSpeed;
 		if (!rotationLocked && input->PushAction(PlayerAction::RollLeft)) roll += p.rollSpeed;
+	}
+
+	// 左スティック（ファイター時）：ピッチ（Y軸）およびロール（X軸）
+	if (!rotationLocked && currentMode_ == PlayerMode::Fighter) {
+		if (std::abs(leftStick.y) > 0.0001f) {
+			pitch -= leftStick.y * p.pitchSpeed;
+		}
+		if (std::abs(leftStick.x) > 0.0001f) {
+			roll -= leftStick.x * p.rollSpeed;
+		}
 	}
 
 	// マウス入力による回転（視点・機体回転）
@@ -1485,29 +1544,33 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 	Vector3 localMove = { 0.0f, 0.0f, 0.0f };
 
 	if (currentMode_ == PlayerMode::Fighter) {
-		// ファイター形態：常に前進。平行移動はできない。旋回はピッチ/ロールがメイン
+		// ファイター形態：常に前進。RTで加速、LTで減速
 		localMove.z += 0.5f; // 基本前進推力
-		if (moveForward) localMove.z += 1.0f; // 加速
-		if (moveBackward) localMove.z -= 0.3f; // 減速
-		
-		if (!rotationLocked && moveUp) pitch -= p.pitchSpeed;
-		if (!rotationLocked && moveDown) pitch += p.pitchSpeed;
+		if (moveForward) localMove.z += 1.0f; // 加速 (RT)
+		if (moveBackward) localMove.z -= 0.3f; // 減速 (LT)
 
 	} else if (currentMode_ == PlayerMode::Gerwalk) {
 		// ガウォーク形態：全方位へのカニ歩き、ホバリング
-		if (moveForward) localMove.z += 1.0f;
-		if (moveBackward) localMove.z -= 1.0f;
+		// 左スティックで前後左右へのストレイフ移動
+		if (std::abs(leftStick.x) > 0.0001f) localMove.x += leftStick.x;
+		if (std::abs(leftStick.y) > 0.0001f) localMove.z += leftStick.y;
+		if (moveForward) localMove.z += 1.0f; // RT: 前進
+		if (moveBackward) localMove.z -= 1.0f; // LT: 後退
 		if (input->PushAction(PlayerAction::DodgeLeft)) localMove.x -= 1.0f;
 		if (input->PushAction(PlayerAction::DodgeRight)) localMove.x += 1.0f;
-		if (moveUp) localMove.y += 1.0f;
-		if (moveDown) localMove.y -= 1.0f;
+		if (moveUp) localMove.y += 1.0f;       // A: 上昇
+		if (moveDown) localMove.y -= 1.0f;     // L3: 下降
 		
 	} else if (currentMode_ == PlayerMode::Battroid) {
-		// バトロイド形態：ガウォークと同じ全方位移動
-		if (moveForward) localMove.z += 1.0f;
-		if (moveBackward) localMove.z -= 1.0f;
-		if (moveUp) localMove.y += 1.0f;
-		if (moveDown) localMove.y -= 1.0f;
+		// バトロイド形態：全方位移動
+		if (std::abs(leftStick.x) > 0.0001f) localMove.x += leftStick.x;
+		if (std::abs(leftStick.y) > 0.0001f) localMove.z += leftStick.y;
+		if (moveForward) localMove.z += 1.0f; // RT
+		if (moveBackward) localMove.z -= 1.0f; // LT
+		if (input->PushAction(PlayerAction::DodgeLeft)) localMove.x -= 1.0f;
+		if (input->PushAction(PlayerAction::DodgeRight)) localMove.x += 1.0f;
+		if (moveUp) localMove.y += 1.0f;       // A: 上昇
+		if (moveDown) localMove.y -= 1.0f;     // L3: 下降
 	}
 
 	Quaternion qPitch = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, pitch);

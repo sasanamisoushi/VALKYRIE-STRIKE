@@ -158,14 +158,18 @@ void GameOverScene::Update() {
 		}
 	} else {
 		transitionFadeAlpha_ = (std::max)(0.0f, transitionFadeAlpha_ - 1.0f / 24.0f);
-		const bool isAttractDemoCancelled = isAttractDemoResult_ && Input::GetInstance()->TriggerKey(DIK_TAB);
+		Input* input = Input::GetInstance();
+		const bool isAttractDemoCancelled = isAttractDemoResult_ &&
+			(input->TriggerKey(DIK_TAB) || input->TriggerControllerButton(XINPUT_GAMEPAD_BACK));
 		if (isAttractDemoCancelled) {
 			TitleScene::StopAttractDemo();
 		}
 		// アトラクトは TAB が押されるまで終了しない。リザルト後はいったんタイトルへ戻り、
 		// タイトルから次のゲームプレイを開始する。
+		const bool confirm = input->TriggerKey(DIK_SPACE) || input->TriggerKey(DIK_RETURN) ||
+			input->TriggerControllerButton(XINPUT_GAMEPAD_A) || input->TriggerControllerButton(XINPUT_GAMEPAD_START);
 		const bool shouldReturnToTitle =
-			(!isAttractDemoResult_ && Input::GetInstance()->TriggerKey(DIK_SPACE)) ||
+			(!isAttractDemoResult_ && confirm) ||
 			isAttractDemoCancelled ||
 			(isAttractDemoResult_ && resultAnimationFrame_ >= 300);
 		if (transitionFadeAlpha_ <= 0.0f && shouldReturnToTitle) {

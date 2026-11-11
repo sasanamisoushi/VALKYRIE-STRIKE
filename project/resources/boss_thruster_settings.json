@@ -1,0 +1,92 @@
+{
+    "bossPosition": [
+        0.0,
+        3.3670880794525146,
+        30.0
+    ],
+    "tuning": {
+        "forwardTurretAimSlide": 0.6200000047683716,
+        "forwardTurretSlideAmount": 0.18000000715255737,
+        "forwardTurretSlideSpeed": 0.06499999761581421,
+        "forwardTurretsVerticalSlide": false,
+        "mainTurretMaxPitch": 0.5199999809265137,
+        "mainTurretPitchFollow": 0.09000000357627869,
+        "mainTurretPitchTracking": true,
+        "mainTurretYawFollow": 0.09000000357627869,
+        "mainTurretYawTracking": true,
+        "rearThrusterBrightness": 0.8999999761581421,
+        "rearThrusterCount": 12,
+        "rearThrusterFlareRadius": 0.41999998688697815,
+        "rearThrusterIndividualOffsets": [
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ],
+            [
+                0.0,
+                0.0,
+                0.0
+            ]
+        ],
+        "rearThrusterLength": 2.549999952316284,
+        "rearThrusterOffset": [
+            0.019999999552965164,
+            0.0,
+            0.0
+        ],
+        "rearThrusterRadius": 0.27000001072883606,
+        "rearThrusterSpacing": 0.6200000047683716
+    },
+    "version": 1
+}

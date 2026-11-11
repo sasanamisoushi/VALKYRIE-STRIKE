@@ -376,6 +376,12 @@ void EnemyBulletManager::ShootGroundBeam(const Vector3 &position, const Vector3 
     ShootConfigured(position, velocity, { 0.30f, 0.30f, 5.6f }, 0.60f, 1, 105, "GroundBeamCore", true);
 }
 
+void EnemyBulletManager::ShootBossGroundBeam(const Vector3 &position, const Vector3 &velocity) {
+    // 地上敵の砲塔ビームと同じ発光コア／スラスター残光を使い、ボス主砲として
+    // 太さ・長さ・当たり判定を拡大する。
+    ShootConfigured(position, velocity, { 0.95f, 0.95f, 16.0f }, 1.70f, 2, 150, "BossGroundBeam", true);
+}
+
 void EnemyBulletManager::ShootMissile(const Vector3 &position, const Vector3 &velocity) {
     for (auto &bullet : bullets_) {
         if (bullet.isDead) { // 使用可能な弾を検索
@@ -454,7 +460,8 @@ void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 
 
             bullet.object->SetModel(modelName);
             bullet.object->SetScale(scale);
-            if (std::string(modelName) == "BossBeam" || std::string(modelName) == "GroundBeamCore") {
+            if (std::string(modelName) == "BossBeam" || std::string(modelName) == "GroundBeamCore" ||
+                std::string(modelName) == "BossGroundBeam") {
                 bullet.object->SetQuaternionRotate(MakeBeamRotation(velocity));
             } else {
                 bullet.object->SetQuaternionRotate({ 0.0f, 0.0f, 0.0f, 1.0f });
@@ -464,6 +471,8 @@ void EnemyBulletManager::ShootConfigured(const Vector3 &position, const Vector3 
                     bullet.object->GetModel()->SetColor({ 1.0f, 1.0f, 0.0f, 1.0f });
                 } else if (std::string(modelName) == "GroundBeamCore") {
                     bullet.object->GetModel()->SetColor({ 0.10f, 0.90f, 1.0f, 1.0f });
+                } else if (std::string(modelName) == "BossGroundBeam") {
+                    bullet.object->GetModel()->SetColor({ 0.28f, 0.96f, 1.0f, 1.0f });
                 }
             }
             bullet.object->SetTranslate(position);

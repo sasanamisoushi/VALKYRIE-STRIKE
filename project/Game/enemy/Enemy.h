@@ -40,18 +40,29 @@ public:
 
     // ミサイルに狙われるためのゲッター・セッター
     Vector3 GetPosition() const { return position_; }
+    // 誘導弾・カメラが狙う位置。通常敵は本体座標、特殊な原点を持つ敵はオーバーライドする。
+    virtual Vector3 GetAimPosition() const { return position_; }
     virtual void SetPosition(const Vector3 &position) { position_ = position; }
     Vector3 GetRotation() const { return rotation_; }
     Vector3 GetScale() const { return scale_; }
 
-    Vector3 GetWorldHalfExtents() const;
-    float GetCollisionRadius() const;
-    OBB GetOBB() const;
+    virtual Vector3 GetWorldHalfExtents() const;
+    virtual float GetCollisionRadius() const;
+    virtual OBB GetOBB() const;
+    // 通常敵は本体 OBB のみを使う。複数部位を持つ敵はこれを拡張して、
+    // 本体から離れた可動部にも弾を当てられる。
+    virtual bool IsHitBy(const Sphere& attackSphere) const;
 
     // ミサイルと衝突したときの処理
     void OnCollision();
     // hitDirection は攻撃側から被弾点へ向かう単位方向。未指定の近接攻撃ではゼロベクトル。
     virtual void TakeDamage(int damage, const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f });
+    // 弾の着弾位置を利用できる敵向け。部位判定を持たない敵は従来どおり本体へダメージを受ける。
+    virtual void TakeDamageAt(int damage, const Vector3 &hitPosition,
+        const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f });
+    // ロックオン点を持つ弾用。通常敵は実際の着弾位置で従来どおり処理する。
+    virtual void TakeDamageAtTargetPoint(int damage, const Vector3& targetPoint,
+        const Vector3& hitPosition, const Vector3& hitDirection = { 0.0f, 0.0f, 0.0f });
     // 撃破演出中など、当たり判定には残るが追加ダメージを受け付けない敵のための問い合わせ。
     virtual bool CanReceiveDamage() const { return !isDead_; }
     void StartChasingPlayer();
@@ -67,6 +78,8 @@ public:
     // 回転
     void SetRotation(const Vector3 &rotation);
     void SetFlightPath(const std::vector<Vector3> &points, bool loop, float speed);
+    // チュートリアル用の標的は、反撃も追尾もしない静止ターゲットとして扱う。
+    void SetTrainingTarget(bool enabled) { isTrainingTarget_ = enabled; }
 
     // 全敵の飛行ルート表示を切り替える（デバッグ表示用）。
     static void SetPathVisualizationEnabled(bool enabled) { pathVisualizationEnabled_ = enabled; }
@@ -116,6 +129,7 @@ protected:
     size_t flightPathSegmentIndex_ = 0;
     float flightPathSegmentT_ = 0.0f;
     bool isChasingPlayer_ = false;
+	bool isTrainingTarget_ = false;
     int hp_ = 2;
 
     // 死んだかどうかのフラグ

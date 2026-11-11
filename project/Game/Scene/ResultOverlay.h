@@ -9,21 +9,35 @@
 namespace ResultOverlay {
 
 inline int CalculateBattleScore(const MissionResultData& result) {
-	return result.defeatedEnemyCount * 1500;
+	// 訓練は3機だけなので、本編と同じ撃破単価のままではランクが過剰になる。
+	const int pointsPerEnemy = result.stage == MissionStage::Tutorial ? 600 : 1500;
+	return result.defeatedEnemyCount * pointsPerEnemy;
 }
 
 inline int CalculateSurvivalScore(const MissionResultData& result) {
-	// 生還できたミッション自体の達成点。装甲残量は下の ARMOR BONUS だけで評価する。
-	return result.outcome == MissionResultOutcome::Clear ? 4500 : 0;
+	if (result.outcome != MissionResultOutcome::Clear) {
+		return 0;
+	}
+	return result.stage == MissionStage::Tutorial ? 1200 : 4500;
 }
 
 inline int CalculateArmorBonus(const MissionResultData& result) {
-	// HP 最大値は5。残した装甲1につき1000点を加算する。
-	return (std::clamp)(result.remainingHp, 0, 5) * 1000;
+	const int pointsPerArmor = result.stage == MissionStage::Tutorial ? 250 : 1000;
+	return (std::clamp)(result.remainingHp, 0, 5) * pointsPerArmor;
 }
 
-inline const char* CalculateRank(int totalScore, MissionResultOutcome outcome) {
-	if (outcome == MissionResultOutcome::Failed) {
+inline const char* CalculateRank(int totalScore, const MissionResultData& result) {
+	if (result.stage == MissionStage::Tutorial) {
+		if (result.outcome == MissionResultOutcome::Failed) {
+			return totalScore >= 1200 ? "C" : "D";
+		}
+		if (totalScore >= 4000) return "SS";
+		if (totalScore >= 3500) return "S";
+		if (totalScore >= 3000) return "A";
+		if (totalScore >= 2400) return "B";
+		return "C";
+	}
+	if (result.outcome == MissionResultOutcome::Failed) {
 		return totalScore >= 6000 ? "C" : "D";
 	}
 	if (totalScore >= 18000) return "SS";
@@ -63,6 +77,7 @@ inline void Draw(const MissionResultData& result, int animationFrame, float uiMa
 	}
 
 	const bool isClear = result.outcome == MissionResultOutcome::Clear;
+	const bool isTutorial = result.stage == MissionStage::Tutorial;
 	const ImU32 accent = isClear ? IM_COL32(66, 235, 255, 255) : IM_COL32(255, 96, 148, 255);
 	const ImU32 accentDim = isClear ? IM_COL32(22, 110, 150, 210) : IM_COL32(130, 30, 75, 220);
 	const ImU32 panelColor = IM_COL32(2, 16, 37, 205);
@@ -74,7 +89,10 @@ inline void Draw(const MissionResultData& result, int animationFrame, float uiMa
 	const int survivalScore = CalculateSurvivalScore(result);
 	const int armorBonus = CalculateArmorBonus(result);
 	const int totalScore = battleScore + survivalScore + armorBonus;
-	const char* rank = CalculateRank(totalScore, result.outcome);
+	const char* rank = CalculateRank(totalScore, result);
+	const int maxBattleScore = isTutorial ? 1800 : 12000;
+	const int maxMissionScore = isTutorial ? 1200 : 4500;
+	const int maxArmorBonus = isTutorial ? 1250 : 5000;
 	const float scoreAnimation = ClampAnimation(animationFrame, 4, 42);
 	const float rankGaugeAnimation = ClampAnimation(animationFrame, 54, 112);
 	const bool isRankRevealed = rankGaugeAnimation >= 1.0f;
@@ -96,8 +114,9 @@ inline void Draw(const MissionResultData& result, int animationFrame, float uiMa
 	drawList->AddLine(ImVec2(contentLeft, headerY + 46.0f), ImVec2(contentRight - 130.0f, headerY + 46.0f), accentDim, 1.0f);
 	// 見出しは背景の発光線と重ならない暗いプレートを敷いて可読性を確保する。
 	drawList->AddRectFilled(ImVec2(contentLeft - 12.0f, headerY - 5.0f), ImVec2(contentLeft + 286.0f, headerY + 37.0f), IM_COL32(1, 13, 31, 210), 3.0f);
-	drawList->AddText(nullptr, 34.0f, ImVec2(contentLeft + 2.0f, headerY + 2.0f), IM_COL32(0, 7, 18, 255), "MISSION RESULT");
-	drawList->AddText(nullptr, 34.0f, ImVec2(contentLeft, headerY), titleColor, "MISSION RESULT");
+	const char* resultTitle = isTutorial ? "TRAINING RESULT" : "MISSION RESULT";
+	drawList->AddText(nullptr, 34.0f, ImVec2(contentLeft + 2.0f, headerY + 2.0f), IM_COL32(0, 7, 18, 255), resultTitle);
+	drawList->AddText(nullptr, 34.0f, ImVec2(contentLeft, headerY), titleColor, resultTitle);
 	// 失敗リザルトではミッション失敗よりも先に、ゲームオーバーであることを明確に伝える。
 	const char* outcomeLabel = isClear ? "MISSION COMPLETE" : "GAME OVER";
 	const float outcomeFontSize = isClear ? 18.0f : 26.0f;
@@ -105,9 +124,9 @@ inline void Draw(const MissionResultData& result, int animationFrame, float uiMa
 	drawList->AddText(nullptr, outcomeFontSize, ImVec2(contentRight - outcomeSize.x, headerY + (isClear ? 11.0f : 6.0f)), accent, outcomeLabel);
 
 	drawList->AddRectFilled(ImVec2(contentLeft, panelTop), ImVec2(scorePanelRight, panelBottom), panelColor, 5.0f);
-	drawList->AddRect(ImVec2(contentLeft, panelTop), ImVec2(scorePanelRight, panelBottom), accentDim, 5.0f, 0, 2.0f);
+	drawList->AddRect(ImVec2(contentLeft, panelTop), ImVec2(scorePanelRight, panelBottom), accentDim, 5.0f, 2.0f, 0);
 	drawList->AddRectFilled(ImVec2(rankPanelLeft, panelTop), ImVec2(contentRight, panelBottom), panelColor, 5.0f);
-	drawList->AddRect(ImVec2(rankPanelLeft, panelTop), ImVec2(contentRight, panelBottom), accentDim, 5.0f, 0, 2.0f);
+	drawList->AddRect(ImVec2(rankPanelLeft, panelTop), ImVec2(contentRight, panelBottom), accentDim, 5.0f, 2.0f, 0);
 
 	const float statLeft = contentLeft + 28.0f;
 	const float statRight = scorePanelRight - 28.0f;
@@ -120,9 +139,9 @@ inline void Draw(const MissionResultData& result, int animationFrame, float uiMa
 		drawList->AddRectFilled(ImVec2(statLeft, y + 32.0f), ImVec2(statLeft + (statRight - statLeft) * std::clamp(ratio, 0.0f, 1.0f), y + 39.0f), accent, 2.0f);
 	};
 
-	drawScoreLine("BATTLE SCORE", displayedBattleScore, panelTop + 42.0f, scoreAnimation * static_cast<float>(battleScore) / 12000.0f);
-	drawScoreLine("MISSION SCORE", displayedSurvivalScore, panelTop + 132.0f, scoreAnimation * static_cast<float>(survivalScore) / 4500.0f);
-	drawScoreLine("ARMOR BONUS", displayedArmorBonus, panelTop + 222.0f, scoreAnimation * static_cast<float>(armorBonus) / 5000.0f);
+	drawScoreLine(isTutorial ? "TARGET SCORE" : "BATTLE SCORE", displayedBattleScore, panelTop + 42.0f, scoreAnimation * static_cast<float>(battleScore) / static_cast<float>(maxBattleScore));
+	drawScoreLine(isTutorial ? "TRAINING CLEAR" : "MISSION SCORE", displayedSurvivalScore, panelTop + 132.0f, scoreAnimation * static_cast<float>(survivalScore) / static_cast<float>(maxMissionScore));
+	drawScoreLine("ARMOR BONUS", displayedArmorBonus, panelTop + 222.0f, scoreAnimation * static_cast<float>(armorBonus) / static_cast<float>(maxArmorBonus));
 	drawList->AddLine(ImVec2(statLeft, panelTop + 321.0f), ImVec2(statRight, panelTop + 321.0f), accent, 2.0f);
 	drawList->AddText(nullptr, 20.0f, ImVec2(statLeft, panelTop + 340.0f), accent, "TOTAL SCORE");
 	char totalText[32]{};
@@ -181,7 +200,7 @@ inline void Draw(const MissionResultData& result, int animationFrame, float uiMa
 	const ImVec2 footerMin((width - footerSize.x) * 0.5f - 32.0f, height * 0.835f);
 	const ImVec2 footerMax((width + footerSize.x) * 0.5f + 32.0f, height * 0.835f + 48.0f);
 	drawList->AddRectFilled(footerMin, footerMax, IM_COL32(1, 14, 33, 228), 4.0f);
-	drawList->AddRect(footerMin, footerMax, accentDim, 4.0f, 0, 2.0f);
+	drawList->AddRect(footerMin, footerMax, accentDim, 4.0f, 2.0f, 0);
 	drawList->AddText(nullptr, footerFontSize, ImVec2((width - footerSize.x) * 0.5f, footerMin.y + 10.0f), valueColor, footer);
 
 	// ImGuiのリザルトUIはポストエフェクトの後段に描かれる。シャットダウン中に

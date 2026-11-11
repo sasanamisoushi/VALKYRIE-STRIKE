@@ -26,6 +26,7 @@ public:
     void ShootHeavyCannon(const Vector3 &position, const Vector3 &velocity);
     void ShootBeam(const Vector3 &position, const Vector3 &velocity);
     void ShootGroundBeam(const Vector3 &position, const Vector3 &velocity);
+    void ShootBossGroundBeam(const Vector3 &position, const Vector3 &velocity);
     void ShootMissile(const Vector3 &position, const Vector3 &velocity);
 
     // 弾1発のデータ構造

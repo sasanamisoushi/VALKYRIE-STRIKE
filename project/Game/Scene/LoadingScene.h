@@ -5,6 +5,7 @@
 #include "3D/Model.h"
 #include "engine/Camera/Camera.h"
 #include "Game/base/BaseScene.h"
+#include "Game/base/GameStartTransition.h"
 #include "Game/Player/Player.h"
 #include <array>
 #include <chrono>
@@ -50,6 +51,9 @@ private:
 	void UpdateWarpFlight(float elapsedSeconds, float dt);
 	void UpdateSpeedLines(float dt);
 	void UpdatePlasmaParticles(float dt);
+	void UpdateStageSelectionInput();
+	void DrawStageSelectOverlay();
+	Vector4 GetWarpThemeColor(float alpha = 1.0f) const;
 
 	// 3Dワープトンネル（外側ネビュラ星屑シリンダー＆内側スピードラインシリンダー）
 	std::unique_ptr<Object3d> tunnelObject_;
@@ -93,6 +97,10 @@ private:
 	static constexpr int kWhiteInFrames = 25;       // ホワイトイン完了までのフレーム数（約0.4秒）
 	static constexpr int kExitWhiteOutFrames = 35;  // 終了ホワイトアウトまでのフレーム数（約0.6秒）
 	int exitFrames_ = 0;
+
+	// ワープ航行中に選択する出撃先。確定するまで本編へのホワイトアウトを開始しない。
+	GameStartStage selectedStage_ = GameStartStage::Tutorial;
+	bool stageSelectionConfirmed_ = false;
 
 	// 非同期ロード関連
 	std::unique_ptr<BaseScene> preparedScene_;

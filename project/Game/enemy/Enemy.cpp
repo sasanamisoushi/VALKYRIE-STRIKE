@@ -308,6 +308,10 @@ OBB Enemy::GetOBB() const {
     return obb;
 }
 
+bool Enemy::IsHitBy(const Sphere& attackSphere) const {
+    return MyMath::IsCollision(attackSphere, GetOBB());
+}
+
 // 当たった時の処理
 void Enemy::OnCollision() {
     EnemyActionController{}.Destroy(*this);
@@ -315,6 +319,15 @@ void Enemy::OnCollision() {
 
 void Enemy::TakeDamage(int damage, const Vector3 &) {
     EnemyActionController{}.TakeDamage(*this, damage);
+}
+
+void Enemy::TakeDamageAt(int damage, const Vector3 &, const Vector3 &hitDirection) {
+    TakeDamage(damage, hitDirection);
+}
+
+void Enemy::TakeDamageAtTargetPoint(int damage, const Vector3&, const Vector3& hitPosition,
+    const Vector3& hitDirection) {
+    TakeDamageAt(damage, hitPosition, hitDirection);
 }
 
 void Enemy::StartChasingPlayer() {
@@ -401,6 +414,14 @@ void Enemy::BuildPathVisualizers() {
 
 void Enemy::UpdateAI(const Vector3 &playerPos, EnemyBulletManager *bulletManager) {
     flightTimer_++;
+
+    // 訓練標的はプレイヤーを追わず、攻撃も行わない。射撃とロックオンだけに
+    // 集中できるため、本編の敵AIがチュートリアルを妨げない。
+    if (isTrainingTarget_) {
+        velocity_ = { 0.0f, 0.0f, 0.0f };
+        currentSpeed_ = 0.0f;
+        return;
+    }
 
     if (hasFlightPath_ && !isChasingPlayer_) {
         UpdateFlightPathAI(playerPos, bulletManager);

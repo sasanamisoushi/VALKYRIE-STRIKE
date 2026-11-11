@@ -739,6 +739,254 @@ bool SimulationManager::ApplySimulationAction(const std::string &filePath, const
 	return true;
 }
 
+bool SimulationManager::SaveBossThrusterSettings(const std::string& filePath) {
+	if (!scene_ || !scene_->uiManager_) return false;
+
+	// 出現中のボスがいる場合は、最新のボスの位置とチューニングを即座に取り込む
+	for (const auto& enemy : scene_->enemies_) {
+		if (auto* boss = dynamic_cast<Boss*>(enemy.get()); boss && !boss->IsDead()) {
+			const Vector3 pos = boss->GetPosition();
+			scene_->uiManager_->bossBattlePosition_[0] = pos.x;
+			scene_->uiManager_->bossBattlePosition_[1] = pos.y;
+			scene_->uiManager_->bossBattlePosition_[2] = pos.z;
+			scene_->uiManager_->bossTuning_ = boss->GetTuning();
+			break;
+		}
+	}
+
+	const Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
+	json offsets = json::array();
+	for (const Vector3& offset : tuning.rearThrusterIndividualOffsets) {
+		offsets.push_back({ offset.x, offset.y, offset.z });
+	}
+	json root = {
+		{ "version", 1 },
+		{ "bossPosition", {
+			scene_->uiManager_->bossBattlePosition_[0],
+			scene_->uiManager_->bossBattlePosition_[1],
+			scene_->uiManager_->bossBattlePosition_[2],
+		} },
+		{ "tuning", {
+			{ "mainTurretYawTracking", tuning.mainTurretYawTracking },
+			{ "mainTurretPitchTracking", tuning.mainTurretPitchTracking },
+			{ "mainTurretYawFollow", tuning.mainTurretYawFollow },
+			{ "mainTurretPitchFollow", tuning.mainTurretPitchFollow },
+			{ "mainTurretMaxPitch", tuning.mainTurretMaxPitch },
+			{ "forwardTurretsVerticalSlide", tuning.forwardTurretsVerticalSlide },
+			{ "forwardTurretSlideAmount", tuning.forwardTurretSlideAmount },
+			{ "forwardTurretSlideSpeed", tuning.forwardTurretSlideSpeed },
+			{ "forwardTurretAimSlide", tuning.forwardTurretAimSlide },
+			{ "rearThrusterCount", tuning.rearThrusterCount },
+			{ "rearThrusterOffset", { tuning.rearThrusterOffset.x, tuning.rearThrusterOffset.y, tuning.rearThrusterOffset.z } },
+			{ "rearThrusterSpacing", tuning.rearThrusterSpacing },
+			{ "rearThrusterRadius", tuning.rearThrusterRadius },
+			{ "rearThrusterLength", tuning.rearThrusterLength },
+			{ "rearThrusterBrightness", tuning.rearThrusterBrightness },
+			{ "rearThrusterFlareRadius", tuning.rearThrusterFlareRadius },
+			{ "rearThrusterIndividualOffsets", offsets },
+		} },
+	};
+
+	const std::string dumpStr = root.dump(4);
+	std::ofstream ofs(filePath, std::ios::trunc);
+	if (!ofs.is_open()) {
+		scene_->uiManager_->bossTuningMessage_ = "ボスの位置・設定を保存できませんでした。";
+		return false;
+	}
+	ofs << dumpStr;
+
+	// プロジェクトソース側の resources フォルダが存在していれば、クリーンビルド後も保持されるよう保存する
+	const std::vector<std::string> secondaryPaths = {
+		"project/resources/boss_thruster_settings.json",
+		"../project/resources/boss_thruster_settings.json",
+	};
+	for (const auto& secPath : secondaryPaths) {
+		std::ofstream secOfs(secPath, std::ios::trunc);
+		if (secOfs.is_open()) {
+			secOfs << dumpStr;
+		}
+	}
+
+	scene_->uiManager_->bossTuningMessage_ = "ボスの位置・設定を保存しました。";
+	return true;
+}
+
+bool SimulationManager::LoadBossThrusterSettings(const std::string& filePath, bool verbose) {
+	if (!scene_ || !scene_->uiManager_) return false;
+	std::ifstream ifs(filePath);
+	if (!ifs.is_open()) {
+		// カレントにない場合はプロジェクト側も検索
+		const std::vector<std::string> fallbackPaths = {
+			"project/resources/boss_thruster_settings.json",
+			"../project/resources/boss_thruster_settings.json",
+		};
+		for (const auto& fbPath : fallbackPaths) {
+			ifs.open(fbPath);
+			if (ifs.is_open()) break;
+		}
+		if (!ifs.is_open()) {
+			if (verbose) {
+				scene_->uiManager_->bossTuningMessage_ = "保存済みのボス設定がありません。";
+			}
+			return false;
+		}
+	}
+
+	json root;
+	try {
+		ifs >> root;
+	} catch (...) {
+		if (verbose) {
+			scene_->uiManager_->bossTuningMessage_ = "ボス設定の読み込みに失敗しました。";
+		}
+		return false;
+	}
+	if (!root.is_object() || !root.contains("tuning") || !root["tuning"].is_object()) {
+		if (verbose) {
+			scene_->uiManager_->bossTuningMessage_ = "ボス設定の形式が正しくありません。";
+		}
+		return false;
+	}
+
+	Boss::Tuning tuning = scene_->uiManager_->bossTuning_;
+	const json& data = root["tuning"];
+	tuning.mainTurretYawTracking = data.value("mainTurretYawTracking", tuning.mainTurretYawTracking);
+	tuning.mainTurretPitchTracking = data.value("mainTurretPitchTracking", tuning.mainTurretPitchTracking);
+	tuning.mainTurretYawFollow = data.value("mainTurretYawFollow", tuning.mainTurretYawFollow);
+	tuning.mainTurretPitchFollow = data.value("mainTurretPitchFollow", tuning.mainTurretPitchFollow);
+	tuning.mainTurretMaxPitch = data.value("mainTurretMaxPitch", tuning.mainTurretMaxPitch);
+	tuning.forwardTurretsVerticalSlide = data.value("forwardTurretsVerticalSlide", tuning.forwardTurretsVerticalSlide);
+	tuning.forwardTurretSlideAmount = data.value("forwardTurretSlideAmount", tuning.forwardTurretSlideAmount);
+	tuning.forwardTurretSlideSpeed = data.value("forwardTurretSlideSpeed", tuning.forwardTurretSlideSpeed);
+	tuning.forwardTurretAimSlide = data.value("forwardTurretAimSlide", tuning.forwardTurretAimSlide);
+	tuning.rearThrusterCount = data.value("rearThrusterCount", tuning.rearThrusterCount);
+	tuning.rearThrusterSpacing = data.value("rearThrusterSpacing", tuning.rearThrusterSpacing);
+	tuning.rearThrusterRadius = data.value("rearThrusterRadius", tuning.rearThrusterRadius);
+	tuning.rearThrusterLength = data.value("rearThrusterLength", tuning.rearThrusterLength);
+	tuning.rearThrusterBrightness = data.value("rearThrusterBrightness", tuning.rearThrusterBrightness);
+	tuning.rearThrusterFlareRadius = data.value("rearThrusterFlareRadius", tuning.rearThrusterFlareRadius);
+	if (data.contains("rearThrusterOffset") && data["rearThrusterOffset"].is_array() && data["rearThrusterOffset"].size() >= 3) {
+		tuning.rearThrusterOffset = { data["rearThrusterOffset"][0].get<float>(), data["rearThrusterOffset"][1].get<float>(), data["rearThrusterOffset"][2].get<float>() };
+	}
+	if (data.contains("rearThrusterIndividualOffsets") && data["rearThrusterIndividualOffsets"].is_array()) {
+		const json& offsets = data["rearThrusterIndividualOffsets"];
+		for (size_t index = 0; index < tuning.rearThrusterIndividualOffsets.size() && index < offsets.size(); ++index) {
+			if (offsets[index].is_array() && offsets[index].size() >= 3) {
+				tuning.rearThrusterIndividualOffsets[index] = { offsets[index][0].get<float>(), offsets[index][1].get<float>(), offsets[index][2].get<float>() };
+			}
+		}
+	}
+
+	if (root.contains("bossPosition") && root["bossPosition"].is_array() && root["bossPosition"].size() >= 3) {
+		scene_->uiManager_->bossBattlePosition_[0] = root["bossPosition"][0].get<float>();
+		scene_->uiManager_->bossBattlePosition_[1] = root["bossPosition"][1].get<float>();
+		scene_->uiManager_->bossBattlePosition_[2] = root["bossPosition"][2].get<float>();
+	}
+	scene_->uiManager_->bossTuning_ = tuning;
+	for (const auto& enemy : scene_->enemies_) {
+		if (auto* boss = dynamic_cast<Boss*>(enemy.get()); boss && !boss->IsDead()) {
+			boss->SetTuning(tuning);
+			boss->SetPosition({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
+			boss->UpdateModel();
+			break;
+		}
+	}
+	if (verbose) {
+		scene_->uiManager_->bossTuningMessage_ = "保存したボスの位置・設定を読み込みました。";
+	}
+	return true;
+}
+
+void SimulationManager::DrawBossBattleControls() {
+#ifdef ENABLE_IMGUI
+	ImGui::Text("=== ボス戦テスト / ボス調整 ===");
+	ImGui::TextDisabled("開始すると現在の敵を入れ替え、指定位置にボスを1体だけ出現させます。");
+	ImGui::DragFloat3("ボス出現座標 (X,Y,Z)##boss", scene_->uiManager_->bossBattlePosition_, 0.25f, -100.0f, 100.0f, "%.2f");
+	ImGui::SameLine();
+	if (ImGui::Button("座標を保存##saveBossPosQuick")) {
+		SaveBossThrusterSettings("resources/boss_thruster_settings.json");
+	}
+
+	auto findActiveBoss = [&]() -> Boss* {
+		for (const auto& enemy : scene_->enemies_) {
+			if (auto* boss = dynamic_cast<Boss*>(enemy.get()); boss && !boss->IsDead()) return boss;
+		}
+		return nullptr;
+	};
+
+	Boss* activeBoss = findActiveBoss();
+	if (ImGui::Button("この位置でボス戦を開始##boss")) {
+		scene_->ClearAllEnemyReferences();
+		scene_->enemies_.clear();
+		auto boss = std::make_unique<Boss>();
+		boss->Initialize({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
+		boss->SetTuning(scene_->uiManager_->bossTuning_);
+		boss->UpdateModel();
+		scene_->enemies_.push_back(std::move(boss));
+		scene_->bossSpawned_ = true;
+		scene_->isGameOver_ = false;
+		scene_->isEditorPreviewPlaying_ = true;
+		scene_->uiManager_->bossTuningMessage_ = "ボス戦を開始しました。再生中のまま砲台とスラスターを調整できます。";
+		activeBoss = findActiveBoss();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("現在のボス位置を取得##boss") && activeBoss) {
+		const Vector3 position = activeBoss->GetPosition();
+		scene_->uiManager_->bossBattlePosition_[0] = position.x;
+		scene_->uiManager_->bossBattlePosition_[1] = position.y;
+		scene_->uiManager_->bossBattlePosition_[2] = position.z;
+	}
+	if (activeBoss) {
+		if (ImGui::Button("設定した座標へボスを移動##boss")) {
+			activeBoss->SetPosition({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
+			activeBoss->UpdateModel();
+		}
+		ImGui::SameLine();
+		ImGui::TextColored(ImVec4(0.25f, 1.0f, 0.45f, 1.0f), "ボス出現中  HP: %d/%d", activeBoss->GetHP(), activeBoss->GetMaxHP());
+	}
+
+	bool changed = false;
+	Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
+	if (ImGui::CollapsingHeader("砲台の回転・スライド##boss", ImGuiTreeNodeFlags_DefaultOpen)) {
+		changed |= ImGui::Checkbox("主砲の横追尾 (ヨー)##boss", &tuning.mainTurretYawTracking);
+		changed |= ImGui::Checkbox("主砲の縦追尾 (ピッチ)##boss", &tuning.mainTurretPitchTracking);
+		changed |= ImGui::SliderFloat("主砲 横追尾の速さ##boss", &tuning.mainTurretYawFollow, 0.0f, 0.35f, "%.3f");
+		changed |= ImGui::SliderFloat("主砲 縦追尾の速さ##boss", &tuning.mainTurretPitchFollow, 0.0f, 0.35f, "%.3f");
+		changed |= ImGui::SliderFloat("主砲 最大仰角##boss", &tuning.mainTurretMaxPitch, 0.0f, 1.20f, "%.2f rad");
+		ImGui::TextDisabled("艦首の左右2砲台: 横回転なし、ピッチ（上下回転）だけで照準します。中央砲・主砲は従来どおり横回転します。");
+	}
+	if (ImGui::CollapsingHeader("後部スラスター##boss", ImGuiTreeNodeFlags_DefaultOpen)) {
+		changed |= ImGui::SliderInt("スラスター数##boss", &tuning.rearThrusterCount, 0, 12);
+		changed |= ImGui::DragFloat3("スラスター位置補正##boss", &tuning.rearThrusterOffset.x, 0.02f, -2.0f, 2.0f, "%.2f");
+		changed |= ImGui::SliderFloat("スラスター間隔調整##boss", &tuning.rearThrusterSpacing, 0.05f, 1.20f, "%.2f");
+		changed |= ImGui::SliderFloat("炎の太さ##boss", &tuning.rearThrusterRadius, 0.02f, 1.20f, "%.2f");
+		changed |= ImGui::SliderFloat("炎の長さ##boss", &tuning.rearThrusterLength, 0.05f, 6.00f, "%.2f");
+		changed |= ImGui::SliderFloat("炎の明るさ##boss", &tuning.rearThrusterBrightness, 0.0f, 2.50f, "%.2f");
+		changed |= ImGui::SliderFloat("根元フレア半径##boss", &tuning.rearThrusterFlareRadius, 0.02f, 1.50f, "%.2f");
+		ImGui::TextDisabled("中央・左・右パネルの各4穴へ、合計12基を配置できます。");
+	}
+	if (changed) {
+		if (activeBoss) {
+			activeBoss->SetTuning(tuning);
+			activeBoss->UpdateModel();
+			scene_->uiManager_->bossTuningMessage_ = "出現中のボスへ設定を反映しました。";
+		} else {
+			scene_->uiManager_->bossTuningMessage_ = "設定しました。次のボス戦開始時に反映されます。";
+		}
+	}
+	ImGui::Separator();
+	if (ImGui::Button("ボスの位置・設定を保存##boss")) {
+		SaveBossThrusterSettings("resources/boss_thruster_settings.json");
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("保存したボスの位置・設定を読み込む##boss")) {
+		LoadBossThrusterSettings("resources/boss_thruster_settings.json");
+	}
+	ImGui::TextDisabled("保存先: resources/boss_thruster_settings.json (ボスの出現座標とスラスター・砲台設定)");
+	if (!scene_->uiManager_->bossTuningMessage_.empty()) ImGui::TextWrapped("%s", scene_->uiManager_->bossTuningMessage_.c_str());
+#endif
+}
+
 void SimulationManager::DrawSimulationScreenUI() {
 #ifdef ENABLE_IMGUI
 	const ImVec2 windowSize(
@@ -878,6 +1126,98 @@ void SimulationManager::DrawSimulationScreenUI() {
 		ImGui::Text("=== 敵の出現とルート ===");
 		ImGui::Text("Lock-on: %s", scene_->lockedEnemy_ ? "LOCKED" : "NONE");
 		ImGui::Text("Tab: ターゲットロック / X: ロック解除 / F2: シミュレーションを閉じる");
+		ImGui::Separator();
+		ImGui::Text("=== ボス戦テスト / ボス調整 ===");
+		ImGui::DragFloat3("ボス出現座標 (X,Y,Z)", scene_->uiManager_->bossBattlePosition_, 0.25f, -100.0f, 100.0f, "%.2f");
+		ImGui::SameLine();
+		if (ImGui::Button("座標を保存##simQuickSaveBossPos")) {
+			SaveBossThrusterSettings("resources/boss_thruster_settings.json");
+		}
+
+		auto findActiveBoss = [&]() -> Boss* {
+			for (const auto& enemy : scene_->enemies_) {
+				if (auto* boss = dynamic_cast<Boss*>(enemy.get()); boss && !boss->IsDead()) return boss;
+			}
+			return nullptr;
+		};
+
+		Boss* activeBoss = findActiveBoss();
+		if (ImGui::Button("この位置でボス戦を開始")) {
+			scene_->ClearAllEnemyReferences();
+			scene_->enemies_.clear();
+			auto boss = std::make_unique<Boss>();
+			boss->Initialize({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
+			boss->SetTuning(scene_->uiManager_->bossTuning_);
+			boss->UpdateModel();
+			scene_->enemies_.push_back(std::move(boss));
+			scene_->bossSpawned_ = true;
+			scene_->isGameOver_ = false;
+			scene_->isEditorPreviewPlaying_ = true;
+			scene_->uiManager_->bossTuningMessage_ = "ボス戦を開始しました。再生中のまま砲台とスラスターを調整できます。";
+			activeBoss = findActiveBoss();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("現在のボス位置を取得") && activeBoss) {
+			const Vector3 position = activeBoss->GetPosition();
+			scene_->uiManager_->bossBattlePosition_[0] = position.x;
+			scene_->uiManager_->bossBattlePosition_[1] = position.y;
+			scene_->uiManager_->bossBattlePosition_[2] = position.z;
+		}
+
+		if (activeBoss) {
+			if (ImGui::Button("設定した座標へボスを移動")) {
+				activeBoss->SetPosition({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
+				activeBoss->UpdateModel();
+			}
+			ImGui::SameLine();
+			ImGui::TextColored(ImVec4(0.25f, 1.0f, 0.45f, 1.0f), "ボス出現中  HP: %d/%d", activeBoss->GetHP(), activeBoss->GetMaxHP());
+		} else {
+			ImGui::TextDisabled("ボスはまだ出現していません。開始ボタンで設定を反映します。");
+		}
+
+		bool bossTuningChanged = false;
+		if (ImGui::CollapsingHeader("砲台の回転・スライド", ImGuiTreeNodeFlags_DefaultOpen)) {
+			Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
+			bossTuningChanged |= ImGui::Checkbox("主砲の横追尾 (ヨー)", &tuning.mainTurretYawTracking);
+			bossTuningChanged |= ImGui::Checkbox("主砲の縦追尾 (ピッチ)", &tuning.mainTurretPitchTracking);
+			bossTuningChanged |= ImGui::SliderFloat("主砲 横追尾の速さ", &tuning.mainTurretYawFollow, 0.0f, 0.35f, "%.3f");
+			bossTuningChanged |= ImGui::SliderFloat("主砲 縦追尾の速さ", &tuning.mainTurretPitchFollow, 0.0f, 0.35f, "%.3f");
+			bossTuningChanged |= ImGui::SliderFloat("主砲 最大仰角", &tuning.mainTurretMaxPitch, 0.0f, 1.20f, "%.2f rad");
+
+			ImGui::TextDisabled("艦首の左右2砲台: 横回転なし、ピッチ（上下回転）だけで照準します。中央砲・主砲は従来どおり横回転します。");
+		}
+
+		if (ImGui::CollapsingHeader("後部スラスター", ImGuiTreeNodeFlags_DefaultOpen)) {
+			Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
+			bossTuningChanged |= ImGui::SliderInt("スラスター数", &tuning.rearThrusterCount, 0, 12);
+			bossTuningChanged |= ImGui::DragFloat3("スラスター位置補正", &tuning.rearThrusterOffset.x, 0.02f, -2.0f, 2.0f, "%.2f");
+			bossTuningChanged |= ImGui::SliderFloat("スラスター間隔", &tuning.rearThrusterSpacing, 0.05f, 1.20f, "%.2f");
+			bossTuningChanged |= ImGui::SliderFloat("炎の太さ", &tuning.rearThrusterRadius, 0.02f, 1.20f, "%.2f");
+			bossTuningChanged |= ImGui::SliderFloat("炎の長さ", &tuning.rearThrusterLength, 0.05f, 6.00f, "%.2f");
+			bossTuningChanged |= ImGui::SliderFloat("炎の明るさ", &tuning.rearThrusterBrightness, 0.0f, 2.50f, "%.2f");
+			bossTuningChanged |= ImGui::SliderFloat("根元フレア半径", &tuning.rearThrusterFlareRadius, 0.02f, 1.50f, "%.2f");
+			ImGui::TextDisabled("追加したスラスターは、後部の矩形パネル中心を基準に横方向へ等間隔で並びます。");
+		}
+
+		if (bossTuningChanged) {
+			if (activeBoss) {
+				activeBoss->SetTuning(scene_->uiManager_->bossTuning_);
+				activeBoss->UpdateModel();
+				scene_->uiManager_->bossTuningMessage_ = "出現中のボスへ設定を反映しました。";
+			} else {
+				scene_->uiManager_->bossTuningMessage_ = "設定しました。次にボス戦を開始したとき反映されます。";
+			}
+		}
+		if (!scene_->uiManager_->bossTuningMessage_.empty()) ImGui::TextWrapped("%s", scene_->uiManager_->bossTuningMessage_.c_str());
+		if (ImGui::Button("ボスの位置・設定を保存##bossSim")) {
+			SaveBossThrusterSettings("resources/boss_thruster_settings.json");
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("保存したボスの位置・設定を読み込む##bossSim")) {
+			LoadBossThrusterSettings("resources/boss_thruster_settings.json");
+		}
+		ImGui::TextDisabled("保存先: resources/boss_thruster_settings.json");
+
 		ImGui::DragFloat3("出現座標 (X,Y,Z)", scene_->newEnemyPos, 1.0f);
 
 		if (ImGui::Button("敵を生成する！")) {

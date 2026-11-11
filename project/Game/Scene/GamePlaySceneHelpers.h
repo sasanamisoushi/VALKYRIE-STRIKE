@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "engine/Debug/ImGuiManager.h"
 #include <externals/imgui/imgui.h>
 #include "engine/math/MyMath.h"
@@ -331,7 +331,7 @@ namespace {
 		return maxX > minX && maxY > minY;
 	}
 
-	void DrawLockOnOverlaySprite(const Enemy *target, const Matrix4x4 &viewProjectionMatrix, Sprite* lockOnReticleSprite_, bool isJammed = false, bool isFighterLockDanger = false) {
+	void DrawLockOnOverlaySprite(const Enemy *target, const Matrix4x4 &viewProjectionMatrix, Sprite* lockOnReticleSprite_, bool isJammed = false, bool isFighterLockDanger = false, const Vector3* targetPoint = nullptr, float targetRadius = 0.0f) {
 		if (!target) {
 			return;
 		}
@@ -344,12 +344,14 @@ namespace {
 			return;
 		}
 
-		Vector3 worldPosition = target->GetPosition();
+		Vector3 worldPosition = targetPoint ? *targetPoint : target->GetAimPosition();
 		float collisionRadius = 1.0f;
-		try {
+		if (targetRadius > 0.0f) {
+			collisionRadius = targetRadius;
+		} else try {
 			collisionRadius = target->GetCollisionRadius();
 		} catch(...) {}
-		worldPosition.y += collisionRadius * 0.3f;
+		if (!targetPoint && !target->IsBoss()) worldPosition.y += collisionRadius * 0.3f;
 		float minX = 0.0f;
 		float minY = 0.0f;
 		float maxX = 0.0f;
@@ -395,7 +397,7 @@ namespace {
 		}
 	}
 
-	void DrawIndividualMissileLockOnOverlaySprite(const Enemy *target, const Matrix4x4 &viewProjectionMatrix, Sprite* missileLockOnReticleSprite_, bool isJammed, int lockIndex, int totalLockCount) {
+	void DrawIndividualMissileLockOnOverlaySprite(const Enemy *target, const Matrix4x4 &viewProjectionMatrix, Sprite* missileLockOnReticleSprite_, bool isJammed, int lockIndex, int totalLockCount, const Vector3 *targetPoint = nullptr) {
 		if (!target) {
 			return;
 		}
@@ -408,12 +410,12 @@ namespace {
 			return;
 		}
 
-		Vector3 worldPosition = target->GetPosition();
+		Vector3 worldPosition = targetPoint ? *targetPoint : target->GetAimPosition();
 		float collisionRadius = 1.0f;
 		try {
 			collisionRadius = target->GetCollisionRadius();
 		} catch (...) {}
-		worldPosition.y += collisionRadius * 0.3f;
+		if (!targetPoint && !target->IsBoss()) worldPosition.y += collisionRadius * 0.3f;
 
 		float minX = 0.0f;
 		float minY = 0.0f;

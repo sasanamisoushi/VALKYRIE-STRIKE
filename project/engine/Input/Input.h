@@ -72,6 +72,11 @@ enum class MouseInput : uint8_t {
 	Count,
 };
 
+struct StickState {
+	float x = 0.0f;
+	float y = 0.0f;
+};
+
 struct PlayerActionBinding {
 	BYTE keyboardKey = 0;
 	ControllerInput controllerInput = ControllerInput::None;
@@ -98,6 +103,16 @@ public:
 	bool PushKey(BYTE keyNumber);
 
 	bool TriggerKey(BYTE keyNumber);
+
+	// コントローラーのアナログ入力およびボタン直接取得
+	StickState GetControllerLeftStick() const;
+	StickState GetControllerRightStick() const;
+	float GetControllerLeftTrigger() const;
+	float GetControllerRightTrigger() const;
+	bool PushControllerButton(WORD button) const;
+	bool TriggerControllerButton(WORD button) const;
+	bool PushControllerInput(ControllerInput input) const;
+	bool TriggerControllerInput(ControllerInput input) const;
 
 	// プレイヤー用のアクション入力。キーボード、XInputコントローラー、マウスのいずれでも反応する。
 	bool PushAction(PlayerAction action) const;

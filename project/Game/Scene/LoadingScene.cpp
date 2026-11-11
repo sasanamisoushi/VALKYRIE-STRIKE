@@ -6,11 +6,23 @@
 #include "engine/Graphics/PostEffect.h"
 #include "engine/Scene/SceneManager.h"
 #include "engine/base/WinApp.h"
+#include "engine/Input/Input.h"
+#include "engine/Debug/ImGuiManager.h"
 #include "Game/Scene/GamePlayScene.h"
+#include "Game/Scene/TitleScene.h"
 #include "engine/math/MyMath.h"
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <externals/imgui/imgui.h>
+
+Vector4 LoadingScene::GetWarpThemeColor(float alpha) const {
+	// チュートリアルは安全な訓練航路として緑、ステージ1は従来のシアンを維持する。
+	if (selectedStage_ == GameStartStage::Tutorial) {
+		return { 0.28f, 1.0f, 0.46f, alpha };
+	}
+	return { 1.0f, 1.0f, 1.0f, alpha };
+}
 
 void LoadingScene::Initialize() {
 	if (PostEffect::GetInstance()) {
@@ -158,6 +170,8 @@ void LoadingScene::Initialize() {
 	warpFrames_ = 0;
 	exitFrames_ = 0;
 	phase_ = TransitionPhase::WhiteIn;
+	selectedStage_ = GameStartStage::Tutorial;
+	stageSelectionConfirmed_ = false;
 }
 
 void LoadingScene::Finalize() {
@@ -210,9 +224,9 @@ void LoadingScene::Update() {
 
 	case TransitionPhase::WarpLoop:
 		whiteoutAlpha_ = 0.0f;
-		// フェーズ3: ワープ演出をループ再生したまま、バックグラウンドで非同期読み込み
-		// 最低演出時間（約2.5秒）を満たし、かつ非同期ロードが完了している場合にフェーズ4へ移行
-		if (warpFrames_ >= kMinWarpFrames && isAsyncLoadCompleted_.load()) {
+		// フェーズ3: ワープ中に目的地を選んでから、本編へ進む。
+		UpdateStageSelectionInput();
+		if (stageSelectionConfirmed_ && warpFrames_ >= kMinWarpFrames && isAsyncLoadCompleted_.load()) {
 			phase_ = TransitionPhase::WhiteOutExit;
 			exitFrames_ = 0;
 		}
@@ -258,6 +272,9 @@ void LoadingScene::Update() {
 		warpCoreObject_->SetTranslate({ 0.0f, 0.0f, 170.0f });
 		warpCoreObject_->SetScale({ warpCoreScale_, warpCoreScale_, 1.0f });
 		warpCoreObject_->SetRotate({ 0.0f, 0.0f, warpCoreRotation_ });
+		if (Model* coreModel = warpCoreObject_->GetModel()) {
+			coreModel->SetColor(GetWarpThemeColor());
+		}
 		warpCoreObject_->Update(warpCamera_.get());
 	}
 
@@ -271,6 +288,105 @@ void LoadingScene::Update() {
 	}
 }
 
+void LoadingScene::UpdateStageSelectionInput() {
+	if (stageSelectionConfirmed_) {
+		return;
+	}
+
+	Input* input = Input::GetInstance();
+	if (!input) {
+		return;
+	}
+	if (input->TriggerKey(DIK_ESCAPE) || input->TriggerControllerButton(XINPUT_GAMEPAD_B)) {
+		TitleScene::SetPendingFadeIn(true);
+		SceneManager::GetInstance()->ChangeScene("TITLE");
+		return;
+	}
+	const bool selectLeft = input->TriggerKey(DIK_LEFT) || input->TriggerKey(DIK_A) ||
+		input->TriggerControllerInput(ControllerInput::DPadLeft) || input->TriggerControllerInput(ControllerInput::LeftStickLeft);
+	const bool selectRight = input->TriggerKey(DIK_RIGHT) || input->TriggerKey(DIK_D) ||
+		input->TriggerControllerInput(ControllerInput::DPadRight) || input->TriggerControllerInput(ControllerInput::LeftStickRight);
+
+	if (selectLeft) {
+		selectedStage_ = GameStartStage::Tutorial;
+	} else if (selectRight) {
+		selectedStage_ = GameStartStage::Stage1;
+	}
+
+	const bool confirm = input->TriggerKey(DIK_SPACE) || input->TriggerKey(DIK_RETURN) ||
+		input->TriggerControllerButton(XINPUT_GAMEPAD_A) || input->TriggerControllerButton(XINPUT_GAMEPAD_START);
+
+	if (confirm) {
+		GameStartTransition::SetStage(selectedStage_);
+		stageSelectionConfirmed_ = true;
+	}
+}
+
+void LoadingScene::DrawStageSelectOverlay() {
+#ifdef ENABLE_IMGUI
+	if (phase_ != TransitionPhase::WarpLoop || stageSelectionConfirmed_ || !ImGui::GetCurrentContext()) {
+		return;
+	}
+
+	const float screenWidth = static_cast<float>(WinApp::GetClientWidth());
+	const float screenHeight = static_cast<float>(WinApp::GetClientHeight());
+	ImDrawList* drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+	const float pulse = 0.70f + 0.30f * std::sin(static_cast<float>(warpFrames_) * 0.12f);
+	const bool isTutorial = selectedStage_ == GameStartStage::Tutorial;
+	const ImU32 theme = isTutorial
+		? IM_COL32(84, 255, 132, static_cast<int>(255.0f * pulse))
+		: IM_COL32(92, 230, 255, static_cast<int>(255.0f * pulse));
+
+	// 枠やカードを使わず、選択中のステージ名だけをワープ空間の上へ大きく表示する。
+	const char* stageName = isTutorial ? "チュートリアル" : "ステージ 1";
+	constexpr float stageFontSize = 58.0f;
+	ImFont* stageFont = ImGuiManager::GetJapaneseDisplayFont();
+	if (!stageFont) {
+		stageFont = ImGui::GetFont();
+	}
+	const ImVec2 stageSize = stageFont->CalcTextSizeA(stageFontSize, 1000.0f, 0.0f, stageName);
+	const float stageX = (screenWidth - stageSize.x) * 0.5f;
+	const float stageY = (std::max)(76.0f, screenHeight * 0.22f - stageSize.y * 0.5f);
+	drawList->AddText(stageFont, stageFontSize, ImVec2(stageX + 3.0f, stageY + 4.0f), IM_COL32(0, 8, 16, 220), stageName);
+	drawList->AddText(stageFont, stageFontSize, ImVec2(stageX, stageY), theme, stageName);
+
+	// ステージ名には枠を付けない一方、右下の操作案内は背景と行間を持たせて
+	// ワープ演出の明るい光の上でも読めるようにする。
+	constexpr float kGuideWidth = 440.0f;
+	constexpr float kGuideHeight = 122.0f;
+	const float guideX = (std::max)(18.0f, screenWidth - kGuideWidth - 26.0f);
+	const float guideY = (std::max)(18.0f, screenHeight - kGuideHeight - 28.0f);
+	const ImU32 guideBackground = IM_COL32(3, 15, 30, 224);
+	const ImU32 guideLine = isTutorial ? IM_COL32(84, 255, 132, 220) : IM_COL32(92, 230, 255, 220);
+	const ImU32 guideText = IM_COL32(236, 248, 255, 255);
+	const ImU32 guideSubText = IM_COL32(152, 208, 228, 255);
+	const float guideScale = 1.0f;
+	drawList->AddRectFilled(
+		ImVec2(guideX, guideY), ImVec2(guideX + kGuideWidth, guideY + kGuideHeight),
+		guideBackground, 6.0f);
+	drawList->AddRect(
+		ImVec2(guideX, guideY), ImVec2(guideX + kGuideWidth, guideY + kGuideHeight),
+		guideLine, 6.0f, 1.5f * guideScale, 0);
+	drawList->AddLine(
+		ImVec2(guideX + 16.0f, guideY + 31.0f), ImVec2(guideX + kGuideWidth - 16.0f, guideY + 31.0f),
+		guideLine, guideScale);
+
+	const bool isPad = Input::GetInstance()->IsControllerConnected();
+	const char* guideTitle = "操作ガイド";
+	const char* selectGuide = isPad ? "D-PAD / L-STICK : 選択" : "A / ← : 前へ       D / → : 次へ";
+	const char* deployGuide = isPad ? "A / START : 出撃" : "SPACE / ENTER : 出撃";
+	const char* titleGuide = isPad ? "B : タイトルへ" : "ESC : タイトルへ";
+	auto drawGuideText = [&](const char* text, float size, float x, float y, ImU32 color) {
+		drawList->AddText(stageFont, size, ImVec2(x + 1.5f, y + 1.5f), IM_COL32(0, 0, 0, 220), text);
+		drawList->AddText(stageFont, size, ImVec2(x, y), color, text);
+	};
+	drawGuideText(guideTitle, 18.0f, guideX + 18.0f, guideY + 7.0f, guideLine);
+	drawGuideText(selectGuide, 16.0f, guideX + 20.0f, guideY + 42.0f, guideText);
+	drawGuideText(deployGuide, 16.0f, guideX + 20.0f, guideY + 68.0f, guideText);
+	drawGuideText(titleGuide, 15.0f, guideX + 20.0f, guideY + 94.0f, guideSubText);
+#endif
+}
+
 void LoadingScene::UpdateWarpFlight(float elapsedSeconds, float dt) {
 	// シリンダーのUVスクロール（奥から手前へ光の筋と星屑を高速で流す）
 	uvScrollOffsetOuter_ -= dt * 3.8f;
@@ -280,12 +396,14 @@ void LoadingScene::UpdateWarpFlight(float elapsedSeconds, float dt) {
 	if (tunnelObject_) {
 		if (Model* tunnelModel = tunnelObject_->GetModel()) {
 			tunnelModel->SetUvTransform(MyMath::MakeTranslateMatrix({ 0.0f, uvScrollOffsetOuter_, 0.0f }));
+			tunnelModel->SetColor(GetWarpThemeColor());
 		}
 		tunnelObject_->Update(warpCamera_.get());
 	}
 	if (innerTunnelObject_) {
 		if (Model* innerModel = innerTunnelObject_->GetModel()) {
 			innerModel->SetUvTransform(MyMath::MakeTranslateMatrix({ 0.0f, uvScrollOffsetInner_, 0.0f }));
+			innerModel->SetColor(GetWarpThemeColor());
 		}
 		innerTunnelObject_->SetRotate({ 0.0f, 0.0f, innerTunnelRotation_ });
 		innerTunnelObject_->Update(warpCamera_.get());
@@ -365,7 +483,12 @@ void LoadingScene::UpdateSpeedLines(float dt) {
 			// 進行方向（Z軸）に沿って細長く見えるようにX軸回転90度
 			speedLineObjects_[i]->SetRotate({ 1.5707963f, 0.0f, line.angle });
 			if (Model* m = speedLineObjects_[i]->GetModel()) {
-				m->SetColor(line.color);
+				if (selectedStage_ == GameStartStage::Tutorial) {
+					const float brightness = 0.72f + static_cast<float>(i % 3) * 0.14f;
+					m->SetColor({ 0.22f * brightness, 1.0f * brightness, 0.40f * brightness, line.alpha });
+				} else {
+					m->SetColor(line.color);
+				}
 			}
 			speedLineObjects_[i]->Update(warpCamera_.get());
 		}
@@ -409,7 +532,7 @@ void LoadingScene::UpdatePlasmaParticles(float dt) {
 			plasmaObjects_[i]->SetScale({ p.size * lifeRatio, p.size * 2.0f, 1.0f });
 			plasmaObjects_[i]->SetRotate({ 1.5707963f, 0.0f, 0.0f });
 			if (Model* m = plasmaObjects_[i]->GetModel()) {
-				m->SetColor({ p.color.x, p.color.y, p.color.z, alpha });
+				m->SetColor(GetWarpThemeColor(alpha));
 			}
 			plasmaObjects_[i]->Update(warpCamera_.get());
 		}
@@ -460,6 +583,8 @@ void LoadingScene::Draw() {
 	if (warpPlayer_) {
 		warpPlayer_->Draw(warpCamera_.get(), true);
 	}
+
+	DrawStageSelectOverlay();
 
 	// 7. 画面全体の強い発光エフェクト（ホワイトアウト / フェードイン・フェードアウト）
 	if (whiteoutSprite_ && whiteoutAlpha_ > 0.001f) {

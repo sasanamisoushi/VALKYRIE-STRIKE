@@ -30,6 +30,11 @@ public:
 	bool ApplySimulationAction(const std::string &filePath, const std::string &actionName);
 	void DrawSimulationScreenUI();
 	void DrawSimulationSaveControls();
+	// ゲーム画面の編集サイドバーとシミュレーション画面で共用するボス調整欄。
+	void DrawBossBattleControls();
+	// ボスの位置・スラスター位置を含む調整値を、次回のボス戦にも使えるJSONへ保存する。
+	bool SaveBossThrusterSettings(const std::string& filePath = "resources/boss_thruster_settings.json");
+	bool LoadBossThrusterSettings(const std::string& filePath = "resources/boss_thruster_settings.json", bool verbose = true);
 
 	void DrawAnimationEditorUI();
 	void RefreshActionAnimationsList();

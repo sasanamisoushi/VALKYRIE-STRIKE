@@ -27,7 +27,8 @@ struct MissileTuning {
 class Missile {
 public:
     // 初期化（発生位置と飛んでいく方向を渡す）
-    void Initialize(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning, ParticleManager* pManager = nullptr, Enemy* target = nullptr);
+    void Initialize(const Vector3 &position, const Vector3 &velocity, MissileType type, const MissileTuning &tuning,
+        ParticleManager* pManager = nullptr, Enemy* target = nullptr, const Vector3* targetPoint = nullptr);
 
     // 毎フレームの更新
     void Update(Camera *camera);
@@ -52,6 +53,8 @@ public:
     Vector3 GetVelocity() const { return velocity_; }
     Enemy* GetTarget() const { return target_; }
     float GetCollisionRadius() const { return collisionRadius_; }
+    bool HasTargetPoint() const { return hasTargetPoint_; }
+    const Vector3& GetTargetPoint() const { return targetPoint_; }
     void ClearTargetIfMatches(const Enemy* target) {
         if (target_ == target) {
             target_ = nullptr;
@@ -66,6 +69,9 @@ private:
     // このミサイルが煙を出すためのパーティクルマネージャ
     ParticleManager* particleManager_ = nullptr;
     Enemy* target_ = nullptr;
+    // ボス砲台など、敵本体とは異なるロックオン位置。発射時の座標を保持する。
+    bool hasTargetPoint_ = false;
+    Vector3 targetPoint_{};
 
     Vector3 position_ = { 0.0f, 0.0f, 0.0f };
     Vector3 velocity_ = { 0.0f, 0.0f, 0.0f }; // 1フレームに進む量

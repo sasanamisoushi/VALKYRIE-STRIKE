@@ -129,6 +129,61 @@ bool Input::TriggerKey(BYTE keyNumber) {
 	return false;
 }
 
+StickState Input::GetControllerLeftStick() const {
+	if (!isControllerConnected_) return {};
+	float x = static_cast<float>(controllerState_.Gamepad.sThumbLX);
+	float y = static_cast<float>(controllerState_.Gamepad.sThumbLY);
+	constexpr float deadzone = static_cast<float>(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+	float magnitude = std::sqrt(x * x + y * y);
+	if (magnitude <= deadzone) return {};
+	float normalizedMagnitude = (std::min)(1.0f, (magnitude - deadzone) / (32767.0f - deadzone));
+	return { (x / magnitude) * normalizedMagnitude, (y / magnitude) * normalizedMagnitude };
+}
+
+StickState Input::GetControllerRightStick() const {
+	if (!isControllerConnected_) return {};
+	float x = static_cast<float>(controllerState_.Gamepad.sThumbRX);
+	float y = static_cast<float>(controllerState_.Gamepad.sThumbRY);
+	constexpr float deadzone = static_cast<float>(XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+	float magnitude = std::sqrt(x * x + y * y);
+	if (magnitude <= deadzone) return {};
+	float normalizedMagnitude = (std::min)(1.0f, (magnitude - deadzone) / (32767.0f - deadzone));
+	return { (x / magnitude) * normalizedMagnitude, (y / magnitude) * normalizedMagnitude };
+}
+
+float Input::GetControllerLeftTrigger() const {
+	if (!isControllerConnected_) return 0.0f;
+	BYTE val = controllerState_.Gamepad.bLeftTrigger;
+	if (val <= XINPUT_GAMEPAD_TRIGGER_THRESHOLD) return 0.0f;
+	return static_cast<float>(val - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) / (255.0f - XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
+}
+
+float Input::GetControllerRightTrigger() const {
+	if (!isControllerConnected_) return 0.0f;
+	BYTE val = controllerState_.Gamepad.bRightTrigger;
+	if (val <= XINPUT_GAMEPAD_TRIGGER_THRESHOLD) return 0.0f;
+	return static_cast<float>(val - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) / (255.0f - XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
+}
+
+bool Input::PushControllerButton(WORD button) const {
+	if (!isControllerConnected_) return false;
+	return (controllerState_.Gamepad.wButtons & button) != 0;
+}
+
+bool Input::TriggerControllerButton(WORD button) const {
+	if (!isControllerConnected_) return false;
+	return (controllerState_.Gamepad.wButtons & button) != 0 &&
+	       (controllerStatePre_.Gamepad.wButtons & button) == 0;
+}
+
+bool Input::PushControllerInput(ControllerInput input) const {
+	return IsControllerInputPressed(input, false);
+}
+
+bool Input::TriggerControllerInput(ControllerInput input) const {
+	return IsControllerInputPressed(input, false) && !IsControllerInputPressed(input, true);
+}
+
 bool Input::PushAction(PlayerAction action) const {
 	const PlayerActionBinding &binding = GetActionBinding(action);
 	return (binding.keyboardKey != 0 && key[binding.keyboardKey] != 0) ||
@@ -171,29 +226,40 @@ void Input::ResetPlayerActionBindings() {
 		MouseInput mouseInput = MouseInput::None) {
 		playerActionBindings_[ToIndex(action)] = { keyNumber, controllerInput, mouseInput };
 	};
-	bind(PlayerAction::MoveForward, DIK_W, ControllerInput::LeftStickUp);
-	bind(PlayerAction::MoveBackward, DIK_S, ControllerInput::LeftStickDown);
-	bind(PlayerAction::MoveUp, DIK_SPACE, ControllerInput::A);
-	bind(PlayerAction::MoveDown, DIK_LSHIFT, ControllerInput::B);
-	bind(PlayerAction::TurnLeft, DIK_LEFT, ControllerInput::LeftStickLeft);
-	bind(PlayerAction::TurnRight, DIK_RIGHT, ControllerInput::LeftStickRight);
-	bind(PlayerAction::PitchUp, DIK_UP, ControllerInput::RightStickUp);
-	bind(PlayerAction::PitchDown, DIK_DOWN, ControllerInput::RightStickDown);
-	bind(PlayerAction::RollLeft, DIK_Q, ControllerInput::LeftBumper);
-	bind(PlayerAction::RollRight, DIK_E, ControllerInput::RightBumper);
-	bind(PlayerAction::Guard, DIK_B, ControllerInput::X);
-	bind(PlayerAction::TransformFighter, DIK_1, ControllerInput::DPadUp);
-	bind(PlayerAction::TransformGerwalk, DIK_2, ControllerInput::DPadRight);
-	bind(PlayerAction::TransformBattroid, DIK_3, ControllerInput::DPadDown);
-	bind(PlayerAction::DodgeLeft, DIK_A, ControllerInput::DPadLeft);
-	bind(PlayerAction::DodgeRight, DIK_D, ControllerInput::DPadRight);
-	bind(PlayerAction::Melee, DIK_V, ControllerInput::Y);
-	bind(PlayerAction::NormalFire, 0, ControllerInput::RightTrigger, MouseInput::LeftButton);
-	bind(PlayerAction::HomingFire, 0, ControllerInput::LeftTrigger, MouseInput::RightButton);
-	bind(PlayerAction::LockToggle, DIK_TAB, ControllerInput::RightThumb);
-	bind(PlayerAction::LockRelease, DIK_X, ControllerInput::LeftThumb);
-	bind(PlayerAction::SpecialAttack, DIK_F, ControllerInput::Back);
-	bind(PlayerAction::Song, DIK_V, ControllerInput::Start);
+	// 基本移動・推進
+	bind(PlayerAction::MoveForward, DIK_W, ControllerInput::RightTrigger);      // RT: 前進 / 加速（ブースト）
+	bind(PlayerAction::MoveBackward, DIK_S, ControllerInput::LeftTrigger);       // LT: 後退 / 減速（ブレーキ）
+	bind(PlayerAction::MoveUp, DIK_SPACE, ControllerInput::A);                   // A: 上昇
+	bind(PlayerAction::MoveDown, DIK_LSHIFT, ControllerInput::LeftThumb);        // L3 (LeftThumb): 下降
+	
+	// 姿勢・カメラ・視点移動
+	bind(PlayerAction::TurnLeft, DIK_LEFT, ControllerInput::RightStickLeft);     // 右スティック←: 視点/旋回左
+	bind(PlayerAction::TurnRight, DIK_RIGHT, ControllerInput::RightStickRight);  // 右スティック→: 視点/旋回右
+	bind(PlayerAction::PitchUp, DIK_UP, ControllerInput::LeftStickUp);           // 左スティック↑: ピッチUp
+	bind(PlayerAction::PitchDown, DIK_DOWN, ControllerInput::LeftStickDown);     // 左スティック↓: ピッチDown
+	bind(PlayerAction::RollLeft, DIK_Q, ControllerInput::LeftStickLeft);         // 左スティック←: ロール左
+	bind(PlayerAction::RollRight, DIK_E, ControllerInput::LeftStickRight);       // 左スティック→: ロール右
+	
+	// ガウォーク/バトロイド時のストレイフ（横移動） / ファイター時のロール・旋回
+	bind(PlayerAction::DodgeLeft, DIK_A, ControllerInput::LeftStickLeft);        // 左スティック←: ガウォーク時左移動
+	bind(PlayerAction::DodgeRight, DIK_D, ControllerInput::LeftStickRight);      // 左スティック→: ガウォーク時右移動
+	
+	// 戦闘・ロックオン
+	bind(PlayerAction::NormalFire, 0, ControllerInput::RightBumper, MouseInput::LeftButton);  // RB: メイン射撃
+	bind(PlayerAction::HomingFire, 0, ControllerInput::LeftBumper, MouseInput::RightButton);  // LB: ホーミングミサイル
+	bind(PlayerAction::LockToggle, DIK_TAB, ControllerInput::RightThumb);                     // R3: ターゲットロック切替・解除
+	bind(PlayerAction::LockRelease, DIK_X, ControllerInput::None);
+	
+	// ガード・歌・必殺技
+	bind(PlayerAction::Guard, DIK_B, ControllerInput::B);                                     // B: ガード
+	bind(PlayerAction::Song, DIK_V, ControllerInput::X);                                      // X: 歌システム発動
+	bind(PlayerAction::SpecialAttack, DIK_F, ControllerInput::Back);                          // Back: SP必殺技
+	bind(PlayerAction::Melee, DIK_C, ControllerInput::None);
+	
+	// 変形（十字キー）
+	bind(PlayerAction::TransformFighter, DIK_1, ControllerInput::DPadUp);                     // 十字↑: ファイター
+	bind(PlayerAction::TransformGerwalk, DIK_2, ControllerInput::DPadRight);                  // 十字→: ガウォーク
+	bind(PlayerAction::TransformBattroid, DIK_3, ControllerInput::DPadDown);                  // 十字↓: バトロイド
 }
 
 void Input::SavePlayerActionBindings() const {

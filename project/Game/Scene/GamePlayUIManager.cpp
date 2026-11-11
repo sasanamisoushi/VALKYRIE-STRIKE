@@ -396,15 +396,29 @@ void GamePlayUIManager::DrawEditorToolbar() {
 	if (!ImGui::BeginMainMenuBar()) {
 		return;
 	}
+	const bool isBossBattleActive = [&]() {
+		for (const auto& enemy : scene_->enemies_) {
+			if (enemy && enemy->IsBoss() && !enemy->IsDead()) return true;
+		}
+		return false;
+	}();
 
 	if (ImGui::Button("再生")) {
-		// 毎回、編集時の初期配置に戻してからゲームループを開始する。
-		scene_->ResetEditorPreview();
+		// ボス戦を編集停止した後は、現在の位置・HP・設定を保ったまま再開する。
+		// 通常のレベル編集では従来どおり初期配置から再生する。
+		if (!isBossBattleActive) {
+			scene_->ResetEditorPreview();
+		}
 		scene_->isEditorPreviewPlaying_ = true;
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("編集に戻す")) {
-		scene_->ResetEditorPreview();
+		if (isBossBattleActive) {
+			// ボスを削除せず、その場の状態を保持して停止する。
+			scene_->isEditorPreviewPlaying_ = false;
+		} else {
+			scene_->ResetEditorPreview();
+		}
 	}
 
 	ImGui::SameLine();
@@ -422,7 +436,8 @@ void GamePlayUIManager::DrawEditorToolbar() {
 	}
 
 	ImGui::SameLine();
-	ImGui::TextDisabled(scene_->isEditorPreviewPlaying_ ? "再生中" : "編集モード（停止中）");
+	ImGui::TextDisabled(scene_->isEditorPreviewPlaying_ ? "再生中" :
+		(isBossBattleActive ? "ボス戦編集モード（停止中）" : "編集モード（停止中）"));
 	ImGui::EndMainMenuBar();
 #endif
 }
@@ -767,6 +782,7 @@ void GamePlayUIManager::UpdateUI() {
 			"操作設定",
 			"実行ファイル生成",
 			"スラスター位置",
+			"敵イベント・ボス戦",
 		};
 
 		ImGui::SetNextWindowSize(ImVec2(200.0f, 620.0f), ImGuiCond_Once);
@@ -980,6 +996,103 @@ void GamePlayUIManager::UpdateUI() {
 			}
 		}
 
+		}
+
+		if (currentEngineSettingsTarget_ == 8) {
+			ImGui::Text("敵イベント");
+			ImGui::TextDisabled("敵撃破後に別の敵を出現させる増援イベントを作成します。");
+			static int selectedTrigger = 0;
+			static int selectedTarget = 0;
+			static int eventDelay = 60;
+			std::vector<const char*> enemyNames;
+			for (const auto& spawn : enemySpawns_) {
+				enemyNames.push_back(spawn.name.c_str());
+			}
+			if (enemyNames.empty()) {
+				ImGui::TextDisabled("登録済みの敵配置がありません。先に「敵・障害物」で敵を追加してください。");
+			} else {
+				if (selectedTrigger >= static_cast<int>(enemyNames.size())) selectedTrigger = 0;
+				if (selectedTarget >= static_cast<int>(enemyNames.size())) selectedTarget = 0;
+				ImGui::Combo("トリガーとなる敵##event", &selectedTrigger, enemyNames.data(), static_cast<int>(enemyNames.size()));
+				ImGui::Combo("出現する敵##event", &selectedTarget, enemyNames.data(), static_cast<int>(enemyNames.size()));
+				ImGui::DragInt("出現までのディレイ（フレーム）##event", &eventDelay, 1, 0, 600);
+				if (ImGui::Button("イベントを追加##event")) {
+					enemyEventManager_.AddEvent(enemyNames[selectedTrigger], enemyNames[selectedTarget], eventDelay);
+					enemySpawns_[selectedTarget].isInitialSpawn = false;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("イベントを保存##event")) enemyEventManager_.SaveEvents("resources/enemy_events.json");
+				for (size_t index = 0; index < enemyEventManager_.GetEvents().size(); ++index) {
+					const auto& event = enemyEventManager_.GetEvents()[index];
+					ImGui::Text("[%d] %s が死んだら %d F後に %s が出現", static_cast<int>(index), event.triggerEnemyName.c_str(), event.delayFrames, event.targetEnemyName.c_str());
+					ImGui::SameLine();
+					if (ImGui::Button(("削除##event" + std::to_string(index)).c_str())) {
+						enemyEventManager_.RemoveEvent(index);
+						break;
+					}
+				}
+			}
+			ImGui::Separator();
+			simulationManager_->DrawBossBattleControls();
+
+			ImGui::Separator();
+			ImGui::Text("選択中のボス部位");
+			ImGui::TextDisabled("Game Viewで本体または推進炎を左クリックし、ドラッグで移動します。");
+			Boss* activeBoss = nullptr;
+			for (const auto& enemy : enemies_) {
+				if (enemy && enemy->IsBoss() && !enemy->IsDead()) {
+					activeBoss = dynamic_cast<Boss*>(enemy.get());
+					if (activeBoss) break;
+				}
+			}
+			if (!activeBoss) {
+				selectedBossEditorPart_ = -1;
+				ImGui::TextDisabled("編集するボスがいません。「この位置にボス戦を開始」で配置してください。");
+			} else if (selectedBossEditorPart_ == 0) {
+				Vector3 position = activeBoss->GetPosition();
+				ImGui::TextColored(ImVec4(0.35f, 0.90f, 1.0f, 1.0f), "ボス本体");
+				if (ImGui::DragFloat3("位置 (X, Y, Z)##selectedBossBody", &position.x, 0.05f)) {
+					activeBoss->SetPosition(position);
+					activeBoss->UpdateModel();
+					bossBattlePosition_[0] = position.x;
+					bossBattlePosition_[1] = position.y;
+					bossBattlePosition_[2] = position.z;
+				}
+				if (ImGui::Button("ボスの位置を保存##saveBossBodyPosition")) {
+					simulationManager_->SaveBossThrusterSettings("resources/boss_thruster_settings.json");
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("保存した位置を読込##loadBossBodyPosition")) {
+					simulationManager_->LoadBossThrusterSettings("resources/boss_thruster_settings.json");
+				}
+			} else if (selectedBossEditorPart_ > 0 &&
+				static_cast<size_t>(selectedBossEditorPart_ - 1) < activeBoss->GetRearThrusterCount()) {
+				const size_t thrusterIndex = static_cast<size_t>(selectedBossEditorPart_ - 1);
+				Boss::Tuning tuning = activeBoss->GetTuning();
+				Vector3& individualOffset = tuning.rearThrusterIndividualOffsets[thrusterIndex];
+				const Vector3 worldPosition = activeBoss->GetRearThrusterWorldPosition(thrusterIndex);
+				ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.30f, 1.0f), "後部スラスター %d", selectedBossEditorPart_);
+				ImGui::Text("現在の位置: %.2f, %.2f, %.2f", worldPosition.x, worldPosition.y, worldPosition.z);
+				if (ImGui::DragFloat3("個別位置補正 (X, Y, Z)##selectedBossThruster", &individualOffset.x, 0.02f)) {
+					activeBoss->SetTuning(tuning);
+					activeBoss->UpdateModel();
+					bossTuning_ = tuning;
+				}
+				if (ImGui::Button("このスラスターの位置補正を戻す")) {
+					tuning.rearThrusterIndividualOffsets[thrusterIndex] = { 0.0f, 0.0f, 0.0f };
+					activeBoss->SetTuning(tuning);
+					activeBoss->UpdateModel();
+					bossTuning_ = tuning;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("スラスター位置を保存##saveThrusterPosition")) {
+					simulationManager_->SaveBossThrusterSettings("resources/boss_thruster_settings.json");
+				}
+				ImGui::TextDisabled("数値はボス本体に対するローカル位置補正です。");
+			} else {
+				selectedBossEditorPart_ = -1;
+				ImGui::TextDisabled("Game Viewで編集する部位を選択してください。");
+			}
 		}
 
 		if (currentEngineSettingsTarget_ == 1) {

@@ -153,7 +153,10 @@ void ClearScene::Update() {
 		}
 	} else {
 		transitionFadeAlpha_ = (std::max)(0.0f, transitionFadeAlpha_ - 1.0f / 24.0f);
-		if (transitionFadeAlpha_ <= 0.0f && Input::GetInstance()->TriggerKey(DIK_SPACE)) {
+		Input* input = Input::GetInstance();
+		const bool confirm = input->TriggerKey(DIK_SPACE) || input->TriggerKey(DIK_RETURN) ||
+			input->TriggerControllerButton(XINPUT_GAMEPAD_A) || input->TriggerControllerButton(XINPUT_GAMEPAD_START);
+		if (transitionFadeAlpha_ <= 0.0f && confirm) {
 			isReturningToTitle_ = true;
 			returnToTitleFrame_ = 0;
 			if (PostEffect::GetInstance()) {

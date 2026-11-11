@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "Game/enemy/Boss.h"
 
 class GamePlayScene;
 
@@ -48,4 +49,11 @@ private:
 	std::string ammoSettingsMessage_;
 	std::string thrusterSettingsMessage_;
 	bool showThrusterPlacementMarkers_ = false;
+	// 「敵 & イベント」内のボス戦テスト・調整に使う保持値。
+	float bossBattlePosition_[3] = { 0.0f, 8.0f, 30.0f };
+	Boss::Tuning bossTuning_{};
+	std::string bossTuningMessage_;
+	// -1: 未選択、0: ボス本体、1以降: 後部スラスター。
+	int selectedBossEditorPart_ = -1;
+	bool bossEditorSelectionDrag_ = false;
 };
