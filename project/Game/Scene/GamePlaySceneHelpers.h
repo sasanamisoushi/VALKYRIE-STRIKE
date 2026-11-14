@@ -32,7 +32,8 @@ namespace {
 	const char *kLockOnReticleTexturePath = "resources/lock_on_reticle.png";
 	const char *kMissileLockOnReticleTexturePath = "resources/missile_lock_on_reticle.png";
 	const char *kAimCursorTexturePath = "resources/aim_cursor.png";
-	const char *kBoundaryAlertTexturePath = "resources/boundary_alert.png";
+	// ステージ境界へ近付いたときだけ空中に投影する、半透明の六角形エネルギーシールド。
+	const char *kBoundaryShieldTexturePath = "resources/boundary_hex_shield.png";
 
 	Vector3 SubtractVector3(const Vector3 &lhs, const Vector3 &rhs) {
 		return { lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z };

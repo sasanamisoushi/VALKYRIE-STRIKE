@@ -21,10 +21,6 @@
                     1.0000001192092896
                 ]
             },
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 0
         },
         {
@@ -46,10 +42,6 @@
                     1.000000238418579,
                     1.000000238418579
                 ]
-            },
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
             },
             "vertices_count": 0
         },
@@ -73,10 +65,6 @@
                     1.000000238418579
                 ]
             },
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 0
         },
         {
@@ -86,7 +74,7 @@
                 "translation": [
                     0.0,
                     0.0,
-                    -18.414703369140625
+                    -26.37160873413086
                 ],
                 "rotation": [
                     0.0,
@@ -94,9 +82,9 @@
                     0.0
                 ],
                 "scale": [
-                    10.46412091255188,
-                    9.462529182434082,
-                    1.35
+                    35.723609924316406,
+                    43.61075973510742,
+                    4.608784198760986
                 ]
             },
             "collider": {
@@ -115,10 +103,6 @@
             "category": "OBSTACLE",
             "game_obj_type": "OBSTACLE",
             "model": "OhirayamaTerrainFull.gltf",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 581904
         },
         {
@@ -144,10 +128,6 @@
             "category": "OBSTACLE",
             "game_obj_type": "OBSTACLE",
             "model": "立方体.obj",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 8
         },
         {
@@ -173,10 +153,6 @@
             "category": "OBSTACLE",
             "game_obj_type": "OBSTACLE",
             "model": "立方体.001.obj",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 8
         },
         {
@@ -202,10 +178,6 @@
             "category": "OBSTACLE",
             "game_obj_type": "OBSTACLE",
             "model": "ブロック.obj",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 74
         },
         {
@@ -215,7 +187,7 @@
                 "translation": [
                     0.0,
                     0.0,
-                    0.0
+                    169.0984344482422
                 ],
                 "rotation": [
                     0.0,
@@ -223,17 +195,13 @@
                     0.0
                 ],
                 "scale": [
-                    99.59502639770508,
-                    66.8485107421875,
-                    23.91957864761353
+                    401.1805419921875,
+                    363.5195007324219,
+                    187.44622802734375
                 ]
             },
             "category": "OBSTACLE",
             "game_obj_type": "OBSTACLE",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 8
         },
         {
@@ -292,10 +260,6 @@
             "category": "PLAYER",
             "game_obj_type": "PLAYER",
             "model": "立方体.004.obj",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
             "vertices_count": 8
         },
         {
@@ -545,9 +509,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath001",
             "reinforcement": {
@@ -578,9 +542,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath002",
             "reinforcement": {
@@ -611,9 +575,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath003",
             "reinforcement": {
@@ -644,9 +608,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath004",
             "reinforcement": {
@@ -677,9 +641,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath005",
             "reinforcement": {
@@ -710,9 +674,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath006",
             "reinforcement": {
@@ -743,9 +707,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath007",
             "reinforcement": {
@@ -776,9 +740,9 @@
             },
             "category": "ENEMY",
             "game_obj_type": "ENEMY",
-            "enemy_type": "VF1",
+            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF1"
+                "type": "VF3"
             },
             "path_id": "EnemyPath008",
             "reinforcement": {
@@ -7348,13 +7312,12 @@
         }
     ],
     "validation": {
-        "status": "G[ 21 / x 21",
+        "status": "G[ 28 / x 21",
         "errors": [
             "EnemyV: 敵リスポーン地点がStageBoundsの外にあります。",
-            "AIEnemy_01: 敵リスポーン地点がStageBoundsの外にあります。",
-            "AIEnemy_04: 敵リスポーン地点がStageBoundsの外にあります。",
-            "AIEnemy_05: 敵リスポーン地点がStageBoundsの外にあります。",
-            "AIEnemy_06: 敵リスポーン地点がStageBoundsの外にあります。",
+            "立方体.004: 自機スポーンが障害物に埋まっています: OhirayamaTerrain",
+            "立方体.003: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "EnemyV: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
             "AIEnemy_01: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
             "AIEnemy_02: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
             "AIEnemy_03: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
@@ -7362,6 +7325,14 @@
             "AIEnemy_05: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
             "AIEnemy_06: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
             "AIEnemy_07: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_01.001: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_02.001: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_03.001: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_01.002: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_02.002: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_03.002: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_04.001: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
+            "AIEnemy_05.001: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain",
             "立方体.003: 飛行パスID '' が見つかりません。",
             "EnemyV: 飛行パスID '' が見つかりません。",
             "AIEnemy_01: 飛行パスID '' が見つかりません。",
@@ -7395,6 +7366,6 @@
             "立方体.004: マテリアルが割り当てられていない面があります。",
             "EnemyV: マテリアルが割り当てられていない面があります。"
         ],
-        "checks": "OK\t出力対象の有無\t\nOK\tPLAYER配置\t\nOK\t敵リスポーン地点配置\t\nOK\tStageBounds配置\t\nERROR\tスポーンがStageBounds内にある\tEnemyV: 敵リスポーン地点がStageBoundsの外にあります。 ほか4件\nERROR\tリスポーン地点の埋まり\tAIEnemy_01: 敵リスポーン地点が障害物に埋まっています: OhirayamaTerrain ほか6件\nOK\tリスポーン地点の重複\t\nWARNING\t名前ベース重複\t名前のベースが重複しています: 立方体 (立方体, 立方体.001, 立方体.003, 立方体.004) ほか5件\nWARNING\t親子関係\tdem.wrl.cleaner.materialmerger.gles: 親子関係があります。ゲーム出力ではワールド座標で扱われるため、意図通りか確認してください。 ほか1件\nOK\t飛行パスID重複\t\nOK\t飛行パス制御点数\t\nOK\t飛行パス速度\t\nOK\t飛行パス距離\t\nOK\t飛行パスの遠すぎる座標\t\nWARNING\t未使用の飛行パス\tEnemyPath: どの敵リスポーン地点にも使われていない飛行パスです。\nERROR\t敵から参照する飛行パス\t立方体.003: 飛行パスID '' が見つかりません。 ほか8件\nOK\tコライダー種別\t\nOK\tBoxコライダーサイズ\t\nOK\tAABB想定Boxコライダー回転\t\nOK\tマイナススケール\t\nOK\t異常に遠い座標\t\nOK\t空っぽのメッシュ\t\nOK\tファイル名禁則文字\t\nWARNING\tトランスフォーム未適用\t立方体.001: トランスフォームが未適用です（回転 / スケール）。必要なら Ctrl+A で適用してください。 ほか2件\nOK\tUVマップ\t\nWARNING\tNゴン\tブロック: Nゴン（5頂点以上のポリゴン）があります。三角形または四角形に分割してください。\nWARNING\tマテリアル割り当て\t立方体: マテリアルが割り当てられていない面があります。 ほか4件\nOK\tゲーム用種類設定\t\nOK\t障害物メッシュ設定\t\nWARNING\t障害物コライダー設定\t立方体: OBSTACLE にコライダーが設定されていません。 ほか2件\nOK\t敵タイプ設定\t\nOK\t増援トリガー設定\t\nOK\t0に近いスケール\t\nOK\tStageBounds種類設定\t\nOK\tその他\t"
+        "checks": "OK\t出力対象の有無\t\nOK\tPLAYER配置\t\nOK\t敵リスポーン地点配置\t\nOK\tStageBounds配置\t\nERROR\tスポーンがStageBounds内にある\tEnemyV: 敵リスポーン地点がStageBoundsの外にあります。\nERROR\tリスポーン地点の埋まり\t立方体.004: 自機スポーンが障害物に埋まっています: OhirayamaTerrain ほか17件\nOK\tリスポーン地点の重複\t\nWARNING\t名前ベース重複\t名前のベースが重複しています: 立方体 (立方体, 立方体.001, 立方体.003, 立方体.004) ほか5件\nWARNING\t親子関係\tdem.wrl.cleaner.materialmerger.gles: 親子関係があります。ゲーム出力ではワールド座標で扱われるため、意図通りか確認してください。 ほか1件\nOK\t飛行パスID重複\t\nOK\t飛行パス制御点数\t\nOK\t飛行パス速度\t\nOK\t飛行パス距離\t\nOK\t飛行パスの遠すぎる座標\t\nWARNING\t未使用の飛行パス\tEnemyPath: どの敵リスポーン地点にも使われていない飛行パスです。\nERROR\t敵から参照する飛行パス\t立方体.003: 飛行パスID '' が見つかりません。 ほか8件\nOK\tコライダー種別\t\nOK\tBoxコライダーサイズ\t\nOK\tAABB想定Boxコライダー回転\t\nOK\tマイナススケール\t\nOK\t異常に遠い座標\t\nOK\t空っぽのメッシュ\t\nOK\tファイル名禁則文字\t\nWARNING\tトランスフォーム未適用\t立方体.001: トランスフォームが未適用です（回転 / スケール）。必要なら Ctrl+A で適用してください。 ほか2件\nOK\tUVマップ\t\nWARNING\tNゴン\tブロック: Nゴン（5頂点以上のポリゴン）があります。三角形または四角形に分割してください。\nWARNING\tマテリアル割り当て\t立方体: マテリアルが割り当てられていない面があります。 ほか4件\nOK\tゲーム用種類設定\t\nOK\t障害物メッシュ設定\t\nWARNING\t障害物コライダー設定\t立方体: OBSTACLE にコライダーが設定されていません。 ほか2件\nOK\t敵タイプ設定\t\nOK\t増援トリガー設定\t\nOK\t0に近いスケール\t\nOK\tStageBounds種類設定\t\nOK\tその他\t"
     }
 }

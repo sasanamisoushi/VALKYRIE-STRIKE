@@ -1478,7 +1478,7 @@ void SimulationManager::DrawSimulationScreenUI() {
 		ImGui::BeginDisabled(packageCreationRunning);
 		ImGui::Checkbox("デモプレイを含める", &includeDemoPlay);
 		ImGui::EndDisabled();
-		ImGui::TextDisabled("ONにすると ValkyrieStrikeCodexDemo.exe もZIPへ同梱します。");
+		ImGui::TextDisabled("ONにするとデモ専用EXEを同梱し、タイトルのTABアトラクトデモも有効にします。");
 		ImGui::Separator();
 		if (!projectFound) {
 			ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.25f, 1.0f), "プロジェクトフォルダー内から起動した場合のみ使用できます。");

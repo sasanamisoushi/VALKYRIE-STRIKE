@@ -407,7 +407,8 @@ void ParticleManager::Update(Camera *camera) {
 						alpha = 1.0f;
 					}
 				}
-				group.instancingDataPtr[numInstance].color.w = alpha;
+				// 粒子固有の不透明度を保ったまま寿命でフェードさせる。
+				group.instancingDataPtr[numInstance].color.w = it->color.w * alpha;
 
 				numInstance++; // 書き込んだ件数をカウント
 			}

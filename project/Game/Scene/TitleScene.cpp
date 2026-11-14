@@ -13,13 +13,33 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <shellapi.h>
+#include <externals/json.hpp>
 #include <externals/imgui/imgui.h>
 
 namespace {
 	constexpr int kLaunchDurationFrames = 84;
 	// START GAME 決定後も、タイトルUIを約0.33秒だけ残して自然に消す。
 	constexpr int kLaunchUiFadeFrames = 20;
+	constexpr const char* kRuntimeOptionsPath = "resources/runtime_options.json";
+
+	// 開発版には設定ファイルを置かないため、未配置時は従来どおり有効にする。
+	// 配布ZIPでファイルが壊れている場合は、意図しないデモの露出を避けるため無効化する。
+	bool IsAttractDemoAllowedByRuntimeOptions() {
+		std::ifstream input(kRuntimeOptionsPath);
+		if (!input.is_open()) {
+			return true;
+		}
+
+		try {
+			nlohmann::json options;
+			input >> options;
+			return options.value("allowAttractDemo", false);
+		} catch (...) {
+			return false;
+		}
+	}
 
 	Matrix4x4 MakeCenteredUVRotation(float radians) {
 		const Matrix4x4 moveToCenter = MyMath::MakeTranslateMatrix({ -0.5f, -0.5f, 0.0f });
@@ -53,6 +73,11 @@ namespace {
 }
 
 void TitleScene::Initialize() {
+	isAttractDemoAvailable_ = IsAttractDemoAllowedByRuntimeOptions();
+	if (!isAttractDemoAvailable_) {
+		StopAttractDemo();
+	}
+
 	// ポストエフェクトを通常状態にクリアする
 	if (PostEffect::GetInstance()) {
 		PostEffect::GetInstance()->SetEffectType(0);
@@ -242,7 +267,7 @@ void TitleScene::Update() {
 	}
 
 #if defined(CG2_RELEASE_BUILD)
-	if (!isSettingsOpen_ && canAcceptInput) {
+	if (isAttractDemoAvailable_ && !isSettingsOpen_ && canAcceptInput) {
 		if (Input::GetInstance()->TriggerKey(DIK_TAB)) {
 			// 通常タイトルでは開始、デモ周回中に表示されたタイトルでは終了する。
 			if (isAttractDemoEnabled_) {
@@ -568,7 +593,7 @@ void TitleScene::Draw() {
 
 void TitleScene::DrawAttractDemoStartPrompt(float screenWidth, float screenHeight) {
 #if defined(CG2_RELEASE_BUILD) && defined(ENABLE_IMGUI)
-	if (isSettingsOpen_ || !ImGui::GetCurrentContext()) {
+	if (!isAttractDemoAvailable_ || isSettingsOpen_ || !ImGui::GetCurrentContext()) {
 		return;
 	}
 

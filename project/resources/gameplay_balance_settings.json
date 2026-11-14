@@ -1,0 +1,73 @@
+{
+  "gameplay_balance": {
+    "special_attack_cost": 50.0,
+    "sp_recovery_per_second": 3.0,
+    "special_attack_duration_frames": 180,
+    "special_attack_fire_interval_frames": 6,
+    "song_duration_frames": 900,
+    "boss_max_active_minions": 6,
+    "speed_rush_enabled": true,
+    "speed_rush_max_altitude": 24.0,
+    "speed_rush_min_speed_ratio": 0.65,
+    "speed_rush_max_particles_per_frame": 4,
+    "speed_rush_spawn_distance": 8.0,
+    "speed_rush_spawn_half_width": 5.5,
+    "speed_rush_spawn_half_height": 2.8,
+    "speed_rush_particle_speed": 0.62,
+    "speed_rush_particle_scale": 0.18,
+    "speed_rush_particle_lifetime": 0.34,
+    "normal_speed": 1.5,
+    "normal_homing_strength": 0.28,
+    "normal_scale": 0.3,
+    "normal_collision_radius": 0.3,
+    "normal_lifetime": 120,
+    "homing_speed": 0.75,
+    "homing_strength": 0.085,
+    "homing_scale": 0.5,
+    "homing_collision_radius": 0.5,
+    "homing_trail_width": 0.5,
+    "homing_lifetime": 240,
+    "muzzle_offset": 0.8,
+    "player_modes": [
+      {
+        "max_speed": 0.24,
+        "acceleration": 0.02,
+        "damping": 0.96,
+        "pitch_speed": 0.018,
+        "yaw_speed": 0.017,
+        "roll_speed": 0.03,
+        "can_guard": false,
+        "can_melee": false,
+        "max_multi_lock": 8,
+        "lock_angle_dot": 0.5,
+        "lock_distance": 200.0
+      },
+      {
+        "max_speed": 0.14,
+        "acceleration": 0.03,
+        "damping": 0.76,
+        "pitch_speed": 0.02,
+        "yaw_speed": 0.024,
+        "roll_speed": 0.01,
+        "can_guard": true,
+        "can_melee": false,
+        "max_multi_lock": 4,
+        "lock_angle_dot": -0.2,
+        "lock_distance": 100.0
+      },
+      {
+        "max_speed": 0.22,
+        "acceleration": 0.018,
+        "damping": 0.8,
+        "pitch_speed": 0.02,
+        "yaw_speed": 0.02,
+        "roll_speed": 0.02,
+        "can_guard": true,
+        "can_melee": true,
+        "max_multi_lock": 2,
+        "lock_angle_dot": -1.0,
+        "lock_distance": 60.0
+      }
+    ]
+  }
+}

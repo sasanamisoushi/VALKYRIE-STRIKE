@@ -37,13 +37,8 @@ using json = nlohmann::json;
 
 namespace {
 	constexpr int kNoEnemyRespawnTimer = -1;
-	constexpr float kSpecialAttackCost = 50.0f;
-	constexpr float kSpGaugeRecoveryPerFrame = 3.0f / 60.0f;
-	constexpr int kSpecialAttackDurationFrames = 180;
-	constexpr int kSpecialAttackFireIntervalFrames = 6;
-	constexpr int kSongDurationFrames = 900;
 	constexpr char kSongParticleGroup[] = "songSparkle";
-	constexpr int kBossMaxActiveMinions = 6;
+	constexpr char kSpeedRushParticleGroup[] = "lowAltitudeSpeedRush";
 
 	float SmoothStep01(float value) {
 		value = std::clamp(value, 0.0f, 1.0f);
@@ -95,6 +90,209 @@ namespace {
 
 GamePlayScene::GamePlayScene(Mode mode)
 	: mode_(mode) {
+}
+
+void GamePlayScene::ApplyBoundaryShieldSettings() {
+	boundaryShieldSettings_.warningDistance = std::clamp(boundaryShieldSettings_.warningDistance, 5.0f, 250.0f);
+	boundaryShieldSettings_.wallWidth = std::clamp(boundaryShieldSettings_.wallWidth, 1.0f, 100.0f);
+	boundaryShieldSettings_.wallHeight = std::clamp(boundaryShieldSettings_.wallHeight, 1.0f, 100.0f);
+	boundaryShieldSettings_.ceilingWidth = std::clamp(boundaryShieldSettings_.ceilingWidth, 1.0f, 100.0f);
+	boundaryShieldSettings_.ceilingHeight = std::clamp(boundaryShieldSettings_.ceilingHeight, 1.0f, 100.0f);
+	boundaryShieldSettings_.maxOpacity = std::clamp(boundaryShieldSettings_.maxOpacity, 0.05f, 1.0f);
+	boundaryShieldSettings_.pulseSpeed = std::clamp(boundaryShieldSettings_.pulseSpeed, 0.0f, 0.50f);
+	boundaryShieldSettings_.pulseStrength = std::clamp(boundaryShieldSettings_.pulseStrength, 0.0f, 0.50f);
+	boundaryShieldSettings_.surfaceOffset = std::clamp(boundaryShieldSettings_.surfaceOffset, 0.0f, 5.0f);
+	boundaryShieldSettings_.color.x = std::clamp(boundaryShieldSettings_.color.x, 0.0f, 1.0f);
+	boundaryShieldSettings_.color.y = std::clamp(boundaryShieldSettings_.color.y, 0.0f, 1.0f);
+	boundaryShieldSettings_.color.z = std::clamp(boundaryShieldSettings_.color.z, 0.0f, 1.0f);
+	if (player_) {
+		player_->SetBoundaryWarningThreshold(boundaryShieldSettings_.warningDistance);
+	}
+}
+
+bool GamePlayScene::LoadBoundaryShieldSettings() {
+	std::ifstream input(kBoundaryShieldSettingsPath);
+	if (!input.is_open()) {
+		return false;
+	}
+
+	try {
+		json document;
+		input >> document;
+		const json& settings = document.contains("boundary_shield") ? document["boundary_shield"] : document;
+		auto readFloat = [&settings](const char* name, float& destination) {
+			if (settings.contains(name) && settings[name].is_number()) {
+				destination = settings[name].get<float>();
+			}
+		};
+		readFloat("warning_distance", boundaryShieldSettings_.warningDistance);
+		readFloat("wall_width", boundaryShieldSettings_.wallWidth);
+		readFloat("wall_height", boundaryShieldSettings_.wallHeight);
+		readFloat("ceiling_width", boundaryShieldSettings_.ceilingWidth);
+		readFloat("ceiling_height", boundaryShieldSettings_.ceilingHeight);
+		readFloat("max_opacity", boundaryShieldSettings_.maxOpacity);
+		readFloat("pulse_speed", boundaryShieldSettings_.pulseSpeed);
+		readFloat("pulse_strength", boundaryShieldSettings_.pulseStrength);
+		readFloat("surface_offset", boundaryShieldSettings_.surfaceOffset);
+		if (settings.contains("color") && settings["color"].is_array() && settings["color"].size() == 3) {
+			if (settings["color"][0].is_number()) boundaryShieldSettings_.color.x = settings["color"][0].get<float>();
+			if (settings["color"][1].is_number()) boundaryShieldSettings_.color.y = settings["color"][1].get<float>();
+			if (settings["color"][2].is_number()) boundaryShieldSettings_.color.z = settings["color"][2].get<float>();
+		}
+		ApplyBoundaryShieldSettings();
+		return true;
+	} catch (const std::exception&) {
+		return false;
+	}
+}
+
+bool GamePlayScene::SaveBoundaryShieldSettings() const {
+	std::ofstream output(kBoundaryShieldSettingsPath, std::ios::trunc);
+	if (!output.is_open()) {
+		return false;
+	}
+	const BoundaryShieldSettings& settings = boundaryShieldSettings_;
+	const json document = {
+		{ "boundary_shield", {
+			{ "warning_distance", settings.warningDistance },
+			{ "wall_width", settings.wallWidth },
+			{ "wall_height", settings.wallHeight },
+			{ "ceiling_width", settings.ceilingWidth },
+			{ "ceiling_height", settings.ceilingHeight },
+			{ "max_opacity", settings.maxOpacity },
+			{ "pulse_speed", settings.pulseSpeed },
+			{ "pulse_strength", settings.pulseStrength },
+			{ "surface_offset", settings.surfaceOffset },
+			{ "color", { settings.color.x, settings.color.y, settings.color.z } },
+		} }
+	};
+	output << document.dump(2) << '\n';
+	return output.good();
+}
+
+void GamePlayScene::CaptureGameplayBalanceDefaults() {
+	if (!player_) {
+		return;
+	}
+	for (int mode = 0; mode < 3; ++mode) {
+		gameplayBalanceSettings_.playerModes[mode] = player_->GetModeParams(static_cast<PlayerMode>(mode));
+	}
+}
+
+void GamePlayScene::ApplyGameplayBalanceSettings() {
+	auto& settings = gameplayBalanceSettings_;
+	settings.specialAttackCost = std::clamp(settings.specialAttackCost, 0.0f, 100.0f);
+	settings.spGaugeRecoveryPerSecond = std::clamp(settings.spGaugeRecoveryPerSecond, 0.0f, 60.0f);
+	settings.specialAttackDurationFrames = std::clamp(settings.specialAttackDurationFrames, 1, 3600);
+	settings.specialAttackFireIntervalFrames = std::clamp(settings.specialAttackFireIntervalFrames, 1, 300);
+	settings.songDurationFrames = std::clamp(settings.songDurationFrames, 60, 7200);
+	settings.bossMaxActiveMinions = std::clamp(settings.bossMaxActiveMinions, 0, 24);
+	settings.speedRushMaxAltitude = std::clamp(settings.speedRushMaxAltitude, 1.0f, 200.0f);
+	settings.speedRushMinSpeedRatio = std::clamp(settings.speedRushMinSpeedRatio, 0.05f, 2.0f);
+	settings.speedRushMaxParticlesPerFrame = std::clamp(settings.speedRushMaxParticlesPerFrame, 1, 16);
+	settings.speedRushSpawnDistance = std::clamp(settings.speedRushSpawnDistance, 1.0f, 50.0f);
+	settings.speedRushSpawnHalfWidth = std::clamp(settings.speedRushSpawnHalfWidth, 0.1f, 30.0f);
+	settings.speedRushSpawnHalfHeight = std::clamp(settings.speedRushSpawnHalfHeight, 0.1f, 20.0f);
+	settings.speedRushParticleSpeed = std::clamp(settings.speedRushParticleSpeed, 0.01f, 3.0f);
+	settings.speedRushParticleScale = std::clamp(settings.speedRushParticleScale, 0.01f, 3.0f);
+	settings.speedRushParticleLifetime = std::clamp(settings.speedRushParticleLifetime, 0.05f, 2.0f);
+	missileNormalSpeed = std::clamp(missileNormalSpeed, 0.01f, 10.0f);
+	missileNormalHomingStrength = std::clamp(missileNormalHomingStrength, 0.0f, 1.0f);
+	missileNormalScale = std::clamp(missileNormalScale, 0.01f, 5.0f);
+	missileNormalCollisionRadius = std::clamp(missileNormalCollisionRadius, 0.01f, 10.0f);
+	missileNormalLifeTime = std::clamp(missileNormalLifeTime, 1, 3600);
+	missileSpeed = std::clamp(missileSpeed, 0.01f, 10.0f);
+	missileHomingStrength = std::clamp(missileHomingStrength, 0.0f, 1.0f);
+	missileHomingScale = std::clamp(missileHomingScale, 0.01f, 5.0f);
+	missileHomingCollisionRadius = std::clamp(missileHomingCollisionRadius, 0.01f, 10.0f);
+	missileTrailWidth = std::clamp(missileTrailWidth, 0.0f, 10.0f);
+	missileLifeTime = std::clamp(missileLifeTime, 1, 3600);
+	missileMuzzleOffset = std::clamp(missileMuzzleOffset, 0.0f, 20.0f);
+	if (player_) {
+		for (int mode = 0; mode < 3; ++mode) {
+			player_->SetModeParams(static_cast<PlayerMode>(mode), settings.playerModes[mode]);
+			settings.playerModes[mode] = player_->GetModeParams(static_cast<PlayerMode>(mode));
+		}
+	}
+}
+
+bool GamePlayScene::LoadGameplayBalanceSettings() {
+	std::ifstream input(kGameplayBalanceSettingsPath);
+	if (!input.is_open()) return false;
+	try {
+		json root;
+		input >> root;
+		const json& settings = root.contains("gameplay_balance") ? root["gameplay_balance"] : root;
+		auto readFloat = [&settings](const char* name, float& value) { if (settings.contains(name) && settings[name].is_number()) value = settings[name].get<float>(); };
+		auto readInt = [&settings](const char* name, int& value) { if (settings.contains(name) && settings[name].is_number_integer()) value = settings[name].get<int>(); };
+		readFloat("special_attack_cost", gameplayBalanceSettings_.specialAttackCost);
+		readFloat("sp_recovery_per_second", gameplayBalanceSettings_.spGaugeRecoveryPerSecond);
+		readInt("special_attack_duration_frames", gameplayBalanceSettings_.specialAttackDurationFrames);
+		readInt("special_attack_fire_interval_frames", gameplayBalanceSettings_.specialAttackFireIntervalFrames);
+		readInt("song_duration_frames", gameplayBalanceSettings_.songDurationFrames);
+		readInt("boss_max_active_minions", gameplayBalanceSettings_.bossMaxActiveMinions);
+		if (settings.contains("speed_rush_enabled") && settings["speed_rush_enabled"].is_boolean()) gameplayBalanceSettings_.speedRushEnabled = settings["speed_rush_enabled"].get<bool>();
+		readFloat("speed_rush_max_altitude", gameplayBalanceSettings_.speedRushMaxAltitude);
+		readFloat("speed_rush_min_speed_ratio", gameplayBalanceSettings_.speedRushMinSpeedRatio);
+		readInt("speed_rush_max_particles_per_frame", gameplayBalanceSettings_.speedRushMaxParticlesPerFrame);
+		readFloat("speed_rush_spawn_distance", gameplayBalanceSettings_.speedRushSpawnDistance);
+		readFloat("speed_rush_spawn_half_width", gameplayBalanceSettings_.speedRushSpawnHalfWidth);
+		readFloat("speed_rush_spawn_half_height", gameplayBalanceSettings_.speedRushSpawnHalfHeight);
+		readFloat("speed_rush_particle_speed", gameplayBalanceSettings_.speedRushParticleSpeed);
+		readFloat("speed_rush_particle_scale", gameplayBalanceSettings_.speedRushParticleScale);
+		readFloat("speed_rush_particle_lifetime", gameplayBalanceSettings_.speedRushParticleLifetime);
+		readFloat("normal_speed", missileNormalSpeed); readFloat("normal_homing_strength", missileNormalHomingStrength);
+		readFloat("normal_scale", missileNormalScale); readFloat("normal_collision_radius", missileNormalCollisionRadius); readInt("normal_lifetime", missileNormalLifeTime);
+		readFloat("homing_speed", missileSpeed); readFloat("homing_strength", missileHomingStrength);
+		readFloat("homing_scale", missileHomingScale); readFloat("homing_collision_radius", missileHomingCollisionRadius);
+		readFloat("homing_trail_width", missileTrailWidth); readInt("homing_lifetime", missileLifeTime); readFloat("muzzle_offset", missileMuzzleOffset);
+		if (settings.contains("player_modes") && settings["player_modes"].is_array()) {
+			for (size_t mode = 0; mode < 3 && mode < settings["player_modes"].size(); ++mode) {
+				const json& p = settings["player_modes"][mode];
+				if (!p.is_object()) continue;
+				auto& target = gameplayBalanceSettings_.playerModes[mode];
+				auto getFloat = [&p](const char* name, float& value) { if (p.contains(name) && p[name].is_number()) value = p[name].get<float>(); };
+				getFloat("max_speed", target.maxMoveSpeed); getFloat("acceleration", target.moveAcceleration); getFloat("damping", target.moveDamping);
+				getFloat("pitch_speed", target.pitchSpeed); getFloat("yaw_speed", target.yawSpeed); getFloat("roll_speed", target.rollSpeed);
+				getFloat("lock_angle_dot", target.lockOnAngleDot); getFloat("lock_distance", target.maxLockOnDistance);
+				if (p.contains("max_multi_lock") && p["max_multi_lock"].is_number_integer()) target.maxMultiLock = p["max_multi_lock"].get<int>();
+				if (p.contains("can_guard") && p["can_guard"].is_boolean()) target.canGuard = p["can_guard"].get<bool>();
+				if (p.contains("can_melee") && p["can_melee"].is_boolean()) target.canMelee = p["can_melee"].get<bool>();
+			}
+		}
+		ApplyGameplayBalanceSettings();
+		return true;
+	} catch (const std::exception&) { return false; }
+}
+
+bool GamePlayScene::SaveGameplayBalanceSettings() const {
+	std::ofstream output(kGameplayBalanceSettingsPath, std::ios::trunc);
+	if (!output.is_open()) return false;
+	const auto& balance = gameplayBalanceSettings_;
+	json modes = json::array();
+	for (const PlayerModeParams& p : balance.playerModes) {
+		modes.push_back({ { "max_speed", p.maxMoveSpeed }, { "acceleration", p.moveAcceleration }, { "damping", p.moveDamping },
+			{ "pitch_speed", p.pitchSpeed }, { "yaw_speed", p.yawSpeed }, { "roll_speed", p.rollSpeed },
+			{ "can_guard", p.canGuard }, { "can_melee", p.canMelee }, { "max_multi_lock", p.maxMultiLock },
+			{ "lock_angle_dot", p.lockOnAngleDot }, { "lock_distance", p.maxLockOnDistance } });
+	}
+	json root = { { "gameplay_balance", {
+		{ "special_attack_cost", balance.specialAttackCost }, { "sp_recovery_per_second", balance.spGaugeRecoveryPerSecond },
+		{ "special_attack_duration_frames", balance.specialAttackDurationFrames }, { "special_attack_fire_interval_frames", balance.specialAttackFireIntervalFrames },
+		{ "song_duration_frames", balance.songDurationFrames }, { "boss_max_active_minions", balance.bossMaxActiveMinions },
+		{ "speed_rush_enabled", balance.speedRushEnabled }, { "speed_rush_max_altitude", balance.speedRushMaxAltitude },
+		{ "speed_rush_min_speed_ratio", balance.speedRushMinSpeedRatio }, { "speed_rush_max_particles_per_frame", balance.speedRushMaxParticlesPerFrame },
+		{ "speed_rush_spawn_distance", balance.speedRushSpawnDistance }, { "speed_rush_spawn_half_width", balance.speedRushSpawnHalfWidth },
+		{ "speed_rush_spawn_half_height", balance.speedRushSpawnHalfHeight }, { "speed_rush_particle_speed", balance.speedRushParticleSpeed },
+		{ "speed_rush_particle_scale", balance.speedRushParticleScale }, { "speed_rush_particle_lifetime", balance.speedRushParticleLifetime },
+		{ "normal_speed", missileNormalSpeed }, { "normal_homing_strength", missileNormalHomingStrength }, { "normal_scale", missileNormalScale },
+		{ "normal_collision_radius", missileNormalCollisionRadius }, { "normal_lifetime", missileNormalLifeTime },
+		{ "homing_speed", missileSpeed }, { "homing_strength", missileHomingStrength }, { "homing_scale", missileHomingScale },
+		{ "homing_collision_radius", missileHomingCollisionRadius }, { "homing_trail_width", missileTrailWidth }, { "homing_lifetime", missileLifeTime },
+		{ "muzzle_offset", missileMuzzleOffset }, { "player_modes", modes }
+	} } };
+	output << root.dump(2) << '\n';
+	return output.good();
 }
 
 void GamePlayScene::BeginTitleLaunch() {
@@ -245,6 +443,7 @@ void GamePlayScene::ClearAllEnemyReferences() {
 
 void GamePlayScene::Initialize() {
 
+	LoadBoundaryShieldSettings();
 
 	camera = std::make_unique<Camera>();
 	ammoManager_ = std::make_unique<AmmoManager>();
@@ -261,7 +460,7 @@ void GamePlayScene::Initialize() {
 	TextureManager::GetInstance()->LoadTexture(kLockOnReticleTexturePath);
 	TextureManager::GetInstance()->LoadTexture(kMissileLockOnReticleTexturePath);
 	TextureManager::GetInstance()->LoadTexture(kAimCursorTexturePath);
-	TextureManager::GetInstance()->LoadTexture(kBoundaryAlertTexturePath);
+	TextureManager::GetInstance()->LoadTexture(kBoundaryShieldTexturePath);
 
 	aimCursorSprite_ = std::make_unique<Sprite>();
 	aimCursorSprite_->Initialize(SpriteCommon::GetInstance(), kAimCursorTexturePath);
@@ -403,18 +602,21 @@ void GamePlayScene::Initialize() {
 	tutorialHomingLaunches_ = 0;
 	ammoManager_->Initialize();
 
-	ModelManager::GetInstance()->CreatePlaneModel("BoundaryAlertPlane");
-	Model* alertModel = ModelManager::GetInstance()->FindModel("BoundaryAlertPlane");
+	ModelManager::GetInstance()->CreatePlaneModel("BoundaryHexShield");
+	Model* alertModel = ModelManager::GetInstance()->FindModel("BoundaryHexShield");
 	if (alertModel) {
-		alertModel->SetTextureFilePath(kBoundaryAlertTexturePath);
-		alertModel->SetAlphaReference(0.05f); // Discard almost-black background
+		alertModel->SetTextureFilePath(kBoundaryShieldTexturePath);
+		// テクスチャの透明部分は捨て、六角形の発光線だけを半透明で重ねる。
+		alertModel->SetAlphaReference(0.01f);
+		alertModel->SetEnableLighting(false);
+		alertModel->SetShininess(0.0f);
 	}
 	boundaryAlertObject_ = std::make_unique<Object3d>();
 	boundaryAlertObject_->Initialize(Object3dCommon::GetInstance());
-	boundaryAlertObject_->SetModel("BoundaryAlertPlane");
+	boundaryAlertObject_->SetModel("BoundaryHexShield");
 	ceilingBoundaryAlertObject_ = std::make_unique<Object3d>();
 	ceilingBoundaryAlertObject_->Initialize(Object3dCommon::GetInstance());
-	ceilingBoundaryAlertObject_->SetModel("BoundaryAlertPlane");
+	ceilingBoundaryAlertObject_->SetModel("BoundaryHexShield");
 
 
 	// SkyboxCommon is now initialized in Framework.cpp
@@ -514,6 +716,8 @@ void GamePlayScene::Initialize() {
 	environmentRenderer_->GetParticleManager()->CreateParticleGroup("smoke", "resources/circle.png");
 	// 歌の最中だけプレイヤーの後方へ流す、黄色いスラスター状の残光。
 	environmentRenderer_->GetParticleManager()->CreateParticleGroup(kSongParticleGroup, "resources/circle.png");
+	// 低空高速時にカメラ近傍を横切る、細い大気・ダストの流れ。
+	environmentRenderer_->GetParticleManager()->CreateParticleGroup(kSpeedRushParticleGroup, "resources/warp_speedline_particle.png");
 
 
 	soundData1 = AudioManager::GetInstance()->LoadWave("resources/Alarm01.wav");
@@ -564,6 +768,10 @@ void GamePlayScene::Initialize() {
 
 	player_ = std::make_unique<Player>();
 	player_->Initialize(kPlayerModelName);
+	ApplyBoundaryShieldSettings();
+	CaptureGameplayBalanceDefaults();
+	LoadGameplayBalanceSettings();
+	ApplyGameplayBalanceSettings();
 
 
 	missileManager_ = std::make_unique<MissileManager>();
@@ -1189,7 +1397,7 @@ MissileTuning GamePlayScene::MakeMissileTuning(MissileType type) const {
 	if (type == MissileType::Normal) {
 		tuning.speed = missileNormalSpeed;
 		// ロックオン中の通常弾だけに使う、見た目を崩さない弱い追尾力。
-		tuning.homingStrength = 0.28f;
+		tuning.homingStrength = missileNormalHomingStrength;
 		tuning.scale = missileNormalScale;
 		tuning.collisionRadius = missileNormalCollisionRadius;
 		tuning.trailWidth = 0.0f;
@@ -1562,9 +1770,9 @@ void GamePlayScene::Update() {
 
 
 	if (!isGameOver_ && shouldUpdateGame && canUsePlayerInput &&
-		!isSpecialAttackActive_ && spGauge_ >= kSpecialAttackCost &&
+		!isSpecialAttackActive_ && spGauge_ >= gameplayBalanceSettings_.specialAttackCost &&
 		Input::GetInstance()->TriggerAction(PlayerAction::SpecialAttack)) {
-		spGauge_ -= kSpecialAttackCost;
+		spGauge_ -= gameplayBalanceSettings_.specialAttackCost;
 		isSpecialAttackActive_ = true;
 		specialAttackFrame_ = 0;
 		if (player_) {
@@ -1624,7 +1832,7 @@ void GamePlayScene::Update() {
 
 	if (isSongActive_ && shouldUpdateGame) {
 		++songFrame_;
-		if (songFrame_ >= kSongDurationFrames) { // 15 seconds
+		if (songFrame_ >= gameplayBalanceSettings_.songDurationFrames) {
 			isSongActive_ = false;
 			songFrame_ = 0;
 			songFlightTrailsInitialized_ = false;
@@ -1658,12 +1866,12 @@ void GamePlayScene::Update() {
 			lockedBossTurretIndex_ = -1;
 		}
 
-		if (specialAttackFrame_ % kSpecialAttackFireIntervalFrames == 0 && missilePresetManager_) {
+		if (specialAttackFrame_ % gameplayBalanceSettings_.specialAttackFireIntervalFrames == 0 && missilePresetManager_) {
 			missilePresetManager_->FirePlayerMissile(MissileType::Normal, nullptr, -0.3f, false);
 			missilePresetManager_->FirePlayerMissile(MissileType::MissileWithTrail, nullptr, 0.3f, false);
 		}
 		++specialAttackFrame_;
-		if (specialAttackFrame_ >= kSpecialAttackDurationFrames) {
+		if (specialAttackFrame_ >= gameplayBalanceSettings_.specialAttackDurationFrames) {
 			isSpecialAttackActive_ = false;
 			specialAttackFrame_ = 0;
 			if (player_) {
@@ -1671,7 +1879,7 @@ void GamePlayScene::Update() {
 			}
 		}
 	} else {
-		spGauge_ = std::clamp(spGauge_ + kSpGaugeRecoveryPerFrame, 0.0f, 100.0f);
+		spGauge_ = std::clamp(spGauge_ + gameplayBalanceSettings_.spGaugeRecoveryPerSecond / 60.0f, 0.0f, 100.0f);
 	}
 
 	if (myBox && animationData.duration > 0.0f) {
@@ -2153,7 +2361,7 @@ void GamePlayScene::Update() {
 					[](const std::unique_ptr<Enemy>& enemy) {
 						return enemy && !enemy->IsDead() && enemy->IsBossMinion();
 					}));
-				const int summonCount = (std::min)(requestedCount, (std::max)(0, kBossMaxActiveMinions - activeMinionCount));
+				const int summonCount = (std::min)(requestedCount, (std::max)(0, gameplayBalanceSettings_.bossMaxActiveMinions - activeMinionCount));
 				for (int i = 0; i < summonCount; ++i) {
 					auto escort = std::make_unique<Enemy>();
 					// 召喚直後はボス本体の中心から出現し、その後に通常の分離処理で展開する。
@@ -2771,6 +2979,48 @@ void GamePlayScene::Update() {
 		}
 	}
 
+	// ファイターで地表すれすれを高速飛行している時だけ、カメラの少し前から
+	// 後方へ流れる細い大気・ダストを発生させる。高度と速度のどちらかが不足すると
+	// 自然に本数が減るので、通常飛行や上空で画面を汚さない。
+	if (shouldUpdateGame && !isGameOver_ && !IsTitleBackgroundMode() && player_ && activeCamera &&
+		environmentRenderer_ && environmentRenderer_->GetParticleManager() &&
+		player_->GetCurrentMode() == PlayerMode::Fighter) {
+		const GameplayBalanceSettings& rush = gameplayBalanceSettings_;
+		if (rush.speedRushEnabled) {
+			const float fighterMaxSpeed = (std::max)(0.01f, player_->GetModeParams(PlayerMode::Fighter).maxMoveSpeed);
+			const float speedRatio = MyMath::Length(player_->GetVelocity()) / fighterMaxSpeed;
+			const float altitudeFactor = std::clamp(1.0f - player_->GetPosition().y / rush.speedRushMaxAltitude, 0.0f, 1.0f);
+			const float speedRange = (std::max)(0.05f, 1.20f - rush.speedRushMinSpeedRatio);
+			const float speedFactor = std::clamp((speedRatio - rush.speedRushMinSpeedRatio) / speedRange, 0.0f, 1.0f);
+			const float intensity = altitudeFactor * speedFactor;
+			if (intensity > 0.01f) {
+				const OBB playerObb = player_->GetOBB();
+				const Vector3 forward = NormalizeOrVector3(playerObb.orientations[2], { 0.0f, 0.0f, 1.0f });
+				const Vector3 right = NormalizeOrVector3(playerObb.orientations[0], { 1.0f, 0.0f, 0.0f });
+				const Vector3 up = NormalizeOrVector3(playerObb.orientations[1], { 0.0f, 1.0f, 0.0f });
+				const Vector3 backward = { -forward.x, -forward.y, -forward.z };
+				const int particleCount = (std::max)(1, static_cast<int>(std::ceil(
+					static_cast<float>(rush.speedRushMaxParticlesPerFrame) * intensity)));
+				const float frameSeed = static_cast<float>(gameplayElapsedFrames_);
+				ParticleManager* particles = environmentRenderer_->GetParticleManager();
+				for (int index = 0; index < particleCount; ++index) {
+					const float seed = frameSeed * 1.731f + static_cast<float>(index) * 13.217f;
+					const float side = std::sin(seed * 2.13f) * rush.speedRushSpawnHalfWidth;
+					const float height = std::sin(seed * 5.71f + 0.8f) * rush.speedRushSpawnHalfHeight;
+					const float depth = rush.speedRushSpawnDistance + std::sin(seed * 3.47f) * 1.8f;
+					const Vector3 spawnPosition = AddVector3(activeCamera->GetTranslate(), AddVector3(
+						ScaleVector3(forward, depth), AddVector3(ScaleVector3(right, side), ScaleVector3(up, height))));
+					particles->EmitDirectionalBurst(
+						kSpeedRushParticleGroup, spawnPosition, backward, 1,
+						{ 0.86f, 0.78f, 0.62f, 0.38f + intensity * 0.42f }, 0.12f,
+						rush.speedRushParticleSpeed * (0.75f + intensity * 0.55f), 0.12f,
+						rush.speedRushParticleScale * (0.70f + intensity * 0.45f), rush.speedRushParticleScale * 0.32f,
+						rush.speedRushParticleLifetime * 0.72f, rush.speedRushParticleLifetime * 1.18f, 0.18f);
+				}
+			}
+		}
+	}
+
 	// プレイヤーの移動・加速処理が完了した後の座標を履歴に入れる。
 	// これにより、高速移動時にも残像リボンの先端が機体から離れない。
 	if (isSongActive_ && shouldUpdateGame && player_) {
@@ -3225,14 +3475,20 @@ void GamePlayScene::Draw() {
 		myModelObject->Draw();
 	}
 
-	// 訓練中は敵も危険地帯も存在しないため、境界 ALERT を出さない。
+	// 訓練中は敵も危険地帯も存在しないため、境界シールドを出さない。
 	if (!tutorialEnabled_ && player_ && boundaryAlertObject_ && ceilingBoundaryAlertObject_) {
 		static float pulseTime = 0.0f;
-		pulseTime += 0.05f;
-		float pulseAlpha = 0.5f + 0.5f * std::sin(pulseTime);
+		pulseTime += boundaryShieldSettings_.pulseSpeed;
+		// フェードイン後も、かすかな脈動でエネルギー場らしい存在感を保つ。
+		const float pulseAlpha = (1.0f - boundaryShieldSettings_.pulseStrength) +
+			boundaryShieldSettings_.pulseStrength * std::sin(pulseTime);
 
 		auto drawBoundaryAlert = [&](Object3d* alertObject, const Vector3& position, const Vector3& normal, float intensity) {
-			alertObject->SetScale({ 2.0f, 2.0f, 2.0f });
+			const bool isCeiling = normal.y > 0.5f;
+			// 小さな警告アイコンではなく、進行方向を覆う十分な広さのシールドにする。
+			alertObject->SetScale(isCeiling
+				? Vector3{ boundaryShieldSettings_.ceilingWidth, boundaryShieldSettings_.ceilingHeight, 1.0f }
+				: Vector3{ boundaryShieldSettings_.wallWidth, boundaryShieldSettings_.wallHeight, 1.0f });
 
 			// The plane model is already upright on the XY plane. Walls only need yaw;
 			// the ceiling needs a pitch so the alert lies on the horizontal surface.
@@ -3243,17 +3499,25 @@ void GamePlayScene::Draw() {
 
 			Model* m = alertObject->GetModel();
 			if (m) {
-				m->SetColor({ 1.0f, 1.0f, 1.0f, intensity * pulseAlpha });
+				const float fade = SmoothStep01(intensity);
+				m->SetColor({
+					boundaryShieldSettings_.color.x,
+					boundaryShieldSettings_.color.y,
+					boundaryShieldSettings_.color.z,
+					boundaryShieldSettings_.maxOpacity * fade * pulseAlpha
+				});
 			}
 
 			alertObject->SetTranslate({
-				position.x + normal.x * 0.5f,
-				position.y + normal.y * 0.5f,
-				position.z + normal.z * 0.5f
+				position.x + normal.x * boundaryShieldSettings_.surfaceOffset,
+				position.y + normal.y * boundaryShieldSettings_.surfaceOffset,
+				position.z + normal.z * boundaryShieldSettings_.surfaceOffset
 			});
 
 			alertObject->SetRotate(rotate);
 			alertObject->Update();
+			// 距離に応じたアルファをそのまま使い、接近時だけ自然に濃くする。
+			Object3dCommon::GetInstance()->SetAlphaBlendDrawSettings();
 			alertObject->Draw();
 		};
 
@@ -3525,8 +3789,9 @@ void GamePlayScene::DrawMissionStartOverlay() {
 
 void GamePlayScene::DrawStageObjectiveOverlay(float screenWidth, float screenHeight) {
 #ifdef ENABLE_IMGUI
+	// 目標表示はゲーム進行に必要な HUD なので、操作説明の表示設定とは独立させる。
 	if (IsSimulationMode() || IsTitleBackgroundMode() || IsAttractDemoMode() || isPaused_ || isGameOver_ ||
-		!GameSettings::GetInstance().IsControlGuideVisible() || !ImGui::GetCurrentContext()) {
+		!ImGui::GetCurrentContext()) {
 		return;
 	}
 
@@ -4292,7 +4557,7 @@ void GamePlayScene::DrawOverlay() {
 	// 状態表示用の余白を右に残し、READY / LIVE がパネルの外へ出ないようにする。
 	const float songGaugeWidth = gaugeWidth - 40.0f;
 	const float songRatio = isSongActive_
-		? std::clamp(1.0f - static_cast<float>(songFrame_) / static_cast<float>(kSongDurationFrames), 0.0f, 1.0f)
+		? std::clamp(1.0f - static_cast<float>(songFrame_) / static_cast<float>(gameplayBalanceSettings_.songDurationFrames), 0.0f, 1.0f)
 		: std::clamp(songGauge_ / 100.0f, 0.0f, 1.0f);
 	if (songGaugeBackgroundSprite_ && songGaugeFillSprite_ && songGaugeStateSprite_) {
 		songGaugeBackgroundSprite_->SetPosition({ gaugeX - 2.0f, songGaugeY - 2.0f });

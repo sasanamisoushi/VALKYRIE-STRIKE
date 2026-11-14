@@ -1,0 +1,14 @@
+{
+  "boundary_shield": {
+    "warning_distance": 50.0,
+    "wall_width": 18.0,
+    "wall_height": 12.0,
+    "ceiling_width": 22.0,
+    "ceiling_height": 18.0,
+    "max_opacity": 0.68,
+    "pulse_speed": 0.05,
+    "pulse_strength": 0.14,
+    "surface_offset": 0.5,
+    "color": [1.0, 0.3, 0.24]
+  }
+}

@@ -21,10 +21,12 @@ public:
 	// ポーズ等の中断遷移からタイトルへ戻った時のフェードイン制御
 	static void SetPendingFadeIn(bool pending) { isPendingFadeIn_ = pending; }
 	// TAB で開始／終了するアトラクトデモの状態を切り替える。
-	static void StartAttractDemo() { isAttractDemoEnabled_ = true; }
+	static void StartAttractDemo() { if (isAttractDemoAvailable_) isAttractDemoEnabled_ = true; }
 	static void StopAttractDemo() { isAttractDemoEnabled_ = false; }
 private:
 	static inline bool isPendingFadeIn_ = false;
+	// 配布ZIPの runtime_options.json で無効化できる。設定ファイルがない開発版は有効。
+	static inline bool isAttractDemoAvailable_ = true;
 	// 起動時は通常タイトル。TAB で開始したデモだけがリザルト後も次周回へ進む。
 	static inline bool isAttractDemoEnabled_ = false;
 	float titleFadeInAlpha_ = 0.0f;

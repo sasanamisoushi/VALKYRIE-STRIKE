@@ -113,6 +113,14 @@ private:
 	bool HasPendingEnemySpawns() const;
 	bool TryConsumeAmmo(MissileType type);
 	void UpdateAutoReload();
+	// 境界シールド用の数値はゲーム側 ImGui で調整し、JSON へ永続化する。
+	void ApplyBoundaryShieldSettings();
+	bool LoadBoundaryShieldSettings();
+	bool SaveBoundaryShieldSettings() const;
+	void CaptureGameplayBalanceDefaults();
+	void ApplyGameplayBalanceSettings();
+	bool LoadGameplayBalanceSettings();
+	bool SaveGameplayBalanceSettings() const;
 	void UpdateCinematicLockOnCamera();
 	void UpdateGameOverCinematicCamera(Camera* renderCamera);
 	void UpdateWarpExitCamera(Camera* renderCamera);
@@ -176,6 +184,21 @@ private:
 	std::array<std::unique_ptr<Sprite>, 7> hudHomingAmmoDigitSprites_;
 	std::unique_ptr<Object3d> boundaryAlertObject_;
 	std::unique_ptr<Object3d> ceilingBoundaryAlertObject_;
+	struct BoundaryShieldSettings {
+		float warningDistance = 50.0f;
+		float wallWidth = 18.0f;
+		float wallHeight = 12.0f;
+		float ceilingWidth = 22.0f;
+		float ceilingHeight = 18.0f;
+		float maxOpacity = 0.68f;
+		float pulseSpeed = 0.05f;
+		float pulseStrength = 0.14f;
+		float surfaceOffset = 0.5f;
+		Vector3 color = { 1.0f, 0.30f, 0.24f };
+	};
+	BoundaryShieldSettings boundaryShieldSettings_;
+	std::string boundaryShieldSettingsMessage_;
+	static constexpr const char* kBoundaryShieldSettingsPath = "resources/boundary_shield_settings.json";
 	std::unique_ptr<Sprite> warpFadeInSprite_;
 	std::unique_ptr<Sprite> missionStartOverlaySprite_;
 	std::unique_ptr<Sprite> gameOverWhiteoutSprite_;
@@ -298,6 +321,7 @@ private:
 	float missileNormalScale = 0.3f;
 	float missileNormalCollisionRadius = 0.3f;
 	int missileNormalLifeTime = 120;
+	float missileNormalHomingStrength = 0.28f;
 	float missileSpeed = 0.75f;   // ホーミングミサイルの速度
 	float missileAmpX = 15.0f;   // X軸の旋回半径（横の広さ）
 	float missileAmpZ = 15.0f;   // Z軸の旋回半径
@@ -310,6 +334,30 @@ private:
 	float missileTrailWidth = 0.5f;
 	int missileLifeTime = 240;
 	float missileMuzzleOffset = 0.8f;
+
+	struct GameplayBalanceSettings {
+		std::array<PlayerModeParams, 3> playerModes{};
+		float specialAttackCost = 50.0f;
+		float spGaugeRecoveryPerSecond = 3.0f;
+		int specialAttackDurationFrames = 180;
+		int specialAttackFireIntervalFrames = 6;
+		int songDurationFrames = 900;
+		int bossMaxActiveMinions = 6;
+		// ファイターの低空高速飛行時に、カメラ近傍を後方へ流すスピード線。
+		bool speedRushEnabled = true;
+		float speedRushMaxAltitude = 24.0f;
+		float speedRushMinSpeedRatio = 0.65f;
+		int speedRushMaxParticlesPerFrame = 4;
+		float speedRushSpawnDistance = 8.0f;
+		float speedRushSpawnHalfWidth = 5.5f;
+		float speedRushSpawnHalfHeight = 2.8f;
+		float speedRushParticleSpeed = 0.62f;
+		float speedRushParticleScale = 0.18f;
+		float speedRushParticleLifetime = 0.34f;
+	};
+	GameplayBalanceSettings gameplayBalanceSettings_;
+	std::string gameplayBalanceSettingsMessage_;
+	static constexpr const char* kGameplayBalanceSettingsPath = "resources/gameplay_balance_settings.json";
 
 	std::unique_ptr<Player> player_;
 

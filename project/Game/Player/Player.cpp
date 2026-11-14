@@ -1935,7 +1935,7 @@ void Player::CheckCollision(const std::list<std::unique_ptr<Obstacle>> &obstacle
 		if (obstacle->IsStageBounds()) {
 			Vector3 localPushOut = { 0.0f, 0.0f, 0.0f };
 			
-			float warningThreshold = 50.0f; // 50 units away starts the warning
+			const float warningThreshold = boundaryWarningThreshold_;
 			float minDistanceToSideWall = 99999.0f;
 			Vector3 closestSideWallNormal = {0.0f, 0.0f, 1.0f};
 			float distanceToCeiling = 99999.0f;

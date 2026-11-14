@@ -101,6 +101,7 @@ public:
     float GetCeilingBoundaryWarningIntensity() const { return ceilingBoundaryWarningIntensity_; }
     Vector3 GetCeilingBoundaryAlertPosition() const { return ceilingBoundaryAlertPosition_; }
     Vector3 GetCeilingBoundaryAlertNormal() const { return ceilingBoundaryAlertNormal_; }
+    void SetBoundaryWarningThreshold(float distance) { boundaryWarningThreshold_ = (std::max)(distance, 1.0f); }
 
     // セッター
     void SetPosition(const Vector3 &position) {
@@ -270,6 +271,7 @@ private:
     float ceilingBoundaryWarningIntensity_ = 0.0f;
     Vector3 ceilingBoundaryAlertPosition_ = {0.0f, 0.0f, 0.0f};
     Vector3 ceilingBoundaryAlertNormal_ = {0.0f, 1.0f, 0.0f};
+    float boundaryWarningThreshold_ = 50.0f;
 
     std::unique_ptr<BoosterEffect> boosterEffect_;
 };

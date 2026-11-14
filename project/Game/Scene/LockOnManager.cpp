@@ -16,6 +16,8 @@ constexpr float kLockOnReleaseRearDot = -0.60f;
 constexpr float kFighterLockSafetyMargin = 6.0f;
 constexpr float kFighterLockWarningDistance = 36.0f;
 constexpr int kFighterReacquireCooldownFrames = 45;
+// 最初の1件は押下直後にロックし、以降は長押し中に1件ずつ追加する。
+constexpr int kMultiLockTargetAcquireIntervalFrames = 30;
 }
 
 LockOnManager::LockOnManager(GamePlayScene* scene) : scene_(scene) {}
@@ -104,7 +106,6 @@ void LockOnManager::UpdateLockOn(Camera *activeCamera, bool shouldUpdateGame) {
 		scene_->aimAssistEnemy_ = nullptr;
 		if (shouldUpdateGame) {
 			scene_->aimAssistEnemy_ = FindAimAssistTarget(activeCamera);
-			UpdateMultiLock(activeCamera);
 		}
 		return;
 	}
@@ -783,14 +784,16 @@ void LockOnManager::UpdateMultiLock(Camera *activeCamera) {
 	}
 
 	PlayerModeParams p = scene_->player_->GetModeParams(scene_->player_->GetCurrentMode());
-	while (scene_->multiLockTargets_.size() < p.maxMultiLock) {
+	const bool shouldAcquireTarget = scene_->multiLockTargets_.empty() ||
+		scene_->multiLockChargeFrames_ >= kMultiLockTargetAcquireIntervalFrames;
+	if (scene_->multiLockTargets_.size() < p.maxMultiLock && shouldAcquireTarget) {
 		MultiLockTarget nextTarget{};
-		if (!FindNextMultiLockTarget(activeCamera, nextTarget)) {
-			break;
-		}
-		scene_->multiLockTargets_.push_back(nextTarget);
-		if (nextTarget.enemy) {
-			nextTarget.enemy->StartChasingPlayer();
+		if (FindNextMultiLockTarget(activeCamera, nextTarget)) {
+			scene_->multiLockTargets_.push_back(nextTarget);
+			scene_->multiLockChargeFrames_ = 0;
+			if (nextTarget.enemy) {
+				nextTarget.enemy->StartChasingPlayer();
+			}
 		}
 	}
 

@@ -536,6 +536,7 @@ void GamePlayUIManager::UpdateUI() {
 #define missileNormalScale scene_->missileNormalScale
 #define missileNormalCollisionRadius scene_->missileNormalCollisionRadius
 #define missileNormalLifeTime scene_->missileNormalLifeTime
+#define missileNormalHomingStrength scene_->missileNormalHomingStrength
 #define missileSpeed scene_->missileSpeed
 #define missileAmpX scene_->missileAmpX
 #define missileAmpZ scene_->missileAmpZ
@@ -783,6 +784,8 @@ void GamePlayUIManager::UpdateUI() {
 			"実行ファイル生成",
 			"スラスター位置",
 			"敵イベント・ボス戦",
+		"境界シールド",
+		"ゲームバランス",
 		};
 
 		ImGui::SetNextWindowSize(ImVec2(200.0f, 620.0f), ImGuiCond_Once);
@@ -1517,7 +1520,7 @@ void GamePlayUIManager::UpdateUI() {
 			ImGui::BeginDisabled(packageCreationRunning);
 			ImGui::Checkbox("デモプレイを含める", &includeDemoPlay);
 			ImGui::EndDisabled();
-			ImGui::TextDisabled("ONにすると ValkyrieStrikeCodexDemo.exe もZIPへ同梱します。");
+			ImGui::TextDisabled("ONにするとデモ専用EXEを同梱し、タイトルのTABアトラクトデモも有効にします。");
 			ImGui::Separator();
 			if (!projectFound) {
 				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.25f, 1.0f), "プロジェクトフォルダーから起動した場合のみ利用できます。");
@@ -1540,6 +1543,166 @@ void GamePlayUIManager::UpdateUI() {
 				ImGui::Spacing();
 				ImGui::TextWrapped("%s", packageMessage.c_str());
 			}
+		}
+
+		if (currentEngineSettingsTarget_ == 9) {
+			auto& settings = scene_->boundaryShieldSettings_;
+			bool changed = false;
+			bool saveAfterEdit = false;
+			auto editFloat = [&changed, &saveAfterEdit](const char* label, float* value, float minimum, float maximum, const char* format) {
+				changed |= ImGui::SliderFloat(label, value, minimum, maximum, format, ImGuiSliderFlags_AlwaysClamp);
+				saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
+			};
+
+			ImGui::Text("空中に表示する六角形エネルギーシールド");
+			ImGui::TextDisabled("数値は変更を確定すると即時反映・自動保存されます。");
+			ImGui::Separator();
+			editFloat("警告を開始する距離", &settings.warningDistance, 5.0f, 250.0f, "%.1f");
+			editFloat("壁シールド幅", &settings.wallWidth, 1.0f, 100.0f, "%.1f");
+			editFloat("壁シールド高さ", &settings.wallHeight, 1.0f, 100.0f, "%.1f");
+			editFloat("天井シールド幅", &settings.ceilingWidth, 1.0f, 100.0f, "%.1f");
+			editFloat("天井シールド高さ", &settings.ceilingHeight, 1.0f, 100.0f, "%.1f");
+			editFloat("最大不透明度", &settings.maxOpacity, 0.05f, 1.0f, "%.2f");
+			editFloat("脈動速度", &settings.pulseSpeed, 0.0f, 0.50f, "%.3f");
+			editFloat("脈動の強さ", &settings.pulseStrength, 0.0f, 0.50f, "%.2f");
+			editFloat("境界面からのオフセット", &settings.surfaceOffset, 0.0f, 5.0f, "%.2f");
+			float shieldColor[3] = { settings.color.x, settings.color.y, settings.color.z };
+			if (ImGui::ColorEdit3("シールドカラー", shieldColor, ImGuiColorEditFlags_Float)) {
+				settings.color = { shieldColor[0], shieldColor[1], shieldColor[2] };
+				changed = true;
+			}
+			saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
+
+			if (changed) {
+				scene_->ApplyBoundaryShieldSettings();
+			}
+			if (saveAfterEdit) {
+				scene_->boundaryShieldSettingsMessage_ = scene_->SaveBoundaryShieldSettings()
+					? "境界シールド設定を保存して即時反映しました。"
+					: "境界シールド設定を保存できませんでした。";
+			}
+
+			ImGui::Separator();
+			if (ImGui::Button("現在の設定を保存", ImVec2(-1.0f, 0.0f))) {
+				scene_->ApplyBoundaryShieldSettings();
+				scene_->boundaryShieldSettingsMessage_ = scene_->SaveBoundaryShieldSettings()
+					? "境界シールド設定を保存しました。"
+					: "境界シールド設定を保存できませんでした。";
+			}
+			if (ImGui::Button("保存設定を読み込む", ImVec2(-1.0f, 0.0f))) {
+				scene_->boundaryShieldSettingsMessage_ = scene_->LoadBoundaryShieldSettings()
+					? "境界シールド設定を読み込み、即時反映しました。"
+					: "境界シールド設定を読み込めませんでした。";
+			}
+			if (ImGui::Button("初期値に戻す", ImVec2(-1.0f, 0.0f))) {
+				settings = GamePlayScene::BoundaryShieldSettings{};
+				scene_->ApplyBoundaryShieldSettings();
+				scene_->boundaryShieldSettingsMessage_ = scene_->SaveBoundaryShieldSettings()
+					? "初期値へ戻して保存しました。"
+					: "初期値へ戻しましたが保存できませんでした。";
+			}
+			if (!scene_->boundaryShieldSettingsMessage_.empty()) {
+				ImGui::TextWrapped("%s", scene_->boundaryShieldSettingsMessage_.c_str());
+			}
+			ImGui::TextDisabled("保存先: resources/boundary_shield_settings.json");
+		}
+
+		if (currentEngineSettingsTarget_ == 10) {
+			auto& balance = scene_->gameplayBalanceSettings_;
+			bool changed = false;
+			bool saveAfterEdit = false;
+			auto editFloat = [&changed, &saveAfterEdit](const char* label, float* value, float min, float max, const char* format) {
+				changed |= ImGui::SliderFloat(label, value, min, max, format, ImGuiSliderFlags_AlwaysClamp);
+				saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
+			};
+			auto editInt = [&changed, &saveAfterEdit](const char* label, int* value, int min, int max) {
+				changed |= ImGui::SliderInt(label, value, min, max, "%d", ImGuiSliderFlags_AlwaysClamp);
+				saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
+			};
+
+			ImGui::TextWrapped("プレイヤー操作、武器、必殺技、歌、ボス増援のゲームプレイ数値をまとめて調整します。変更は即時反映され、操作を確定すると自動保存されます。");
+			const char* modeNames[] = { "ファイター", "ガウォーク", "バトロイド" };
+			for (int mode = 0; mode < 3; ++mode) {
+				PlayerModeParams& params = balance.playerModes[mode];
+				if (ImGui::TreeNode(modeNames[mode])) {
+					ImGui::PushID(mode);
+					editFloat("最大移動速度", &params.maxMoveSpeed, 0.01f, 1.0f, "%.3f");
+					editFloat("移動加速度", &params.moveAcceleration, 0.001f, 0.10f, "%.3f");
+					editFloat("移動減衰", &params.moveDamping, 0.10f, 1.0f, "%.2f");
+					editFloat("ピッチ速度", &params.pitchSpeed, 0.001f, 0.10f, "%.3f");
+					editFloat("ヨー速度", &params.yawSpeed, 0.001f, 0.10f, "%.3f");
+					editFloat("ロール速度", &params.rollSpeed, 0.001f, 0.10f, "%.3f");
+					changed |= ImGui::Checkbox("ガード可能", &params.canGuard); saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
+					changed |= ImGui::Checkbox("近接攻撃可能", &params.canMelee); saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
+					editInt("同時ロック数", &params.maxMultiLock, 1, 12);
+					editFloat("ロック角度", &params.lockOnAngleDot, -1.0f, 1.0f, "%.2f");
+					editFloat("ロック距離", &params.maxLockOnDistance, 1.0f, 1000.0f, "%.0f");
+					ImGui::PopID();
+					ImGui::TreePop();
+				}
+			}
+
+			if (ImGui::TreeNode("通常弾")) {
+				editFloat("速度##normal", &missileNormalSpeed, 0.01f, 10.0f, "%.2f");
+				editFloat("追尾力##normal", &missileNormalHomingStrength, 0.0f, 1.0f, "%.2f");
+				editFloat("表示サイズ##normal", &missileNormalScale, 0.01f, 5.0f, "%.2f");
+				editFloat("当たり判定半径##normal", &missileNormalCollisionRadius, 0.01f, 10.0f, "%.2f");
+				editInt("寿命フレーム##normal", &missileNormalLifeTime, 1, 3600);
+				ImGui::TreePop();
+			}
+			if (ImGui::TreeNode("誘導ミサイル")) {
+				editFloat("速度##homing", &missileSpeed, 0.01f, 10.0f, "%.2f");
+				editFloat("追尾力##homing", &missileHomingStrength, 0.0f, 1.0f, "%.2f");
+				editFloat("表示サイズ##homing", &missileHomingScale, 0.01f, 5.0f, "%.2f");
+				editFloat("当たり判定半径##homing", &missileHomingCollisionRadius, 0.01f, 10.0f, "%.2f");
+				editFloat("軌跡の太さ", &missileTrailWidth, 0.0f, 10.0f, "%.2f");
+				editInt("寿命フレーム##homing", &missileLifeTime, 1, 3600);
+				editFloat("発射位置オフセット", &missileMuzzleOffset, 0.0f, 20.0f, "%.2f");
+				ImGui::TreePop();
+			}
+			if (ImGui::TreeNode("低空スピード線")) {
+				const bool wasEnabled = balance.speedRushEnabled;
+				changed |= ImGui::Checkbox("有効", &balance.speedRushEnabled);
+				saveAfterEdit |= wasEnabled != balance.speedRushEnabled;
+				ImGui::TextDisabled("ファイター形態で低空・高速時のみ、カメラ近傍を後方へ流れる大気・ダストです。");
+				editFloat("最大高度", &balance.speedRushMaxAltitude, 1.0f, 200.0f, "%.1f");
+				editFloat("発生開始速度比", &balance.speedRushMinSpeedRatio, 0.05f, 2.0f, "%.2f");
+				editInt("最大発生数/フレーム", &balance.speedRushMaxParticlesPerFrame, 1, 16);
+				editFloat("カメラ前方の発生距離", &balance.speedRushSpawnDistance, 1.0f, 50.0f, "%.1f");
+				editFloat("横方向の発生幅", &balance.speedRushSpawnHalfWidth, 0.1f, 30.0f, "%.1f");
+				editFloat("縦方向の発生幅", &balance.speedRushSpawnHalfHeight, 0.1f, 20.0f, "%.1f");
+				editFloat("流れる速さ", &balance.speedRushParticleSpeed, 0.01f, 3.0f, "%.2f");
+				editFloat("線のサイズ", &balance.speedRushParticleScale, 0.01f, 3.0f, "%.2f");
+				editFloat("線の寿命", &balance.speedRushParticleLifetime, 0.05f, 2.0f, "%.2f 秒");
+				ImGui::TreePop();
+			}
+			if (ImGui::TreeNode("必殺技・歌・ボス")) {
+				editFloat("必殺技SP消費", &balance.specialAttackCost, 0.0f, 100.0f, "%.1f");
+				editFloat("SP回復/秒", &balance.spGaugeRecoveryPerSecond, 0.0f, 60.0f, "%.1f");
+				editInt("必殺技時間フレーム", &balance.specialAttackDurationFrames, 1, 3600);
+				editInt("必殺技発射間隔フレーム", &balance.specialAttackFireIntervalFrames, 1, 300);
+				editInt("歌の継続フレーム", &balance.songDurationFrames, 60, 7200);
+				editInt("ボス増援の同時上限", &balance.bossMaxActiveMinions, 0, 24);
+				ImGui::TreePop();
+			}
+
+			if (changed) scene_->ApplyGameplayBalanceSettings();
+			if (saveAfterEdit) {
+				scene_->gameplayBalanceSettingsMessage_ = scene_->SaveGameplayBalanceSettings()
+					? "ゲームバランス設定を保存して即時反映しました。" : "ゲームバランス設定を保存できませんでした。";
+			}
+			ImGui::Separator();
+			if (ImGui::Button("ゲームバランスを保存", ImVec2(-1.0f, 0.0f))) {
+				scene_->ApplyGameplayBalanceSettings();
+				scene_->gameplayBalanceSettingsMessage_ = scene_->SaveGameplayBalanceSettings() ? "ゲームバランス設定を保存しました。" : "ゲームバランス設定を保存できませんでした。";
+			}
+			if (ImGui::Button("保存したゲームバランスを読み込む", ImVec2(-1.0f, 0.0f))) {
+				scene_->gameplayBalanceSettingsMessage_ = scene_->LoadGameplayBalanceSettings() ? "ゲームバランス設定を読み込みました。" : "ゲームバランス設定を読み込めませんでした。";
+			}
+			if (!scene_->gameplayBalanceSettingsMessage_.empty()) ImGui::TextWrapped("%s", scene_->gameplayBalanceSettingsMessage_.c_str());
+			ImGui::TextDisabled("保存先: resources/gameplay_balance_settings.json");
+			ImGui::Separator();
+			DrawAmmoSettingsUI();
 		}
 
 		if (currentEngineSettingsTarget_ == 7) {
@@ -1792,6 +1955,7 @@ void GamePlayUIManager::UpdateUI() {
 #undef missileNormalScale
 #undef missileNormalCollisionRadius
 #undef missileNormalLifeTime
+#undef missileNormalHomingStrength
 #undef missileSpeed
 #undef missileAmpX
 #undef missileAmpZ

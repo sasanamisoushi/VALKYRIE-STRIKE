@@ -67,6 +67,11 @@ if ($IncludeDemoPlay) {
 }
 Copy-Item -LiteralPath (Join-Path $buildOutput "resources") -Destination $packagePath -Recurse
 
+# チェックを外した配布版では、通常EXE内のTABアトラクトデモも無効化する。
+# この設定ファイルはパッケージへだけ書き込むため、開発版・通常のRelease出力には影響しない。
+$runtimeOptions = @{ allowAttractDemo = [bool]$IncludeDemoPlay } | ConvertTo-Json
+$runtimeOptions | Set-Content -LiteralPath (Join-Path $packagePath "resources\runtime_options.json") -Encoding UTF8
+
 @"
 Valkyrie Strike 実行版
 
@@ -79,6 +84,7 @@ if ($IncludeDemoPlay) {
 
 デモプレイ
 ValkyrieStrikeCodexDemo.exe を起動すると、デモプレイを開始します。
+タイトル画面の TAB からアトラクトデモも開始できます。
 "@
 }
 
