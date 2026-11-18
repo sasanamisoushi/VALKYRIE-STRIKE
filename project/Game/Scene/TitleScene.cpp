@@ -24,20 +24,28 @@ namespace {
 	constexpr int kLaunchUiFadeFrames = 20;
 	constexpr const char* kRuntimeOptionsPath = "resources/runtime_options.json";
 
-	// 開発版には設定ファイルを置かないため、未配置時は従来どおり有効にする。
+	struct AttractDemoRuntimeOptions {
+		bool allowAttractDemo = true;
+		bool playClearCinematicDemo = false;
+	};
+
+	// 開発版には設定ファイルを置かないため、未配置時は従来どおり通常デモを有効にする。
 	// 配布ZIPでファイルが壊れている場合は、意図しないデモの露出を避けるため無効化する。
-	bool IsAttractDemoAllowedByRuntimeOptions() {
+	AttractDemoRuntimeOptions LoadAttractDemoRuntimeOptions() {
 		std::ifstream input(kRuntimeOptionsPath);
 		if (!input.is_open()) {
-			return true;
+			return {};
 		}
 
 		try {
 			nlohmann::json options;
 			input >> options;
-			return options.value("allowAttractDemo", false);
+			return {
+				options.value("allowAttractDemo", false),
+				options.value("playClearCinematicDemo", false),
+			};
 		} catch (...) {
-			return false;
+			return { false, false };
 		}
 	}
 
@@ -48,32 +56,12 @@ namespace {
 		return MyMath::Multiply(MyMath::Multiply(moveToCenter, rotate), moveBack);
 	}
 
-	bool LaunchSimulationExecutable() {
-		wchar_t modulePath[MAX_PATH] = {};
-		const DWORD length = GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
-		if (length == 0) {
-			return false;
-		}
-
-		const std::filesystem::path currentExe(modulePath);
-		const std::filesystem::path simulationExe = currentExe.parent_path() / L"ValkyrieStrikeSimulation.exe";
-		const std::filesystem::path launchExe = std::filesystem::exists(simulationExe) ? simulationExe : currentExe;
-		const wchar_t *parameters = (launchExe == currentExe) ? L"--simulation" : nullptr;
-		const std::filesystem::path workDir = std::filesystem::current_path();
-
-		HINSTANCE result = ShellExecuteW(
-			nullptr,
-			L"open",
-			launchExe.c_str(),
-			parameters,
-			workDir.c_str(),
-			SW_SHOWNORMAL);
-		return reinterpret_cast<intptr_t>(result) > 32;
-	}
 }
 
 void TitleScene::Initialize() {
-	isAttractDemoAvailable_ = IsAttractDemoAllowedByRuntimeOptions();
+	const AttractDemoRuntimeOptions demoOptions = LoadAttractDemoRuntimeOptions();
+	isAttractDemoAvailable_ = demoOptions.allowAttractDemo;
+	playClearCinematicDemo_ = isAttractDemoAvailable_ && demoOptions.playClearCinematicDemo;
 	if (!isAttractDemoAvailable_) {
 		StopAttractDemo();
 	}
@@ -602,7 +590,7 @@ void TitleScene::DrawAttractDemoStartPrompt(float screenWidth, float screenHeigh
 	const float height = displaySize.y > 1.0f ? displaySize.y : screenHeight;
 	const char* prompt = isAttractDemoEnabled_
 		? "[ TAB ]  STOP ATTRACT DEMO"
-		: "[ TAB ]  START ATTRACT DEMO";
+		: (playClearCinematicDemo_ ? "[ TAB ]  START CLEAR CINEMATIC DEMO" : "[ TAB ]  START ATTRACT DEMO");
 	ImFont* font = ImGuiManager::GetGameOverFont();
 	if (!font) {
 		font = ImGui::GetFont();

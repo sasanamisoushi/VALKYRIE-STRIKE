@@ -2,6 +2,7 @@
 #include "Enemy.h"
 #include "3D/Trail.h"
 #include <array>
+#include <vector>
 
 // ボス敵を表すクラス
 class Boss : public Enemy {
@@ -37,6 +38,9 @@ public:
         float rearThrusterFlareRadius = 0.42f;
         // 共通補正とは別に、各スラスターを編集画面から個別に移動できる。
         std::array<Vector3, kMaxRearThrusters> rearThrusterIndividualOffsets{};
+
+        // 側面に展開する六角形シールドの見やすさ調整。
+        float sideShieldOpacity = 0.82f;
     };
 
     Boss() = default;
@@ -70,6 +74,13 @@ public:
     void SetTuning(const Tuning& tuning);
     size_t GetRearThrusterCount() const { return static_cast<size_t>(tuning_.rearThrusterCount); }
     Vector3 GetRearThrusterWorldPosition(size_t thrusterIndex) const;
+	// 撃破演出用。戦艦を焼損した残骸色へ切り替え、推進炎・シールドを止める。
+	void SetCinematicWreckPresentation(float burnRatio);
+	// 砲塔・砲身に加えて、通常は部分破壊できない船体装甲も実モデルのまま飛散させる。
+	void BeginCinematicDebris();
+	void StepCinematicDebris(float deltaTime);
+	std::vector<Vector3> GetCinematicDebrisWorldPositions() const;
+	bool IsCinematicDebrisActive() const { return cinematicDebrisActive_; }
 
 private:
     void FireMachineGun(const Vector3 &playerPos, EnemyBulletManager *bulletManager);
@@ -82,14 +93,30 @@ private:
     bool ApplyTurretDamage(size_t turretIndex, int damage);
     void UpdateTurretAim(const Vector3 &playerPos);
     void UpdateTurretModels();
+    void UpdateCinematicDebris();
     void InitializeRearThrusters();
     void UpdateRearThrusters();
     void DrawRearThrusters();
+    void InitializeSideShields();
+    void UpdateSideShields();
+    void DrawSideShields();
 
     int actionTimer_ = 0;
     int summonRequests_ = 0;
     float turretYaw_ = 0.0f;
     float turretPitch_ = 0.0f;
+	bool cinematicWreckPresentation_ = false;
+	static constexpr size_t kCinematicHullDebrisPartCount = 8;
+	static constexpr size_t kCinematicDebrisPartCount = kCinematicHullDebrisPartCount + 11;
+	static constexpr size_t kCinematicSmallDebrisCount = 42;
+	bool cinematicDebrisActive_ = false;
+	std::array<Object3d*, kCinematicDebrisPartCount> cinematicDebrisParts_{};
+	std::array<Vector3, kCinematicDebrisPartCount> cinematicDebrisVelocities_{};
+	std::array<Vector3, kCinematicDebrisPartCount> cinematicDebrisAngularVelocities_{};
+	std::array<std::unique_ptr<Object3d>, kCinematicHullDebrisPartCount> cinematicHullDebris_{};
+	std::array<std::unique_ptr<Object3d>, kCinematicSmallDebrisCount> cinematicSmallDebris_{};
+	std::array<Vector3, kCinematicSmallDebrisCount> cinematicSmallDebrisVelocities_{};
+	std::array<Vector3, kCinematicSmallDebrisCount> cinematicSmallDebrisAngularVelocities_{};
     // 砲台ごとに異なる担当方位を持たせる。
     std::array<float, 3> mainTurretYaws_{};
     std::array<bool, 3> mainTurretEngaged_{};
@@ -111,5 +138,8 @@ private:
     std::array<std::unique_ptr<Object3d>, kMaxRearThrusters> rearThrusterObjects_;
     std::array<std::unique_ptr<Object3d>, kMaxRearThrusters> rearThrusterFlareObjects_;
     std::array<Vector3, kMaxRearThrusters> rearThrusterOrigins_{};
+    // 左右の船体側面で、各装甲板の端から中央へ展開するシールド。
+    std::array<std::unique_ptr<Object3d>, 4> sideShieldSegments_;
+    float sideShieldDeployProgress_ = 0.0f;
     Tuning tuning_{};
 };

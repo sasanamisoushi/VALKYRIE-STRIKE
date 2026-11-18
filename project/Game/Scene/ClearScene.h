@@ -25,8 +25,10 @@ private:
 	int resultAnimationFrame_ = 0;
 	float transitionFadeAlpha_ = 1.0f;
 	bool isReturningToTitle_ = false;
+	bool isDemoResult_ = false;
 	int returnToTitleFrame_ = 0;
 	static constexpr int kShutdownDurationFrames = 38;
+	static constexpr int kDemoResultDurationFrames = 300;
 };
 
 

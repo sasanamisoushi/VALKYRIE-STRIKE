@@ -51,36 +51,6 @@ namespace {
 		return { value.x, 0.0f, value.z };
 	}
 
-	std::filesystem::path GetCurrentExecutablePath() {
-		wchar_t modulePath[MAX_PATH] = {};
-		const DWORD length = GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
-		if (length == 0) {
-			return {};
-		}
-		return std::filesystem::path(modulePath);
-	}
-
-	bool LaunchSimulationExecutable() {
-		const std::filesystem::path currentExe = GetCurrentExecutablePath();
-		if (currentExe.empty()) {
-			return false;
-		}
-
-		const std::filesystem::path simulationExe = currentExe.parent_path() / L"ValkyrieStrikeSimulation.exe";
-		const std::filesystem::path launchExe = std::filesystem::exists(simulationExe) ? simulationExe : currentExe;
-		const wchar_t *parameters = (launchExe == currentExe) ? L"--simulation" : nullptr;
-		const std::filesystem::path workDir = std::filesystem::current_path();
-
-		HINSTANCE result = ShellExecuteW(
-			nullptr,
-			L"open",
-			launchExe.c_str(),
-			parameters,
-			workDir.c_str(),
-			SW_SHOWNORMAL);
-		return reinterpret_cast<intptr_t>(result) > 32;
-	}
-
 	std::string GetJsonString(const json &objectData, const char *key) {
 		if (!objectData.contains(key) || !objectData[key].is_string()) {
 			return {};

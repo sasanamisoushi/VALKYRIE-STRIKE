@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,13 @@ Vector3 NormalizeVector(const Vector3& value) {
     return length > 0.0001f ? ScaleVector(value, 1.0f / length) : Vector3{ 0.0f, 0.0f, 1.0f };
 }
 
+Quaternion MakeEulerQuaternion(const Vector3& euler) {
+    const Quaternion qx = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, euler.x);
+    const Quaternion qy = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, euler.y);
+    const Quaternion qz = MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, euler.z);
+    return MyMath::Normalize(MyMath::Multiply(MyMath::Multiply(qx, qy), qz));
+}
+
 // 砲身が砲台の旋回支点側を向いているときは、弾の向きを勝手に曲げず発射そのものを止める。
 // 艦体中心では判定しないので、艦首・艦尾に正しく配置された砲身は発射できる。
 bool IsMuzzleFacingAwayFromPivot(const Vector3& pivotPosition, const Vector3& muzzlePosition,
@@ -31,9 +39,47 @@ bool IsMuzzleFacingAwayFromPivot(const Vector3& pivotPosition, const Vector3& mu
 constexpr Vector3 kBossScale = { 1.85f, 1.55f, 1.85f };
 constexpr float kBossSidewaysYaw = 1.57079632679f; // 90 degrees
 
+// Blender で選択されている平面を、OBJ出力・X反転後のゲーム座標へ換算した値。
+// 平面と同じ高さ・横幅で、中央が外側へ張り出す円弧状のシールドを作る。
+constexpr std::array<Vector3, 2> kSideShieldPlaneCenters = {
+    // Blender で選択された平面側と、反対側にある同じ装甲板側。
+    Vector3{ 2.5535f, 3.5352f, 0.0243f },
+    Vector3{ -2.5535f, 3.5352f, 0.0243f },
+};
+constexpr float kSideShieldHeight = 5.1700f;
+constexpr float kSideShieldChordLength = 7.3200f;
+// 90度の弧の弦長を平面の横幅と一致させる。
+constexpr float kSideShieldArcRadius = kSideShieldChordLength / 1.41421356f;
+constexpr float kSideShieldArcHalfAngle = 45.0f;
+constexpr float kSideShieldAnchorOffset = 0.0800f;
+constexpr int kSideShieldArcSubdivisions = 16;
+constexpr int kSideShieldDeployFrames = 72;
+constexpr char kSideShieldTexturePath[] = "resources/boss_hex_shield_blue.png";
+constexpr std::array<const char*, 4> kSideShieldModels = {
+    "BossSideHexShieldOuterLeft", "BossSideHexShieldOuterRight",
+    "BossSideHexShieldInnerLeft", "BossSideHexShieldInnerRight",
+};
+
+float SmoothStep01(float value) {
+    value = std::clamp(value, 0.0f, 1.0f);
+    return value * value * (3.0f - 2.0f * value);
+}
+
 // OBJ内の実オブジェクト順を基準にする。船体・甲板・側面装甲は残し、砲台だけを
 // 別Object3dとして回す。これによりBlenderの完成形を保ったまま旋回できる。
 constexpr char kBossBodyModel[] = "Boss1/Boss1.obj#exclude=0,2-13,19-20,22,29-30";
+// 通常時は上記の船体モデルを一体で描画する。撃破時だけは、砲台以外の装甲・甲板も
+// 飛ばせるよう、同じOBJグループを重複なしの8ブロックへ分割して使用する。
+constexpr std::array<const char*, 8> kCinematicHullDebrisModels = {
+    "Boss1/Boss1.obj#groups=1,14-15",
+    "Boss1/Boss1.obj#groups=16-18",
+    "Boss1/Boss1.obj#groups=21,23-24",
+    "Boss1/Boss1.obj#groups=25-28",
+    "Boss1/Boss1.obj#groups=31-34",
+    "Boss1/Boss1.obj#groups=35-39",
+    "Boss1/Boss1.obj#groups=40-44",
+    "Boss1/Boss1.obj#groups=45-54",
+};
 constexpr std::array<const char*, 3> kMainTurretModels = {
     // 左右の大きな箱（23/27）は後部装甲の一部なので船体に固定する。
     // 回転させるのは砲身だけにし、スラスター周辺の甲板を引き剥がさない。
@@ -163,6 +209,13 @@ Vector3 RotatePitchYaw(const Vector3& value, float pitch, float yaw) {
 
 void Boss::Initialize(const Vector3 &position) {
     Enemy::Initialize(position);
+    cinematicWreckPresentation_ = false;
+    cinematicDebrisActive_ = false;
+    cinematicDebrisParts_.fill(nullptr);
+    cinematicDebrisVelocities_.fill({});
+    cinematicDebrisAngularVelocities_.fill({});
+    cinematicSmallDebrisVelocities_.fill({});
+    cinematicSmallDebrisAngularVelocities_.fill({});
 
     // Boss1 の船体と可動砲塔を別モデルとして読み込む。
     ModelManager *modelManager = ModelManager::GetInstance();
@@ -173,6 +226,31 @@ void Boss::Initialize(const Vector3 &position) {
     if (object_->GetModel()) {
         object_->GetModel()->SetColor({ 0.20f, 0.33f, 0.39f, 1.0f });
         object_->GetModel()->SetShininess(96.0f);
+    }
+    if (!modelManager->FindModel("BossSmallDebris")) {
+        modelManager->CreateBoxModel("BossSmallDebris");
+    }
+    if (Model* smallDebrisModel = modelManager->FindModel("BossSmallDebris")) {
+        smallDebrisModel->SetColor({ 0.08f, 0.08f, 0.09f, 1.0f });
+        smallDebrisModel->SetShininess(64.0f);
+    }
+    for (size_t index = 0; index < cinematicSmallDebris_.size(); ++index) {
+        cinematicSmallDebris_[index] = std::make_unique<Object3d>();
+        cinematicSmallDebris_[index]->Initialize(Object3dCommon::GetInstance());
+        cinematicSmallDebris_[index]->SetModel("BossSmallDebris");
+    }
+    for (size_t index = 0; index < cinematicHullDebris_.size(); ++index) {
+        const char* hullModel = kCinematicHullDebrisModels[index];
+        if (!modelManager->FindModel(hullModel)) {
+            modelManager->LoadModel(hullModel);
+        }
+        cinematicHullDebris_[index] = std::make_unique<Object3d>();
+        cinematicHullDebris_[index]->Initialize(Object3dCommon::GetInstance());
+        cinematicHullDebris_[index]->SetModel(hullModel);
+        if (cinematicHullDebris_[index]->GetModel()) {
+            cinematicHullDebris_[index]->GetModel()->SetColor({ 0.20f, 0.33f, 0.39f, 1.0f });
+            cinematicHullDebris_[index]->GetModel()->SetShininess(96.0f);
+        }
     }
     for (size_t index = 0; index < mainTurrets_.size(); ++index) {
         const char* turretModel = kMainTurretModels[index];
@@ -236,6 +314,7 @@ void Boss::Initialize(const Vector3 &position) {
             forwardTurrets_[index]->GetModel()->SetShininess(160.0f);
         }
     }
+    InitializeSideShields();
     InitializeRearThrusters();
 
     SetIsBoss(true);
@@ -256,6 +335,7 @@ void Boss::Initialize(const Vector3 &position) {
     miniTurretPitches_.fill(0.0f);
     turretHP_.fill(kTurretMaxHP);
     turretDestroyed_.fill(false);
+    sideShieldDeployProgress_ = 0.0f;
     UpdateRearThrusters();
     UpdateModel();
 }
@@ -263,6 +343,7 @@ void Boss::Initialize(const Vector3 &position) {
 void Boss::Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles) {
     if (isDead_) return;
 
+    const Vector3 prevPos = position_;
     ++actionTimer_;
     position_.y += std::sin(static_cast<float>(actionTimer_) * 0.012f) * 0.008f;
     UpdateTurretAim(playerPos);
@@ -280,6 +361,11 @@ void Boss::Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, c
     if (cycle == 295) summonRequests_ += 2;
 
     CheckCollision(obstacles);
+    velocity_ = {
+        (position_.x - prevPos.x) * 60.0f,
+        (position_.y - prevPos.y) * 60.0f,
+        (position_.z - prevPos.z) * 60.0f,
+    };
     UpdateRearThrusters();
     UpdateModel();
 }
@@ -291,9 +377,12 @@ Vector3 Boss::DirectionTo(const Vector3 &target) const {
 }
 
 Vector3 Boss::LocalPointToWorld(const Vector3 &localPoint) const {
-    return AddVector(position_, RotatePitchYaw({
-        localPoint.x * kBossScale.x, localPoint.y * kBossScale.y, localPoint.z * kBossScale.z
-    }, 0.0f, rotation_.y));
+    const Vector3 scaled = {
+        localPoint.x * kBossScale.x,
+        localPoint.y * kBossScale.y,
+        localPoint.z * kBossScale.z,
+    };
+    return AddVector(position_, MyMath::RotateVector(scaled, MakeEulerQuaternion(rotation_)));
 }
 
 void Boss::FireMachineGun(const Vector3 &playerPos, EnemyBulletManager *bulletManager) {
@@ -506,7 +595,42 @@ void Boss::SetTuning(const Tuning& tuning) {
     tuning_.rearThrusterLength = std::clamp(tuning_.rearThrusterLength, 0.05f, 8.0f);
     tuning_.rearThrusterBrightness = std::clamp(tuning_.rearThrusterBrightness, 0.0f, 3.0f);
     tuning_.rearThrusterFlareRadius = std::clamp(tuning_.rearThrusterFlareRadius, 0.02f, 2.0f);
+    tuning_.sideShieldOpacity = std::clamp(tuning_.sideShieldOpacity, 0.05f, 1.0f);
     UpdateRearThrusters();
+}
+
+void Boss::SetCinematicWreckPresentation(float burnRatio) {
+    cinematicWreckPresentation_ = true;
+    const float burn = std::clamp(burnRatio, 0.0f, 1.0f);
+    const Vector4 hullColor = {
+        0.20f * (1.0f - burn) + 0.025f * burn,
+        0.33f * (1.0f - burn) + 0.018f * burn,
+        0.39f * (1.0f - burn) + 0.014f * burn,
+        1.0f,
+    };
+    const Vector4 wreckPartColor = {
+        0.29f * (1.0f - burn) + 0.035f * burn,
+        0.43f * (1.0f - burn) + 0.022f * burn,
+        0.48f * (1.0f - burn) + 0.018f * burn,
+        1.0f,
+    };
+    if (object_ && object_->GetModel()) object_->GetModel()->SetColor(hullColor);
+    for (const auto& hullPart : cinematicHullDebris_) {
+        if (hullPart && hullPart->GetModel()) hullPart->GetModel()->SetColor(hullColor);
+    }
+    for (const auto& turret : mainTurrets_) {
+        if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
+    }
+    for (const auto& turret : miniTurretBases_) {
+        if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
+    }
+    for (const auto& barrel : miniTurretBarrels_) {
+        if (barrel && barrel->GetModel()) barrel->GetModel()->SetColor(wreckPartColor);
+    }
+    if (machineGunTurret_ && machineGunTurret_->GetModel()) machineGunTurret_->GetModel()->SetColor(wreckPartColor);
+    for (const auto& turret : forwardTurrets_) {
+        if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
+    }
 }
 
 Vector3 Boss::GetRearThrusterWorldPosition(size_t thrusterIndex) const {
@@ -586,15 +710,166 @@ void Boss::UpdateTurretAim(const Vector3& playerPos) {
     }
 }
 
+void Boss::BeginCinematicDebris() {
+    if (cinematicDebrisActive_) return;
+
+    const Vector3 bossCenter = GetBodyLockOnPosition();
+    const OBB bossObb = GetOBB();
+    static std::mt19937 debrisRng(std::random_device{}());
+    std::uniform_real_distribution<float> distSigned(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> distScaleXZ(0.28f, 0.92f);
+    std::uniform_real_distribution<float> distScaleY(0.10f, 0.42f);
+    std::uniform_real_distribution<float> distPower(18.0f, 34.0f);
+    std::uniform_real_distribution<float> distRot(0.0f, 6.2831853f);
+    constexpr float kSpinPower = 10.5f;
+
+    cinematicDebrisParts_.fill(nullptr);
+    cinematicDebrisVelocities_.fill({});
+    cinematicDebrisAngularVelocities_.fill({});
+
+    // 大型の船体・砲塔ブロックは描画せず、爆発を覆わない細かいデブリだけを使う。
+
+    const size_t thrusterCount = GetRearThrusterCount();
+    for (size_t i = 0; i < cinematicSmallDebris_.size(); ++i) {
+        Object3d* part = cinematicSmallDebris_[i].get();
+        if (!part) continue;
+
+        // 半数はエンジン付近、残りは船体各所の内部から飛び散らせる
+        Vector3 initialPos{};
+        if (thrusterCount > 0 && (i % 2 == 0)) {
+            const Vector3 enginePos = GetRearThrusterWorldPosition(i % thrusterCount);
+            initialPos = {
+                enginePos.x + distSigned(debrisRng) * 1.4f,
+                enginePos.y + distSigned(debrisRng) * 0.9f,
+                enginePos.z + distSigned(debrisRng) * 1.4f,
+            };
+        } else {
+            const float rx = distSigned(debrisRng) * bossObb.size.x * 0.75f;
+            const float ry = distSigned(debrisRng) * bossObb.size.y * 0.75f;
+            const float rz = distSigned(debrisRng) * bossObb.size.z * 0.75f;
+            initialPos = {
+                bossObb.center.x + bossObb.orientations[0].x * rx + bossObb.orientations[1].x * ry + bossObb.orientations[2].x * rz,
+                bossObb.center.y + bossObb.orientations[0].y * rx + bossObb.orientations[1].y * ry + bossObb.orientations[2].y * rz,
+                bossObb.center.z + bossObb.orientations[0].z * rx + bossObb.orientations[1].z * ry + bossObb.orientations[2].z * rz,
+            };
+        }
+
+        part->SetTranslate(initialPos);
+        part->SetQuaternionRotate(MakeEulerQuaternion({ distRot(debrisRng), distRot(debrisRng), distRot(debrisRng) }));
+        part->SetScale({ distScaleXZ(debrisRng), distScaleY(debrisRng), distScaleXZ(debrisRng) });
+        part->Update();
+
+        // デブリごとの放射状ベクトルの計算: Normalize(Debris.InitialPos - Boss.CenterPos) + ランダムばらつき
+        Vector3 offset = SubtractVector(initialPos, bossCenter);
+        offset.x += distSigned(debrisRng) * 1.8f;
+        offset.y += distSigned(debrisRng) * 1.2f;
+        offset.z += distSigned(debrisRng) * 1.8f;
+        const float len = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+        Vector3 direction{};
+        if (len > 0.05f) {
+            direction = { offset.x / len, offset.y / len, offset.z / len };
+        } else {
+            const float angle = static_cast<float>(i) * 2.39996323f;
+            direction = NormalizeVector({ std::cos(angle), 0.45f, std::sin(angle) });
+        }
+
+        const float explosionPower = distPower(debrisRng);
+        const float upwardDir = std::abs(direction.y) * 0.85f + 0.30f;
+        cinematicSmallDebrisVelocities_[i] = {
+            direction.x * explosionPower,
+            upwardDir * explosionPower + 5.0f,
+            direction.z * explosionPower,
+        };
+        cinematicSmallDebrisAngularVelocities_[i] = {
+            distSigned(debrisRng) * kSpinPower,
+            distSigned(debrisRng) * kSpinPower,
+            distSigned(debrisRng) * kSpinPower,
+        };
+    }
+
+    cinematicDebrisActive_ = true;
+
+    // 船体および砲塔をすべて非表示にし、細かい破片のみを描画する。
+    if (object_) {
+        object_->SetScale({ 0.0f, 0.0f, 0.0f });
+        object_->Update();
+    }
+}
+
+void Boss::StepCinematicDebris(float deltaTime) {
+    if (!cinematicDebrisActive_ || deltaTime <= 0.0f) return;
+    // 高速で飛び散る細かいデブリへ重力を適用し、爆発後に自然な放物線で落下させる。
+    constexpr float kDebrisGravity = 16.0f;
+    for (size_t index = 0; index < cinematicDebrisParts_.size(); ++index) {
+        Object3d* part = cinematicDebrisParts_[index];
+        if (!part) continue;
+        Vector3 position = part->GetTranslate();
+        cinematicDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
+        position.x += cinematicDebrisVelocities_[index].x * deltaTime;
+        position.y += cinematicDebrisVelocities_[index].y * deltaTime;
+        position.z += cinematicDebrisVelocities_[index].z * deltaTime;
+        const Vector3 deltaEuler = {
+            cinematicDebrisAngularVelocities_[index].x * deltaTime,
+            cinematicDebrisAngularVelocities_[index].y * deltaTime,
+            cinematicDebrisAngularVelocities_[index].z * deltaTime,
+        };
+        part->SetTranslate(position);
+        part->SetQuaternionRotate(MyMath::Normalize(
+            MyMath::Multiply(MakeEulerQuaternion(deltaEuler), part->GetQuaternionRotate())));
+        part->Update();
+    }
+    for (size_t index = 0; index < cinematicSmallDebris_.size(); ++index) {
+        Object3d* part = cinematicSmallDebris_[index].get();
+        if (!part) continue;
+        Vector3 position = part->GetTranslate();
+        cinematicSmallDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
+        position.x += cinematicSmallDebrisVelocities_[index].x * deltaTime;
+        position.y += cinematicSmallDebrisVelocities_[index].y * deltaTime;
+        position.z += cinematicSmallDebrisVelocities_[index].z * deltaTime;
+        const Vector3 deltaEuler = {
+            cinematicSmallDebrisAngularVelocities_[index].x * deltaTime,
+            cinematicSmallDebrisAngularVelocities_[index].y * deltaTime,
+            cinematicSmallDebrisAngularVelocities_[index].z * deltaTime,
+        };
+        const Quaternion nextRot = MyMath::Normalize(
+            MyMath::Multiply(MakeEulerQuaternion(deltaEuler), part->GetQuaternionRotate()));
+        part->SetTranslate(position);
+        part->SetQuaternionRotate(nextRot);
+        part->Update();
+    }
+}
+
+void Boss::UpdateCinematicDebris() {
+    StepCinematicDebris(1.0f / 60.0f);
+}
+
+std::vector<Vector3> Boss::GetCinematicDebrisWorldPositions() const {
+    std::vector<Vector3> positions;
+    if (!cinematicDebrisActive_) return positions;
+    positions.reserve(cinematicDebrisParts_.size() + 14);
+    for (const Object3d* part : cinematicDebrisParts_) {
+        if (part) positions.push_back(part->GetTranslate());
+    }
+    for (size_t i = 0; i < cinematicSmallDebris_.size(); i += 3) {
+        Object3d* part = cinematicSmallDebris_[i].get();
+        if (part) {
+            positions.push_back(part->GetTranslate());
+        }
+    }
+    return positions;
+}
+
 void Boss::UpdateTurretModels() {
-    auto updateTurret = [this](Object3d* turret, const Vector3& pivot, float pitch, float yaw,
+    if (cinematicDebrisActive_) {
+        return;
+    }
+    const Quaternion hullQuat = MakeEulerQuaternion(rotation_);
+    auto updateTurret = [this, &hullQuat](Object3d* turret, const Vector3& pivot, float pitch, float yaw,
         float modelPitchOffset = 0.0f) {
         if (!turret) return;
-        const Vector3 worldOffset = RotatePitchYaw({
-            pivot.x * kBossScale.x, pivot.y * kBossScale.y, pivot.z * kBossScale.z
-        }, 0.0f, rotation_.y);
-        turret->SetTranslate(AddVector(position_, worldOffset));
-        turret->SetRotate({ pitch + modelPitchOffset, rotation_.y + yaw, 0.0f });
+        turret->SetTranslate(LocalPointToWorld(pivot));
+        const Quaternion localQuat = MakeEulerQuaternion({ pitch + modelPitchOffset, yaw, 0.0f });
+        turret->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(localQuat, hullQuat)));
         turret->SetScale(kBossScale);
         turret->Update();
     };
@@ -623,12 +898,9 @@ void Boss::UpdateTurretModels() {
         const float yaw = kMiniTurretBaseYaws[index] + miniTurretYaws_[index];
         const Vector3 rotatedBarrelPivot = AddVector(basePivot,
             RotatePitchYaw(SubtractVector(barrelPivot, basePivot), 0.0f, yaw));
-        const Vector3 localOffset = RotatePitchYaw({
-            rotatedBarrelPivot.x * kBossScale.x, rotatedBarrelPivot.y * kBossScale.y,
-            rotatedBarrelPivot.z * kBossScale.z
-        }, 0.0f, rotation_.y);
-        barrel->SetTranslate(AddVector(position_, localOffset));
-        barrel->SetRotate({ miniTurretPitches_[index], rotation_.y + yaw, 0.0f });
+        barrel->SetTranslate(LocalPointToWorld(rotatedBarrelPivot));
+        const Quaternion localQuat = MakeEulerQuaternion({ miniTurretPitches_[index], yaw, 0.0f });
+        barrel->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(localQuat, hullQuat)));
         barrel->SetScale(kBossScale);
         barrel->Update();
     }
@@ -645,6 +917,89 @@ void Boss::UpdateTurretModels() {
             updateTurret(forwardTurrets_[index].get(), kForwardWeaponMounts[index].pivot, pitch, yaw);
         }
     }
+}
+
+void Boss::InitializeSideShields() {
+    ModelManager* modelManager = ModelManager::GetInstance();
+    for (const char* modelName : kSideShieldModels) {
+        // 初期状態はほぼ閉じた円弧。UpdateSideShields() で左右から開く角度へ更新する。
+        modelManager->CreateCylinderArcModel(modelName, kSideShieldArcSubdivisions,
+            kSideShieldArcRadius, kSideShieldHeight, 45.0f, 45.1f);
+        Model* model = modelManager->FindModel(modelName);
+        if (!model) continue;
+        model->SetTextureFilePath(kSideShieldTexturePath);
+        // 曲面の法線へ光を当て、カメラ角度によっても円弧の陰影を見せる。
+        model->SetEnableLighting(true);
+        model->SetShininess(24.0f);
+        model->SetAlphaReference(0.0f);
+        model->SetColor({ 0.30f, 0.78f, 1.00f, 0.0f });
+    }
+
+    for (size_t index = 0; index < sideShieldSegments_.size(); ++index) {
+        sideShieldSegments_[index] = std::make_unique<Object3d>();
+        sideShieldSegments_[index]->Initialize(Object3dCommon::GetInstance());
+        sideShieldSegments_[index]->SetModel(kSideShieldModels[index]);
+    }
+}
+
+void Boss::UpdateSideShields() {
+    // 出現から 1.2 秒で、平面の左右端から中央まで円弧を伸ばす。
+    sideShieldDeployProgress_ = SmoothStep01(
+        static_cast<float>(actionTimer_) / static_cast<float>(kSideShieldDeployFrames));
+
+    const float arcAngle = kSideShieldArcHalfAngle * (std::max)(0.001f, sideShieldDeployProgress_);
+    const float endpointInset = kSideShieldArcRadius * 0.70710678f;
+    const float alpha = tuning_.sideShieldOpacity * sideShieldDeployProgress_;
+
+    for (size_t face = 0; face < 2; ++face) {
+        // face は表裏ではなく、ボスの左舷・右舷を表す。
+        const float outwardDirection = face == 0 ? 1.0f : -1.0f;
+        for (size_t half = 0; half < 2; ++half) {
+            Object3d* segment = sideShieldSegments_[face * 2 + half].get();
+            if (!segment) continue;
+
+            const float startAngle = outwardDirection < 0.0f
+                ? (half == 0 ? 45.0f : 135.0f - arcAngle)
+                : (half == 0 ? 225.0f : 315.0f - arcAngle);
+            const float endAngle = outwardDirection < 0.0f
+                ? (half == 0 ? 45.0f + arcAngle : 135.0f)
+                : (half == 0 ? 225.0f + arcAngle : 315.0f);
+
+            // 各端を平面の左右端へ固定し、中央だけが外側へ膨らむ円弧にする。
+            Model* model = ModelManager::GetInstance()->FindModel(kSideShieldModels[face * 2 + half]);
+            if (model) {
+                model->InitializeCylinder(model->GetModelCommon(), kSideShieldArcSubdivisions, 6,
+                    kSideShieldArcRadius, kSideShieldArcRadius, kSideShieldArcRadius, kSideShieldArcRadius,
+                    kSideShieldHeight, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f, 1.0f },
+                    startAngle, endAngle);
+                model->SetTextureFilePath(kSideShieldTexturePath);
+                model->SetEnableLighting(true);
+                model->SetShininess(24.0f);
+                model->SetAlphaReference(0.0f);
+                model->SetColor({ 0.30f, 0.78f, 1.00f, alpha });
+            }
+
+            Vector3 localPosition = kSideShieldPlaneCenters[face];
+            localPosition.x += outwardDirection * (kSideShieldAnchorOffset - endpointInset);
+            localPosition.y -= kSideShieldHeight * 0.5f;
+
+            segment->SetTranslate(LocalPointToWorld(localPosition));
+            segment->SetRotate({ 0.0f, rotation_.y, 0.0f });
+            segment->SetScale(kBossScale);
+            segment->Update();
+        }
+    }
+}
+
+void Boss::DrawSideShields() {
+    if (sideShieldDeployProgress_ <= 0.001f) return;
+
+    Object3dCommon* object3dCommon = Object3dCommon::GetInstance();
+    object3dCommon->SetAlphaBlendDrawSettings();
+    for (const std::unique_ptr<Object3d>& segment : sideShieldSegments_) {
+        if (segment) segment->Draw();
+    }
+    object3dCommon->SetCommonDrawSettings();
 }
 
 void Boss::InitializeRearThrusters() {
@@ -737,11 +1092,26 @@ int Boss::ConsumeSummonRequests() {
 
 void Boss::UpdateModel() {
     Enemy::UpdateModel();
+    if (cinematicDebrisActive_ && object_) {
+        // Enemy::UpdateModel() は通常船体のスケールを復元するため、撃破中だけ隠し直す。
+        object_->SetScale({ 0.0f, 0.0f, 0.0f });
+        object_->Update();
+    }
     UpdateRearThrusters();
     UpdateTurretModels();
+    UpdateSideShields();
 }
 
 void Boss::Draw() {
+    if (cinematicDebrisActive_) {
+        for (Object3d* structuralPart : cinematicDebrisParts_) {
+            if (structuralPart) structuralPart->Draw();
+        }
+        for (const auto& smallPart : cinematicSmallDebris_) {
+            if (smallPart) smallPart->Draw();
+        }
+        return;
+    }
     Enemy::Draw();
     for (size_t index = 0; index < mainTurrets_.size(); ++index) {
         if (IsTurretAlive(kMainTurretFirst + index) && mainTurrets_[index]) mainTurrets_[index]->Draw();
@@ -758,5 +1128,8 @@ void Boss::Draw() {
             forwardTurrets_[index]->Draw();
         }
     }
-    DrawRearThrusters();
+    if (!cinematicWreckPresentation_) {
+        DrawRearThrusters();
+        DrawSideShields();
+    }
 }

@@ -45,6 +45,7 @@ public:
     virtual void SetPosition(const Vector3 &position) { position_ = position; }
     Vector3 GetRotation() const { return rotation_; }
     Vector3 GetScale() const { return scale_; }
+    Vector3 GetVelocity() const { return velocity_; }
 
     virtual Vector3 GetWorldHalfExtents() const;
     virtual float GetCollisionRadius() const;

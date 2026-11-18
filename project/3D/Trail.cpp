@@ -125,6 +125,84 @@ std::vector<VertexData> Trail::GenerateVertices(Camera *camera, float thickness)
     return vertices;
 }
 
+std::vector<VertexData> Trail::GenerateSmokeTrailVertices(Camera* camera, float thickness, float alphaScale) const {
+    std::vector<VertexData> vertices;
+    if (!camera || points_.size() < 2) return vertices;
+    const Vector3 camPos = camera->GetTranslate();
+    for (size_t i = 0; i < points_.size(); ++i) {
+        const float age = points_[i].age;
+        // 過去の煙ほど上方向(+Y)へ立ち上りながら拡散する
+        const Vector3 point = {
+            points_[i].position.x,
+            points_[i].position.y + age * 1.4f,
+            points_[i].position.z,
+        };
+        Vector3 dir{};
+        if (i < points_.size() - 1) {
+            const Vector3 next = {
+                points_[i + 1].position.x,
+                points_[i + 1].position.y + points_[i + 1].age * 1.4f,
+                points_[i + 1].position.z,
+            };
+            dir = { point.x - next.x, point.y - next.y, point.z - next.z };
+        } else {
+            const Vector3 previous = {
+                points_[i - 1].position.x,
+                points_[i - 1].position.y + points_[i - 1].age * 1.4f,
+                points_[i - 1].position.z,
+            };
+            dir = { previous.x - point.x, previous.y - point.y, previous.z - point.z };
+        }
+        const float dirLenSq = dir.x * dir.x + dir.y * dir.y + dir.z * dir.z;
+        dir = dirLenSq > 1.0e-6f ? MyMath::Normalize(dir) : Vector3{ 0.0f, 1.0f, 0.0f };
+
+        Vector3 toCam = { camPos.x - point.x, camPos.y - point.y, camPos.z - point.z };
+        const float toCamLenSq = toCam.x * toCam.x + toCam.y * toCam.y + toCam.z * toCam.z;
+        toCam = toCamLenSq > 1.0e-6f ? MyMath::Normalize(toCam) : Vector3{ 0.0f, 0.0f, -1.0f };
+
+        Vector3 right = MyMath::Cross(dir, toCam);
+        const float rightLenSq = right.x * right.x + right.y * right.y + right.z * right.z;
+        right = rightLenSq > 1.0e-6f ? MyMath::Normalize(right) : Vector3{ 1.0f, 0.0f, 0.0f };
+
+        const float progress = 1.0f - (static_cast<float>(i) / static_cast<float>(points_.size() - 1));
+        const float spread = std::pow(1.0f - progress, 1.15f);
+        const float currentThickness = thickness * (0.45f + spread * 2.4f);
+        const float noiseX = (std::sin(static_cast<float>(i) * 1.35f) * 0.25f) * spread;
+        const float noiseY = (std::cos(static_cast<float>(i) * 1.15f) * 0.20f) * spread;
+        const float noiseZ = (std::sin(static_cast<float>(i) * 0.95f) * 0.25f) * spread;
+        const Vector3 leftPos = {
+            point.x - right.x * currentThickness + noiseX,
+            point.y - right.y * currentThickness + noiseY,
+            point.z - right.z * currentThickness + noiseZ,
+        };
+        const Vector3 rightPos = {
+            point.x + right.x * currentThickness + noiseX,
+            point.y + right.y * currentThickness + noiseY,
+            point.z + right.z * currentThickness + noiseZ,
+        };
+        const float headFade = std::clamp((1.0f - progress) * 6.0f, 0.0f, 1.0f);
+        const float alpha = std::pow(progress, 1.35f) * headFade * alphaScale;
+        const float vCoord = static_cast<float>(i) * 0.22f;
+
+        VertexData vLeft{};
+        vLeft.position = { leftPos.x, leftPos.y, leftPos.z, 1.0f };
+        vLeft.normal = { toCam.x, toCam.y, toCam.z, 0.0f };
+        vLeft.texcoord = { 0.0f, vCoord, 0.0f, 0.0f };
+        vLeft.color = { 0.0f, 0.0f, 0.0f, alpha };
+
+        VertexData vRight{};
+        vRight.position = { rightPos.x, rightPos.y, rightPos.z, 1.0f };
+        vRight.normal = { toCam.x, toCam.y, toCam.z, 0.0f };
+        vRight.texcoord = { 1.0f, vCoord, 0.0f, 0.0f };
+        vRight.color = { 0.0f, 0.0f, 0.0f, alpha };
+
+        vertices.push_back(vLeft);
+        vertices.push_back(vRight);
+    }
+
+    return vertices;
+}
+
 // 前世代の距離制限型帯。現在は寿命付き履歴リボンへ置き換えたため参照しない。
 #if 0
 std::vector<VertexData> Trail::GenerateSpeedTrailVertices(Camera* camera, float thickness,

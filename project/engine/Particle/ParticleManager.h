@@ -98,6 +98,7 @@ public://構造体定義
 		uint32_t freeListUavIndex = UINT32_MAX;
 
 		bool isGpuInitialized = false;
+		bool useAlphaBlend = false;
 	};
 
 public://メンバ関数
@@ -113,6 +114,7 @@ public://メンバ関数
 
 	//パーティクルグループの生成
 	void CreateParticleGroup(const std::string name, const std::string textureFilePath);
+	void SetParticleGroupAlphaBlend(const std::string& name, bool enabled);
 
 	void Emit(const std::string name, const Vector3 &position, uint32_t count, const Vector4 &color,
 		float speed = 0.5f, float speedVariance = 0.2f,
@@ -131,6 +133,13 @@ public://メンバ関数
 	void EmitFireball(const std::string name, const Vector3 &position, uint32_t count, const Vector4 &color,
 		float initialScale = 0.5f, float finalScale = 2.5f,
 		float lifeTime = 0.65f, float radius = 0.25f);
+
+	// 小さく発生して大きく膨らみ、上方向へ立ち上りながら薄く消える煙用パーティクル
+	void EmitSmoke(const std::string& name, const Vector3& position, uint32_t count, const Vector4& color,
+		float initialScale, float finalScale,
+		float riseSpeed, float spreadSpeed,
+		float lifeTimeMin, float lifeTimeMax,
+		float posVariance);
 
 	// getter/setter
 	EmitterSphere* GetEmitterSphere() { return emitterDataPtr_; }
@@ -159,6 +168,7 @@ private://メンバ変数
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState_;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineStateCPU_;
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineStateCPUAlpha_;
 
 	// --- GPU Particle 追加分 ---
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> computeRootSignature_;

@@ -71,6 +71,12 @@ void Object3dCommon::SetAlphaBlendDrawSettings() {
 	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
+void Object3dCommon::SetAlphaBlendStripDrawSettings() {
+	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
+	dxCommon_->GetCommandList()->SetPipelineState(alphaBlendPipelineState_.Get());
+	dxCommon_->GetCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+}
+
 void Object3dCommon::SetLineDrawSettings() {
 	dxCommon_->GetCommandList()->SetGraphicsRootSignature(rootSignature_.Get());
 	dxCommon_->GetCommandList()->SetPipelineState(linePipelineState_.Get());

@@ -124,7 +124,7 @@ namespace {
 			projectRoot / "generated" / "packages" / "ValkyrieStrike_Playable-Release.zip";
 	}
 
-	bool CreateExecutablePackage(bool skipBuild, bool includeDemoPlay, HANDLE& processHandle) {
+	bool CreateExecutablePackage(bool skipBuild, bool includeDemoPlay, bool includeClearCinematicDemo, HANDLE& processHandle) {
 		const std::filesystem::path projectRoot = FindProjectRoot();
 		if (projectRoot.empty()) {
 			return false;
@@ -138,6 +138,9 @@ namespace {
 		}
 		if (includeDemoPlay) {
 			parameters += L" -IncludeDemoPlay";
+		}
+		if (includeClearCinematicDemo) {
+			parameters += L" -IncludeClearCinematicDemo";
 		}
 
 		SHELLEXECUTEINFOW executeInfo{};
@@ -426,8 +429,9 @@ void GamePlayUIManager::DrawEditorToolbar() {
 	ImGui::SameLine();
 
 	static int selectedSceneIndex = 1;
-	const char *sceneLabels[] = { "タイトル", "ゲーム", "シミュレーション" };
-	const char *sceneNames[] = { "TITLE", "GAMEPLAY", "SIMULATION" };
+	const char *sceneLabels[] = { "タイトル", "ゲーム" };
+	const char *sceneNames[] = { "TITLE", "GAMEPLAY" };
+	selectedSceneIndex = std::clamp(selectedSceneIndex, 0, IM_ARRAYSIZE(sceneNames) - 1);
 	ImGui::SetNextItemWidth(130.0f);
 	ImGui::Combo("##切替先シーン", &selectedSceneIndex, sceneLabels, IM_ARRAYSIZE(sceneLabels));
 	ImGui::SameLine();
@@ -593,12 +597,9 @@ void GamePlayUIManager::UpdateUI() {
 		}
 		DrawEditorToolbar();
 
-		ImGui::Begin("Simulation");
-		ImGui::Text("シミュレーション設定");
-		ImGui::TextWrapped("保存済み設定の読み込みはここで行えます。細かい保存や確認は専用画面を開いてください。");
-		if (ImGui::Button("シミュレーション画面を開く (F2)")) {
-			LaunchSimulationExecutable();
-		}
+		ImGui::Begin("ゲーム設定");
+		ImGui::Text("ゲーム設定");
+		ImGui::TextWrapped("ゲーム内の設定をここで確認・変更できます。");
 		DrawGameplayActionControls();
 		DrawAmmoSettingsUI();
 		ImGui::End();
@@ -1509,6 +1510,7 @@ void GamePlayUIManager::UpdateUI() {
 			static std::string packageMessage;
 			static HANDLE packageProcess = nullptr;
 			static bool includeDemoPlay = false;
+			static bool includeClearCinematicDemo = false;
 			const bool projectFound = !FindProjectRoot().empty();
 			const bool runningRelease = IsCurrentExecutableReleaseBuild();
 			const std::filesystem::path zipPath = GetExecutablePackageZipPath();
@@ -1519,8 +1521,9 @@ void GamePlayUIManager::UpdateUI() {
 			ImGui::Separator();
 			ImGui::BeginDisabled(packageCreationRunning);
 			ImGui::Checkbox("デモプレイを含める", &includeDemoPlay);
+			ImGui::Checkbox("クリア演出デモを含める", &includeClearCinematicDemo);
 			ImGui::EndDisabled();
-			ImGui::TextDisabled("ONにするとデモ専用EXEを同梱し、タイトルのTABアトラクトデモも有効にします。");
+			ImGui::TextDisabled("クリア演出デモをONにすると、タイトルのTABでボス撃破からリザルトまでを自動再生します。");
 			ImGui::Separator();
 			if (!projectFound) {
 				ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.25f, 1.0f), "プロジェクトフォルダーから起動した場合のみ利用できます。");
@@ -1529,12 +1532,12 @@ void GamePlayUIManager::UpdateUI() {
 			} else if (runningRelease) {
 				ImGui::TextDisabled("現在Release版を実行中です。ビルドは行わず、現在のRelease版をZIPにします。");
 				if (ImGui::Button("現在のRelease版をZIP作成")) {
-					packageMessage = CreateExecutablePackage(true, includeDemoPlay, packageProcess)
+					packageMessage = CreateExecutablePackage(true, includeDemoPlay, includeClearCinematicDemo, packageProcess)
 						? "ZIP作成中です。完了を確認しています。"
 						: "ZIP作成を開始できませんでした。";
 				}
 			} else if (ImGui::Button("ReleaseビルドしてZIP作成")) {
-				packageMessage = CreateExecutablePackage(false, includeDemoPlay, packageProcess)
+				packageMessage = CreateExecutablePackage(false, includeDemoPlay, includeClearCinematicDemo, packageProcess)
 					? "ReleaseビルドとZIP作成中です。完了を確認しています。"
 					: "実行ファイル生成を開始できませんでした。";
 			}

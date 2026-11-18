@@ -86,7 +86,8 @@
             0.0
         ],
         "rearThrusterRadius": 0.27000001072883606,
-        "rearThrusterSpacing": 0.6200000047683716
+        "rearThrusterSpacing": 0.6200000047683716,
+        "sideShieldOpacity": 0.82
     },
     "version": 1
 }

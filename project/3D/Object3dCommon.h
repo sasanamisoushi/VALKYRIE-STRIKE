@@ -28,6 +28,7 @@ public:
 	
 	//アルファブレンド（半透明）用描画設定
 	void SetAlphaBlendDrawSettings();
+	void SetAlphaBlendStripDrawSettings();
 	
 	void SetLineDrawSettings();
 

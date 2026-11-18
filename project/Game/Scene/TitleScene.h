@@ -23,12 +23,15 @@ public:
 	// TAB で開始／終了するアトラクトデモの状態を切り替える。
 	static void StartAttractDemo() { if (isAttractDemoAvailable_) isAttractDemoEnabled_ = true; }
 	static void StopAttractDemo() { isAttractDemoEnabled_ = false; }
+	// 配布ZIPでクリア演出デモが選ばれた時だけ、TABの再生内容を切り替える。
+	static bool ShouldPlayClearCinematicDemo() { return playClearCinematicDemo_; }
 private:
 	static inline bool isPendingFadeIn_ = false;
 	// 配布ZIPの runtime_options.json で無効化できる。設定ファイルがない開発版は有効。
 	static inline bool isAttractDemoAvailable_ = true;
-	// 起動時は通常タイトル。TAB で開始したデモだけがリザルト後も次周回へ進む。
+	// 起動時は通常タイトル。TAB で開始したデモは、解除されるまでリザルト後も次周回へ進む。
 	static inline bool isAttractDemoEnabled_ = false;
+	static inline bool playClearCinematicDemo_ = false;
 	float titleFadeInAlpha_ = 0.0f;
 	enum class MenuItem {
 		Start,

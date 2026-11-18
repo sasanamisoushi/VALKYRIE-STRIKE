@@ -29,6 +29,7 @@ void ClearScene::Initialize() {
 	transitionFadeSprite_->SetAnchorPoint({ 0.0f, 0.0f });
 	transitionFadeAlpha_ = 1.0f;
 	isReturningToTitle_ = false;
+	isDemoResult_ = MissionResultStore::Get().isAttractDemo;
 	returnToTitleFrame_ = 0;
 
 	// 地図・格子・雲状の模様は1枚の流動レイヤーとして横へ送る。機体だけは別レイヤーで固定する。
@@ -154,9 +155,18 @@ void ClearScene::Update() {
 	} else {
 		transitionFadeAlpha_ = (std::max)(0.0f, transitionFadeAlpha_ - 1.0f / 24.0f);
 		Input* input = Input::GetInstance();
+		// デモ中はリザルト画面からも TAB で周回を解除できる。
+		const bool isDemoCancelled = isDemoResult_ &&
+			(input->TriggerKey(DIK_TAB) || input->TriggerControllerButton(XINPUT_GAMEPAD_BACK));
+		if (isDemoCancelled) {
+			TitleScene::StopAttractDemo();
+		}
 		const bool confirm = input->TriggerKey(DIK_SPACE) || input->TriggerKey(DIK_RETURN) ||
 			input->TriggerControllerButton(XINPUT_GAMEPAD_A) || input->TriggerControllerButton(XINPUT_GAMEPAD_START);
-		if (transitionFadeAlpha_ <= 0.0f && confirm) {
+		const bool shouldReturnToTitle = (!isDemoResult_ && confirm) ||
+			isDemoCancelled ||
+			(isDemoResult_ && resultAnimationFrame_ >= kDemoResultDurationFrames);
+		if (transitionFadeAlpha_ <= 0.0f && shouldReturnToTitle) {
 			isReturningToTitle_ = true;
 			returnToTitleFrame_ = 0;
 			if (PostEffect::GetInstance()) {

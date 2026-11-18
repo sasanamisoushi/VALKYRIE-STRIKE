@@ -4,7 +4,9 @@ param(
     [string]$Configuration = "Release",
     [switch]$SkipBuild,
     # デモ専用の起動ファイルも配布パッケージへ含める。
-    [switch]$IncludeDemoPlay
+    [switch]$IncludeDemoPlay,
+    # タイトルの TAB からボス撃破・クリア演出を自動再生できるようにする。
+    [switch]$IncludeClearCinematicDemo
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,7 +41,6 @@ $demoExecutable = "ValkyrieStrikeCodexDemo.exe"
 if ($IncludeDemoPlay -and -not (Test-Path -LiteralPath (Join-Path $buildOutput $demoExecutable))) {
     throw "デモプレイ用ファイルが見つかりません。先にビルドしてください: $demoExecutable"
 }
-
 if (-not (Test-Path -LiteralPath (Join-Path $buildOutput "resources"))) {
     throw "resources フォルダーが見つかりません。先にビルドしてください: $buildOutput"
 }
@@ -67,9 +68,12 @@ if ($IncludeDemoPlay) {
 }
 Copy-Item -LiteralPath (Join-Path $buildOutput "resources") -Destination $packagePath -Recurse
 
-# チェックを外した配布版では、通常EXE内のTABアトラクトデモも無効化する。
+# どちらのデモも選ばなかった配布版では、通常EXE内のTABアトラクトデモを無効化する。
 # この設定ファイルはパッケージへだけ書き込むため、開発版・通常のRelease出力には影響しない。
-$runtimeOptions = @{ allowAttractDemo = [bool]$IncludeDemoPlay } | ConvertTo-Json
+$runtimeOptions = @{
+    allowAttractDemo = [bool]($IncludeDemoPlay -or $IncludeClearCinematicDemo)
+    playClearCinematicDemo = [bool]$IncludeClearCinematicDemo
+} | ConvertTo-Json
 $runtimeOptions | Set-Content -LiteralPath (Join-Path $packagePath "resources\runtime_options.json") -Encoding UTF8
 
 @"
@@ -84,7 +88,15 @@ if ($IncludeDemoPlay) {
 
 デモプレイ
 ValkyrieStrikeCodexDemo.exe を起動すると、デモプレイを開始します。
-タイトル画面の TAB からアトラクトデモも開始できます。
+タイトル画面で TAB を押すと、ボス撃破から爆散、MISSION CLEAR、リザルトまでを自動再生します。
+"@
+}
+
+if ($IncludeClearCinematicDemo) {
+    Add-Content -LiteralPath (Join-Path $packagePath "README.txt") -Encoding UTF8 -Value @"
+
+クリア演出デモ
+タイトル画面で TAB を押すと、ボス撃破 → 爆散 → MISSION CLEAR → リザルト → タイトルを自動再生します。
 "@
 }
 

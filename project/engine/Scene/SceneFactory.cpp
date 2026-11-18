@@ -16,8 +16,6 @@ std::unique_ptr<BaseScene> SceneFactory::CreateScene(const std::string &sceneNam
 		newScene = std::make_unique<LoadingScene>();
 	} else if (sceneName == "GAMEPLAY") {
 		newScene = std::make_unique<GamePlayScene>();
-	} else if (sceneName == "SIMULATION") {
-		newScene = std::make_unique<GamePlayScene>(GamePlayScene::Mode::Simulation);
 	} else if (sceneName == "CODEX_DEMO") {
 		newScene = std::make_unique<GamePlayScene>(GamePlayScene::Mode::CodexDemo);
 	} else if (sceneName == "ATTRACT_DEMO") {

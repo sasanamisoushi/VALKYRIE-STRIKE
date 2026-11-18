@@ -21,6 +21,8 @@ public:
 
     // カメラの情報を元に、常にカメラの方を向く「板ポリゴンの頂点リスト」を生成する
     std::vector<VertexData> GenerateVertices(Camera *camera, float thickness);
+    // 黒煙リボン用：過去の座標履歴から上昇・拡散・減衰する黒(0,0,0)のビルボードストリップを生成する
+    std::vector<VertexData> GenerateSmokeTrailVertices(Camera* camera, float thickness, float alphaScale = 0.78f) const;
 
     // 短い移動履歴を、スラスター炎の末端から連続する発光帯として生成する。
     // 立体炎とは別の平面レイヤーで、帯の幅と色は専用シェーダーで滑らかに落とす。

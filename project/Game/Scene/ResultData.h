@@ -19,7 +19,7 @@ struct MissionResultData {
 	int defeatedEnemyCount = 0;
 	int remainingHp = 0;
 	int elapsedFrames = 0;
-	// リリース版の放置デモから渡された結果か。リザルト後は自動でタイトルへ戻す。
+	// 自動再生デモから渡された結果か。リザルト後は自動でタイトルへ戻す。
 	bool isAttractDemo = false;
 	MissionStage stage = MissionStage::Standard;
 };

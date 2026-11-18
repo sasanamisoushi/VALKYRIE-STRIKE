@@ -36,6 +36,7 @@
 #include <filesystem>
 #include <array>
 #include <cstdint>
+#include <chrono>
 
 
 
@@ -45,10 +46,9 @@ public:
 public:
 	enum class Mode {
 		Gameplay,
-		Simulation,
 		// Codex のデモ確認用。ゲームプレイのルールとHUDは通常版と同一。
 		CodexDemo,
-		// リリース版タイトルから起動する、操作不要のアトラクトデモ。
+		// リリース版タイトルから起動する、ボス撃破クリア演出のアトラクトデモ。
 		AttractDemo,
 		// タイトル画面の背面で本編の3Dシーンだけを動かす。操作とHUDは表示しない。
 		TitleBackground
@@ -84,10 +84,11 @@ private:
 	friend class LockOnManager;
 
 
-	bool IsSimulationMode() const { return mode_ == Mode::Simulation; }
+	// 旧シミュレーション専用モードは廃止済み。内部の編集補助との互換用に残す。
+	bool IsSimulationMode() const { return false; }
 	bool IsTitleBackgroundMode() const { return mode_ == Mode::TitleBackground; }
 	bool IsAttractDemoMode() const { return mode_ == Mode::AttractDemo; }
-	// タイトル背景だけが周回飛行を使う。アトラクトは通常ステージを直進する。
+	// タイトル背景だけが周回飛行を使う。
 	bool IsAutoFlightMode() const { return IsTitleBackgroundMode(); }
 	void DrawOverlay();
 	void DrawRadar();
@@ -123,6 +124,7 @@ private:
 	bool SaveGameplayBalanceSettings() const;
 	void UpdateCinematicLockOnCamera();
 	void UpdateGameOverCinematicCamera(Camera* renderCamera);
+	void UpdateBossClearCinematicCamera(Camera* renderCamera);
 	void UpdateWarpExitCamera(Camera* renderCamera);
 	void UpdateWarpExitGate(Camera* renderCamera);
 	void DrawWarpExitGate();
@@ -130,6 +132,7 @@ private:
 	// ステージの現在の攻略目標と、ボス出現時の警告カットを HUD 上へ表示する。
 	void DrawStageObjectiveOverlay(float screenWidth, float screenHeight);
 	void DrawBossIntroOverlay(float screenWidth, float screenHeight);
+	void DrawBossClearOverlay(float screenWidth, float screenHeight);
 	void DrawGameOverOverlay(float screenWidth, float screenHeight);
 	void DrawAttractDemoOverlay(float screenWidth, float screenHeight);
 	void UpdateAttractDemoSequence();
@@ -137,6 +140,9 @@ private:
 	void ClearEnemyReferences(Enemy* enemy);
 	void ClearAllEnemyReferences();
 	Mode mode_ = Mode::Gameplay;
+	bool attractDemoClearCinematic_ = false;
+	bool attractDemoBossCreated_ = false;
+	static constexpr int kAttractDemoLeadFrames = 45;
 
 	// シーンリソース
 	std::unique_ptr<Camera> camera;
@@ -201,7 +207,10 @@ private:
 	static constexpr const char* kBoundaryShieldSettingsPath = "resources/boundary_shield_settings.json";
 	std::unique_ptr<Sprite> warpFadeInSprite_;
 	std::unique_ptr<Sprite> missionStartOverlaySprite_;
+	std::unique_ptr<Sprite> missionClearOverlaySprite_;
 	std::unique_ptr<Sprite> gameOverWhiteoutSprite_;
+	std::unique_ptr<Sprite> bossCinematicTopBarSprite_;
+	std::unique_ptr<Sprite> bossCinematicBottomBarSprite_;
 	float warpFadeInAlpha_ = 0.0f;
 	// ロード後、ステージ空間に残るワープ出口。自機はこの輪を通って出現する。
 	std::unique_ptr<Object3d> warpExitRingObject_;
@@ -378,6 +387,52 @@ private:
 	// ボスを配置してから戦闘を始めるまでの短い警告カット。0 なら通常戦闘。
 	int bossIntroFrames_ = 0;
 	static constexpr int kBossIntroDurationFrames = 120;
+	// ボス撃破後は、誘爆墜落 -> 大爆発と爆散 -> 破片の余韻 -> クリア表示へ遷移する。
+	enum class BossClearPhase {
+		None,
+		DefeatCinematic,
+		FinalExplosion,
+		Wreck,
+		DebrisAftermath,
+		MissionClear,
+	};
+	void ResetBossClearSequence();
+	BossClearPhase bossClearPhase_ = BossClearPhase::None;
+	int bossClearCinematicFrames_ = 0;
+	Vector3 bossClearFocusPosition_{};
+	float bossClearFocusRadius_ = 1.0f;
+	Vector3 bossClearInitialPosition_{};
+	Vector3 bossClearInitialRotation_{};
+	std::chrono::steady_clock::time_point bossClearLastTickTime_{};
+	bool bossClearTimerInitialized_ = false;
+	float bossClearSequenceTimer_ = 0.0f;
+	float bossClearPhaseTimer_ = 0.0f;
+	float bossClearSubExplosionTimer_ = 0.0f;
+	float bossClearSmokeTimer_ = 0.0f;
+	Vector3 bossClearCrashVelocity_{};
+	Vector3 bossClearCrashRotation_{};
+	Vector3 bossClearExplosionCenter_{};
+	Vector3 bossClearCameraAnchorPos_{};
+	Vector3 bossClearCameraSlideDir_{};
+	Vector3 bossClearPlayerPos_{};
+	Vector3 bossClearPlayerDir_{};
+	float bossClearPlayerSpeed_ = 0.0f;
+	float bossClearPlayerRoll_ = 0.0f;
+	bool bossClearPhase3Initialized_ = false;
+	bool bossClearMissionUiStarted_ = false;
+	float bossClearMissionUiTimer_ = 0.0f;
+	static constexpr float kBossPhase1DurationSec = 3.0f;
+	static constexpr float kBossPhase2FlashDurationSec = 0.5f;
+	static constexpr float kBossPhase3PlayerEscapeSec = 1.25f;
+	static constexpr float kBossDebrisAftermathDurationSec = 1.6f;
+	static constexpr float kBossMissionClearDurationSec = 2.6f;
+	static constexpr size_t kBossSmokeTrailCount = 3;
+	std::array<std::unique_ptr<Trail>, kBossSmokeTrailCount> bossCrashSmokeTrails_;
+	std::array<std::unique_ptr<Object3d>, kBossSmokeTrailCount> bossCrashSmokeTrailObjects_;
+	static constexpr int kBossDefeatCinematicFrames = 180;
+	static constexpr int kBossFinalExplosionFrames = 30;
+	static constexpr int kBossWreckFrames = 150;
+	static constexpr int kBossMissionClearFrames = 150;
 	bool isPaused_ = false;
 	// false: ゲームに戻る / true: タイトルに戻る
 	bool isPauseTitleSelected_ = false;
@@ -481,6 +536,13 @@ private:
 	bool tutorialEnabled_ = false;
 	int tutorialPhaseFrames_ = 0;
 	int tutorialForwardFrames_ = 0;
+	int tutorialAltitudeHoldFrames_ = 0;
+	int tutorialTurnHoldFrames_ = 0;
+	int tutorialGerwalkHoverHoldFrames_ = 0;
+	int tutorialGerwalkStrafeHoldFrames_ = 0;
+	int tutorialLockHoldFrames_ = 0;
+	int tutorialNormalFireHoldFrames_ = 0;
+	int tutorialFighterHoldFrames_ = 0;
 	bool tutorialAltitudeObserved_ = false;
 	bool tutorialTurnObserved_ = false;
 	bool tutorialGerwalkHoverObserved_ = false;

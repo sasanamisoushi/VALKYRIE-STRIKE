@@ -516,7 +516,9 @@ void ParticleManager::Draw() {
 
 		if (cpuInstanceCount > 0) {
 			// CPU用のパイプラインステートをセットして描画
-			commandList->SetPipelineState(graphicsPipelineStateCPU_.Get());
+			commandList->SetPipelineState(group.useAlphaBlend
+				? graphicsPipelineStateCPUAlpha_.Get()
+				: graphicsPipelineStateCPU_.Get());
 			// CPU用のリソースをバインドして描画
 			SrvManager::GetInstance()->SetGraphicsRootDescriptorTable(2, group.textureSrvIndex);
 			SrvManager::GetInstance()->SetGraphicsRootDescriptorTable(1, group.instancingSrvIndex);
@@ -536,6 +538,13 @@ void ParticleManager::Draw() {
 
 		//	commandList->DrawInstanced(4, 1024, 0, 0); // GPUは常に1024個
 		//}
+	}
+}
+
+void ParticleManager::SetParticleGroupAlphaBlend(const std::string& name, bool enabled) {
+	auto it = particleGroups_.find(name);
+	if (it != particleGroups_.end()) {
+		it->second.useAlphaBlend = enabled;
 	}
 }
 
@@ -916,6 +925,60 @@ void ParticleManager::EmitDirectionalBurst(const std::string name, const Vector3
 	}
 }
 
+void ParticleManager::EmitSmoke(const std::string& name, const Vector3& position, uint32_t count, const Vector4& color,
+	float initialScale, float finalScale,
+	float riseSpeed, float spreadSpeed,
+	float lifeTimeMin, float lifeTimeMax,
+	float posVariance) {
+	if (particleGroups_.find(name) == particleGroups_.end()) {
+		return;
+	}
+
+	ParticleGroup& group = particleGroups_[name];
+	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
+	if (emitCount == 0) {
+		return;
+	}
+
+	static std::random_device seedGenerator;
+	static std::mt19937_64 engine(seedGenerator());
+	constexpr float kPi = 3.14159265f;
+	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
+	std::uniform_real_distribution<float> distSigned(-1.0f, 1.0f);
+	std::uniform_real_distribution<float> distLife(lifeTimeMin, lifeTimeMax);
+	std::uniform_real_distribution<float> distScaleJitter(0.85f, 1.20f);
+	std::uniform_real_distribution<float> distRadius(0.0f, posVariance);
+	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
+	std::uniform_real_distribution<float> distAngularSpeed(0.015f, 0.045f);
+
+	for (uint32_t i = 0; i < emitCount; ++i) {
+		Particle particle{};
+		const float jitter = distScaleJitter(engine);
+		particle.initialScale = (std::max)(0.05f, initialScale * jitter);
+		particle.finalScale = (std::max)(particle.initialScale, finalScale * jitter);
+		particle.transform.scale = { particle.initialScale, particle.initialScale, 1.0f };
+		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
+		particle.angularVelocity = distAngularSpeed(engine) * (distSigned(engine) < 0.0f ? -1.0f : 1.0f);
+
+		const float theta = distAngle(engine);
+		const float offsetR = distRadius(engine);
+		particle.transform.translate = {
+			position.x + std::cos(theta) * offsetR,
+			position.y + distSigned(engine) * offsetR * 0.4f,
+			position.z + std::sin(theta) * offsetR,
+		};
+		particle.velocity = {
+			distSigned(engine) * spreadSpeed,
+			riseSpeed * (0.75f + 0.5f * (distSigned(engine) * 0.5f + 0.5f)),
+			distSigned(engine) * spreadSpeed,
+		};
+		particle.color = color;
+		particle.lifeTime = (std::max)(0.05f, distLife(engine));
+		particle.currentTime = 0.0f;
+		group.particle.push_back(particle);
+	}
+}
+
 void ParticleManager::EmitFireball(const std::string name, const Vector3 &position, uint32_t count,
 	const Vector4 &color, float initialScale, float finalScale, float lifeTime, float radius) {
 	if (particleGroups_.find(name) == particleGroups_.end()) {
@@ -1152,6 +1215,14 @@ void ParticleManager::CreatePipelineState() {
 	graphicsPipelineStateDesc.SampleDesc.Count = 1;
 	graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
+	// 深度テストは有効にしつつ、半透明パーティクルのZ書き込みを無効化して四角い境界線を防ぐ
+	D3D12_DEPTH_STENCIL_DESC depthStencilDesc{};
+	depthStencilDesc.DepthEnable = TRUE;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
+	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
 	//----------------生成----------------
 	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState_));
 	if (FAILED(hr)) {
@@ -1171,6 +1242,20 @@ void ParticleManager::CreatePipelineState() {
 	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineStateCPU_));
 	if (FAILED(hr)) {
 		logger.Log("Failed to create GraphicsPipelineState for CPU Particle.\n");
+		assert(false);
+	}
+
+	// 通常アルファブレンドのCPUパーティクル用パイプラインステート（黒煙等：Zテスト有効・Z書き込み無効 + ソフト煙PS）
+	Microsoft::WRL::ComPtr<IDxcBlob> smokePixelShaderBlob;
+	smokePixelShaderBlob = CompileShader(L"resources/shaders/SmokeParticle.PS.hlsl",
+		L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
+	assert(smokePixelShaderBlob != nullptr);
+	graphicsPipelineStateDesc.PS = { smokePixelShaderBlob->GetBufferPointer(),
+		smokePixelShaderBlob->GetBufferSize() };
+	graphicsPipelineStateDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineStateCPUAlpha_));
+	if (FAILED(hr)) {
+		logger.Log("Failed to create Alpha GraphicsPipelineState for CPU Particle.\n");
 		assert(false);
 	}
 }

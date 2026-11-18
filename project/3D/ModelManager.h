@@ -35,6 +35,9 @@ public:
 
 	// 円柱モデルの作成
 	void CreateCylinderModel(const std::string &modelName, int subdivision = 32, float topRadius = 1.0f, float bottomRadius = 1.0f, float height = 3.0f);
+	// 指定した角度範囲だけを持つ円柱側面。エネルギーシールドのような曲面に使う。
+	void CreateCylinderArcModel(const std::string& modelName, int subdivision, float radius, float height,
+		float startAngleDegree, float endAngleDegree);
 
 	// ラインモデルの作成
 	void CreateLineModel(const std::string &modelName);

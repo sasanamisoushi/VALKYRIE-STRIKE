@@ -55,7 +55,6 @@ bool LaunchExecutablePackageCreation(bool skipBuild, bool includeDemoPlay, HANDL
 	if (includeDemoPlay) {
 		parameters += L" -IncludeDemoPlay";
 	}
-
 	SHELLEXECUTEINFOW executeInfo{};
 	executeInfo.cbSize = sizeof(executeInfo);
 	executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
@@ -784,6 +783,7 @@ bool SimulationManager::SaveBossThrusterSettings(const std::string& filePath) {
 			{ "rearThrusterBrightness", tuning.rearThrusterBrightness },
 			{ "rearThrusterFlareRadius", tuning.rearThrusterFlareRadius },
 			{ "rearThrusterIndividualOffsets", offsets },
+			{ "sideShieldOpacity", tuning.sideShieldOpacity },
 		} },
 	};
 
@@ -865,6 +865,7 @@ bool SimulationManager::LoadBossThrusterSettings(const std::string& filePath, bo
 	tuning.rearThrusterLength = data.value("rearThrusterLength", tuning.rearThrusterLength);
 	tuning.rearThrusterBrightness = data.value("rearThrusterBrightness", tuning.rearThrusterBrightness);
 	tuning.rearThrusterFlareRadius = data.value("rearThrusterFlareRadius", tuning.rearThrusterFlareRadius);
+	tuning.sideShieldOpacity = data.value("sideShieldOpacity", tuning.sideShieldOpacity);
 	if (data.contains("rearThrusterOffset") && data["rearThrusterOffset"].is_array() && data["rearThrusterOffset"].size() >= 3) {
 		tuning.rearThrusterOffset = { data["rearThrusterOffset"][0].get<float>(), data["rearThrusterOffset"][1].get<float>(), data["rearThrusterOffset"][2].get<float>() };
 	}
@@ -943,6 +944,12 @@ void SimulationManager::DrawBossBattleControls() {
 		}
 		ImGui::SameLine();
 		ImGui::TextColored(ImVec4(0.25f, 1.0f, 0.45f, 1.0f), "ボス出現中  HP: %d/%d", activeBoss->GetHP(), activeBoss->GetMaxHP());
+		if (ImGui::Button("ボスを即時撃破##boss")) {
+			// 通常のダメージ経路を通すことで、ゲーム側の撃破演出・クリア処理も同じように検証できる。
+			activeBoss->TakeDamage(activeBoss->GetHP());
+			scene_->uiManager_->bossTuningMessage_ = "ボスを即時撃破しました。通常ゲームではクリア演出が始まります。";
+		}
+		ImGui::TextDisabled("ボス本体を即時撃破し、撃破演出を確認します。");
 	}
 
 	bool changed = false;
@@ -965,6 +972,10 @@ void SimulationManager::DrawBossBattleControls() {
 		changed |= ImGui::SliderFloat("根元フレア半径##boss", &tuning.rearThrusterFlareRadius, 0.02f, 1.50f, "%.2f");
 		ImGui::TextDisabled("中央・左・右パネルの各4穴へ、合計12基を配置できます。");
 	}
+	if (ImGui::CollapsingHeader("側面シールド##boss", ImGuiTreeNodeFlags_DefaultOpen)) {
+		changed |= ImGui::SliderFloat("シールド不透明度##boss", &tuning.sideShieldOpacity, 0.05f, 1.0f, "%.2f");
+		ImGui::TextDisabled("値を上げるほど六角形シールドが濃く見えます。保存すると次回のボス戦にも反映されます。");
+	}
 	if (changed) {
 		if (activeBoss) {
 			activeBoss->SetTuning(tuning);
@@ -982,7 +993,7 @@ void SimulationManager::DrawBossBattleControls() {
 	if (ImGui::Button("保存したボスの位置・設定を読み込む##boss")) {
 		LoadBossThrusterSettings("resources/boss_thruster_settings.json");
 	}
-	ImGui::TextDisabled("保存先: resources/boss_thruster_settings.json (ボスの出現座標とスラスター・砲台設定)");
+	ImGui::TextDisabled("保存先: resources/boss_thruster_settings.json (ボスの出現座標・砲台・スラスター・シールド設定)");
 	if (!scene_->uiManager_->bossTuningMessage_.empty()) ImGui::TextWrapped("%s", scene_->uiManager_->bossTuningMessage_.c_str());
 #endif
 }
@@ -1064,7 +1075,7 @@ void SimulationManager::DrawSimulationScreenUI() {
 	DrawSimulationSaveControls();
 
 	ImGui::Separator();
-		const char *categories[] = { "プレイヤー", "ミサイル", "敵 & イベント", "パーティクル", "カメラ", "アニメーション編集", "操作設定", "実行ファイル生成" };
+		const char *categories[] = { "プレイヤー", "ミサイル", "敵 & イベント", "パーティクル", "カメラ", "アニメーション編集", "操作設定" };
 
 	// 既存の設定を、左の一覧から選択して右側で編集するレイアウトにする。
 	// カテゴリごとの実際の操作処理は下の既存コードをそのまま使用する。
@@ -1088,10 +1099,10 @@ void SimulationManager::DrawSimulationScreenUI() {
 		ImGui::Text("プレイヤー移動設定");
 		if (scene_->player_) {
 			auto mode = scene_->player_->GetCurrentMode();
-			const char* modeName = (mode == PlayerMode::Fighter) ? "ファイター (1キー)" : 
+			const char* modeName = (mode == PlayerMode::Fighter) ? "ファイター (1キー)" :
 								   (mode == PlayerMode::Gerwalk) ? "ガウォーク (2キー)" : "バトロイド (3キー)";
 			ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.5f, 1.0f), "現在の形態: %s", modeName);
-			
+
 			PlayerModeParams p = scene_->player_->GetModeParams(mode);
 			ImGui::SliderFloat("最大移動速度", &p.maxMoveSpeed, 0.01f, 1.0f);
 			ImGui::SliderFloat("移動加速度", &p.moveAcceleration, 0.001f, 0.1f);
@@ -1197,6 +1208,12 @@ void SimulationManager::DrawSimulationScreenUI() {
 			bossTuningChanged |= ImGui::SliderFloat("炎の明るさ", &tuning.rearThrusterBrightness, 0.0f, 2.50f, "%.2f");
 			bossTuningChanged |= ImGui::SliderFloat("根元フレア半径", &tuning.rearThrusterFlareRadius, 0.02f, 1.50f, "%.2f");
 			ImGui::TextDisabled("追加したスラスターは、後部の矩形パネル中心を基準に横方向へ等間隔で並びます。");
+		}
+
+		if (ImGui::CollapsingHeader("側面シールド", ImGuiTreeNodeFlags_DefaultOpen)) {
+			Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
+			bossTuningChanged |= ImGui::SliderFloat("シールド不透明度", &tuning.sideShieldOpacity, 0.05f, 1.0f, "%.2f");
+			ImGui::TextDisabled("変更は出現中のボスへ即時反映され、保存ボタンで次回以降も維持されます。");
 		}
 
 		if (bossTuningChanged) {
@@ -1478,7 +1495,7 @@ void SimulationManager::DrawSimulationScreenUI() {
 		ImGui::BeginDisabled(packageCreationRunning);
 		ImGui::Checkbox("デモプレイを含める", &includeDemoPlay);
 		ImGui::EndDisabled();
-		ImGui::TextDisabled("ONにするとデモ専用EXEを同梱し、タイトルのTABアトラクトデモも有効にします。");
+		ImGui::TextDisabled("ONにするとデモ専用EXEを同梱し、タイトルのTABでクリア演出デモを再生できます。");
 		ImGui::Separator();
 		if (!projectFound) {
 			ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.25f, 1.0f), "プロジェクトフォルダー内から起動した場合のみ使用できます。");
@@ -1544,7 +1561,7 @@ void SimulationManager::DrawAnimationEditorUI() {
 #ifdef ENABLE_IMGUI
 	ImGui::Text("=== アニメーション編集ツール ===");
 	ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "[Shortcuts] Space:Play/Pause | Esc:Deselect | Del:Clear Key | Ctrl+Z/Y:Undo/Redo");
-	
+
 	if (!scene_->player_) {
 		ImGui::TextColored(ImVec4(1, 0, 0, 1), "プレイヤーがいません");
 		return;
@@ -1552,7 +1569,7 @@ void SimulationManager::DrawAnimationEditorUI() {
 
 	ImGui::InputText("アクション名", actionName_, IM_ARRAYSIZE(actionName_));
 	std::string currentPath = "resources/animations/" + std::string(actionName_) + ".bana";
-	
+
 	if (ImGui::Button("バイナリからロード")) {
 		if (LoadAnimationFromBinary(customAnimation_, currentPath)) {
 			scene_->player_->SetOverrideAnimation(&customAnimation_);
@@ -1687,7 +1704,7 @@ void SimulationManager::DrawAnimationEditorUI() {
 				nodeAnim.rotate.keyframes.push_back(kf);
 				std::sort(nodeAnim.rotate.keyframes.begin(), nodeAnim.rotate.keyframes.end(), [](auto& a, auto& b){ return a.time < b.time; });
 			}
-			
+
 			// Scale
 			ImGui::Text("Scale (キー数: %d)", (int)nodeAnim.scale.keyframes.size());
 			static float sVal[3] = {1,1,1};
@@ -1706,26 +1723,26 @@ void SimulationManager::DrawAnimationEditorUI() {
 
 void SimulationManager::AddBoneRotationFromDrag(const std::string& boneName, float deltaX, float deltaY) {
     if (boneName.empty()) return;
-    
+
     // まだアニメーションに登録されていないボーンなら自動で登録する
     if (customAnimation_.nodeAnimations.count(boneName) == 0) {
         customAnimation_.nodeAnimations[boneName] = NodeAnimation();
     }
-    
+
     NodeAnimation& nodeAnim = customAnimation_.nodeAnimations[boneName];
-    
+
     Quaternion currentRot = { 0.0f, 0.0f, 0.0f, 1.0f };
     if (!nodeAnim.rotate.keyframes.empty()) {
         currentRot = CalculateValue(nodeAnim.rotate.keyframes, currentFrameTime_);
     }
-    
+
     float speed = 0.01f;
     Quaternion qYaw = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, deltaX * speed);
     Quaternion qPitch = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, deltaY * speed);
-    
+
     Quaternion deltaRot = MyMath::Multiply(qYaw, qPitch);
     currentRot = MyMath::Normalize(MyMath::Multiply(currentRot, deltaRot));
-    
+
     bool found = false;
     for (auto& kf : nodeAnim.rotate.keyframes) {
         if (std::abs(kf.time - currentFrameTime_) < 0.001f) {
@@ -1734,7 +1751,7 @@ void SimulationManager::AddBoneRotationFromDrag(const std::string& boneName, flo
             break;
         }
     }
-    
+
     if (!found) {
         KeyframeQuaternion newKf;
         newKf.time = currentFrameTime_;
@@ -1746,23 +1763,23 @@ void SimulationManager::AddBoneRotationFromDrag(const std::string& boneName, flo
 
 void SimulationManager::AddBoneTranslationFromDrag(const std::string& boneName, float deltaX, float deltaY) {
     if (boneName.empty()) return;
-    
+
     // まだアニメーションに登録されていないボーンなら自動で登録する
     if (customAnimation_.nodeAnimations.count(boneName) == 0) {
         customAnimation_.nodeAnimations[boneName] = NodeAnimation();
     }
-    
+
     NodeAnimation& nodeAnim = customAnimation_.nodeAnimations[boneName];
-    
+
     Vector3 currentTrans = { 0.0f, 0.0f, 0.0f };
     if (!nodeAnim.translate.keyframes.empty()) {
         currentTrans = CalculateValue(nodeAnim.translate.keyframes, currentFrameTime_);
     }
-    
+
     float speed = 0.05f;
     currentTrans.x += deltaX * speed;
     currentTrans.y -= deltaY * speed; // 画面のY軸は下向きなので反転させる
-    
+
     bool found = false;
     for (auto& kf : nodeAnim.translate.keyframes) {
         if (std::abs(kf.time - currentFrameTime_) < 0.001f) {
@@ -1771,7 +1788,7 @@ void SimulationManager::AddBoneTranslationFromDrag(const std::string& boneName, 
             break;
         }
     }
-    
+
     if (!found) {
         KeyframeVector3 newKf;
         newKf.time = currentFrameTime_;
@@ -1786,7 +1803,7 @@ void SimulationManager::UpdateShortcuts() {
 	if (!scene_ || !scene_->uiManager_ || scene_->uiManager_->currentSimulationTarget_ != 5) return;
 
 	ImGuiIO& io = ImGui::GetIO();
-	
+
 	// ドラッグ中かどうかの判定とUndoへの記録
 	if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
 		if (!isDragging_ && !selectedBoneNames_.empty()) {
@@ -1836,11 +1853,11 @@ void SimulationManager::PushUndo() {
 
 void SimulationManager::Undo() {
 	if (undoHistory_.empty()) return;
-	
+
 	redoHistory_.push_back(customAnimation_);
 	customAnimation_ = undoHistory_.back();
 	undoHistory_.pop_back();
-	
+
 	if (scene_ && scene_->player_) {
 		scene_->player_->SetOverrideAnimation(&customAnimation_);
 	}
@@ -1848,11 +1865,11 @@ void SimulationManager::Undo() {
 
 void SimulationManager::Redo() {
 	if (redoHistory_.empty()) return;
-	
+
 	undoHistory_.push_back(customAnimation_);
 	customAnimation_ = redoHistory_.back();
 	redoHistory_.pop_back();
-	
+
 	if (scene_ && scene_->player_) {
 		scene_->player_->SetOverrideAnimation(&customAnimation_);
 	}

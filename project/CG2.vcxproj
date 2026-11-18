@@ -113,7 +113,7 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>CG2_RELEASE_BUILD;ENABLE_IMGUI;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>CG2_RELEASE_BUILD;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
@@ -411,7 +411,6 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
   <Target Name="CopyRuntimeFiles" AfterTargets="Build">
     <Copy SourceFiles="$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" DestinationFiles="$(TargetDir)dxcompiler.dll" SkipUnchangedFiles="true" Condition="Exists('$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll')" />
     <Copy SourceFiles="$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" DestinationFiles="$(TargetDir)dxil.dll" SkipUnchangedFiles="true" Condition="Exists('$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll')" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(TargetDir)ValkyrieStrikeSimulation.exe" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(TargetPath)" DestinationFiles="$(TargetDir)ValkyrieStrikeCodexDemo.exe" SkipUnchangedFiles="true" />
   </Target>
 </Project>
