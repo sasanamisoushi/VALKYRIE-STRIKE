@@ -12,6 +12,16 @@ public:
     static constexpr size_t kMaxRearThrusters = 12;
     // 艦首3基、主砲3基、上部連装砲2基、機銃1基を個別に破壊できる。
     static constexpr size_t kTurretCount = 9;
+    static constexpr size_t kSideShieldGeneratorCount = 2;
+    static constexpr int kSideShieldGeneratorMaxHP = 12;
+
+    enum class SideShieldState {
+        Charging,
+        Deploying,
+        Active,
+        Warning,
+        Cooldown,
+    };
 
     // ImGui のボス戦調整で使う、砲台・後部スラスターのライブ設定。
     struct Tuning {
@@ -53,10 +63,12 @@ public:
     void Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles) override;
     void UpdateModel() override;
     void Draw() override;
+    void DrawTransparent() override;
     void TakeDamageAt(int damage, const Vector3 &hitPosition,
-        const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f }) override;
+        const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f }, float impactRadius = 0.0f) override;
     void TakeDamageAtTargetPoint(int damage, const Vector3& targetPoint,
-        const Vector3& hitPosition, const Vector3& hitDirection = { 0.0f, 0.0f, 0.0f }) override;
+        const Vector3& hitPosition, const Vector3& hitDirection = { 0.0f, 0.0f, 0.0f },
+        float impactRadius = 0.0f) override;
     bool IsHitBy(const Sphere& attackSphere) const override;
     OBB GetOBB() const override;
     int GetMaxHP() const override { return kMaxHP; }
@@ -70,6 +82,15 @@ public:
     float GetTurretLockOnRadius(size_t turretIndex) const;
     int GetTurretHP(size_t turretIndex) const;
     int GetTurretMaxHP() const;
+    // 砲台に加え、非展開時の側面シールド発生装置をロックオン候補に含める。
+    size_t GetLockOnPartCount() const { return kTurretCount + kSideShieldGeneratorCount; }
+    bool IsLockOnPartAvailable(size_t partIndex) const;
+    Vector3 GetLockOnPartPosition(size_t partIndex) const;
+    float GetLockOnPartRadius(size_t partIndex) const;
+    int GetLockOnPartHP(size_t partIndex) const;
+    int GetLockOnPartMaxHP(size_t partIndex) const;
+    bool IsSideShieldGeneratorDestroyed(size_t face) const;
+    SideShieldState GetSideShieldState() const { return sideShieldState_; }
     const Tuning& GetTuning() const { return tuning_; }
     void SetTuning(const Tuning& tuning);
     size_t GetRearThrusterCount() const { return static_cast<size_t>(tuning_.rearThrusterCount); }
@@ -100,6 +121,12 @@ private:
     void InitializeSideShields();
     void UpdateSideShields();
     void DrawSideShields();
+    void AdvanceSideShieldState();
+    bool IsSideShieldVisible() const;
+    bool IsSideShieldProtectingFace(size_t face) const;
+    bool IsSideShieldGeneratorVulnerable(size_t face) const;
+    bool TryGetSideShieldFaceAtWorldPosition(const Vector3& worldPosition, float radius, size_t& outFace) const;
+    bool ApplySideShieldGeneratorDamage(size_t face, int damage);
 
     int actionTimer_ = 0;
     int summonRequests_ = 0;
@@ -140,6 +167,12 @@ private:
     std::array<Vector3, kMaxRearThrusters> rearThrusterOrigins_{};
     // 左右の船体側面で、各装甲板の端から中央へ展開するシールド。
     std::array<std::unique_ptr<Object3d>, 4> sideShieldSegments_;
+    // OBJ から船体本体を切り出した、左右の長い側面装甲板。
+    std::array<std::unique_ptr<Object3d>, kSideShieldGeneratorCount> sideShieldGenerators_;
+    std::array<int, kSideShieldGeneratorCount> sideShieldGeneratorHP_{};
+    std::array<bool, kSideShieldGeneratorCount> sideShieldGeneratorDestroyed_{};
+    SideShieldState sideShieldState_ = SideShieldState::Charging;
+    int sideShieldStateTimer_ = 0;
     float sideShieldDeployProgress_ = 0.0f;
     float sideShieldBuiltProgress_ = -1.0f;
     Tuning tuning_{};

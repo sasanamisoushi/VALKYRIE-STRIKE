@@ -54,7 +54,12 @@ constexpr float kSideShieldArcHalfAngle = 45.0f;
 constexpr float kSideShieldAnchorOffset = 0.0800f;
 constexpr float kSideShieldShellThickness = 0.18f;
 constexpr int kSideShieldArcSubdivisions = 16;
+constexpr int kSideShieldChargingFrames = 48;
 constexpr int kSideShieldDeployFrames = 72;
+constexpr int kSideShieldActiveFrames = 300;
+constexpr int kSideShieldWarningFrames = 60;
+constexpr int kSideShieldCooldownFrames = 420;
+constexpr float kSideShieldGeneratorLockOnRadius = 3.85f;
 constexpr char kSideShieldTexturePath[] = "resources/boss_hex_shield_blue.png";
 constexpr std::array<const char*, 4> kSideShieldModels = {
     "BossSideHexShieldOuterLeft", "BossSideHexShieldOuterRight",
@@ -66,9 +71,15 @@ float SmoothStep01(float value) {
     return value * value * (3.0f - 2.0f * value);
 }
 
-// OBJ内の実オブジェクト順を基準にする。船体・甲板・側面装甲は残し、砲台だけを
-// 別Object3dとして回す。これによりBlenderの完成形を保ったまま旋回できる。
-constexpr char kBossBodyModel[] = "Boss1/Boss1.obj#exclude=0,2-13,19-20,22,29-30";
+// OBJ内の実オブジェクト順を基準にする。側面の長い板（24/25, 28）は
+// シールド発生装置として別Object3dで管理するため船体から除外する。
+// 24 と 25 は同位置に重複しているため、24だけを発生装置モデルとして使用する。
+constexpr char kBossBodyModel[] = "Boss1/Boss1.obj#exclude=0,2-13,19-20,22,24-25,28-30";
+constexpr std::array<const char*, Boss::kSideShieldGeneratorCount> kSideShieldGeneratorModels = {
+    // OBJ ローダーは X 軸を反転するため、ゲーム座標 +X 側（face 0）は OBJ の group 28。
+    "Boss1/Boss1.obj#groups=28",
+    "Boss1/Boss1.obj#groups=24",
+};
 // 通常時は上記の船体モデルを一体で描画する。撃破時だけは、砲台以外の装甲・甲板も
 // 飛ばせるよう、同じOBJグループを重複なしの8ブロックへ分割して使用する。
 constexpr std::array<const char*, 8> kCinematicHullDebrisModels = {
@@ -336,6 +347,10 @@ void Boss::Initialize(const Vector3 &position) {
     miniTurretPitches_.fill(0.0f);
     turretHP_.fill(kTurretMaxHP);
     turretDestroyed_.fill(false);
+    sideShieldGeneratorHP_.fill(kSideShieldGeneratorMaxHP);
+    sideShieldGeneratorDestroyed_.fill(false);
+    sideShieldState_ = SideShieldState::Charging;
+    sideShieldStateTimer_ = 0;
     sideShieldDeployProgress_ = 0.0f;
     sideShieldBuiltProgress_ = -1.0f;
     UpdateRearThrusters();
@@ -475,8 +490,25 @@ void Boss::FireForwardTurret(const Vector3 &playerPos, EnemyBulletManager *bulle
     bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.70f));
 }
 
-void Boss::TakeDamageAt(int damage, const Vector3 &hitPosition, const Vector3 &hitDirection) {
+void Boss::TakeDamageAt(int damage, const Vector3 &hitPosition, const Vector3 &hitDirection, float impactRadius) {
     if (damage <= 0 || isDead_) return;
+
+    size_t shieldFace = 0;
+    if (TryGetSideShieldFaceAtWorldPosition(hitPosition, impactRadius, shieldFace) &&
+        IsSideShieldProtectingFace(shieldFace)) {
+        // 展開開始から解除予告の間は側面からの着弾を受け止める。
+        return;
+    }
+
+    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
+        if (!IsSideShieldGeneratorVulnerable(face)) continue;
+        const Vector3 offset = SubtractVector(hitPosition, GetLockOnPartPosition(kTurretCount + face));
+        const float radius = GetLockOnPartRadius(kTurretCount + face);
+        if (DotVector(offset, offset) <= radius * radius) {
+            ApplySideShieldGeneratorDamage(face, damage);
+            return;
+        }
+    }
 
     for (size_t index = 0; index < GetTurretCount(); ++index) {
         if (!IsTurretAlive(index)) continue;
@@ -490,27 +522,36 @@ void Boss::TakeDamageAt(int damage, const Vector3 &hitPosition, const Vector3 &h
         return;
     }
 
-    Enemy::TakeDamageAt(damage, hitPosition, hitDirection);
+    Enemy::TakeDamageAt(damage, hitPosition, hitDirection, impactRadius);
 }
 
 void Boss::TakeDamageAtTargetPoint(int damage, const Vector3& targetPoint,
-    const Vector3& hitPosition, const Vector3& hitDirection) {
+    const Vector3& hitPosition, const Vector3& hitDirection, float impactRadius) {
     if (damage <= 0 || isDead_) return;
 
-    // 部位ロック中は、弾が船体 OBB に先に触れてもロックした砲台へ確実にダメージを渡す。
-    // targetPoint はロック開始時の砲台支点なので、砲台の描画・当たり判定と同じ座標系で照合する。
-    for (size_t index = 0; index < GetTurretCount(); ++index) {
-        if (!IsTurretAlive(index)) continue;
-        const Vector3 offset = SubtractVector(targetPoint, GetTurretLockOnPosition(index));
-        const float lockRadius = GetTurretLockOnRadius(index);
+    size_t shieldFace = 0;
+    if (TryGetSideShieldFaceAtWorldPosition(hitPosition, impactRadius, shieldFace) &&
+        IsSideShieldProtectingFace(shieldFace)) {
+        return;
+    }
+
+    // 部位ロック中は、弾が船体 OBB に先に触れてもロックした砲台・発生装置へ確実にダメージを渡す。
+    for (size_t index = 0; index < GetLockOnPartCount(); ++index) {
+        if (!IsLockOnPartAvailable(index)) continue;
+        const Vector3 offset = SubtractVector(targetPoint, GetLockOnPartPosition(index));
+        const float lockRadius = GetLockOnPartRadius(index);
         if (DotVector(offset, offset) <= lockRadius * lockRadius) {
-            ApplyTurretDamage(index, damage);
+            if (index < kTurretCount) {
+                ApplyTurretDamage(index, damage);
+            } else {
+                ApplySideShieldGeneratorDamage(index - kTurretCount, damage);
+            }
             return;
         }
     }
 
     // ロック対象が既に破壊済みなどで特定できなければ、通常の着弾判定に戻す。
-    TakeDamageAt(damage, hitPosition, hitDirection);
+    TakeDamageAt(damage, hitPosition, hitDirection, impactRadius);
 }
 
 bool Boss::ApplyTurretDamage(size_t turretIndex, int damage) {
@@ -521,8 +562,21 @@ bool Boss::ApplyTurretDamage(size_t turretIndex, int damage) {
 }
 
 bool Boss::IsHitBy(const Sphere& attackSphere) const {
-    // 砲台は船体から張り出しているため、本体 OBB の外で命中しても部位ダメージへ
-    // 到達できるよう、各砲台の球判定を先に確認する。
+    size_t shieldFace = 0;
+    if (TryGetSideShieldFaceAtWorldPosition(attackSphere.center, attackSphere.radius, shieldFace) &&
+        IsSideShieldProtectingFace(shieldFace)) {
+        return true;
+    }
+
+    // 側面発生装置は非展開中だけ、船体外の独立した当たり判定として扱う。
+    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
+        if (!IsSideShieldGeneratorVulnerable(face)) continue;
+        const Vector3 offset = SubtractVector(attackSphere.center, GetLockOnPartPosition(kTurretCount + face));
+        const float hitRadius = GetLockOnPartRadius(kTurretCount + face) + attackSphere.radius;
+        if (DotVector(offset, offset) <= hitRadius * hitRadius) return true;
+    }
+
+    // 砲台は船体から張り出しているため、本体 OBB の外で命中しても部位ダメージへ到達できる。
     for (size_t index = 0; index < GetTurretCount(); ++index) {
         if (!IsTurretAlive(index)) continue;
         const Vector3 offset = SubtractVector(attackSphere.center, GetTurretLockOnPosition(index));
@@ -554,6 +608,76 @@ OBB Boss::GetOBB() const {
 
 bool Boss::IsTurretAlive(size_t turretIndex) const {
     return turretIndex < GetTurretCount() && !turretDestroyed_[turretIndex];
+}
+
+bool Boss::IsSideShieldGeneratorDestroyed(size_t face) const {
+    return face >= kSideShieldGeneratorCount || sideShieldGeneratorDestroyed_[face];
+}
+
+bool Boss::IsLockOnPartAvailable(size_t partIndex) const {
+    if (partIndex < kTurretCount) return IsTurretAlive(partIndex);
+    return IsSideShieldGeneratorVulnerable(partIndex - kTurretCount);
+}
+
+Vector3 Boss::GetLockOnPartPosition(size_t partIndex) const {
+    if (partIndex < kTurretCount) return GetTurretLockOnPosition(partIndex);
+    const size_t face = partIndex - kTurretCount;
+    if (face >= kSideShieldGeneratorCount) return position_;
+    return LocalPointToWorld(kSideShieldPlaneCenters[face]);
+}
+
+float Boss::GetLockOnPartRadius(size_t partIndex) const {
+    if (partIndex < kTurretCount) return GetTurretLockOnRadius(partIndex);
+    const size_t face = partIndex - kTurretCount;
+    return face < kSideShieldGeneratorCount ? kSideShieldGeneratorLockOnRadius : GetCollisionRadius();
+}
+
+int Boss::GetLockOnPartHP(size_t partIndex) const {
+    if (partIndex < kTurretCount) return GetTurretHP(partIndex);
+    const size_t face = partIndex - kTurretCount;
+    return face < kSideShieldGeneratorCount ? sideShieldGeneratorHP_[face] : 0;
+}
+
+int Boss::GetLockOnPartMaxHP(size_t partIndex) const {
+    return partIndex < kTurretCount ? kTurretMaxHP :
+        (partIndex < GetLockOnPartCount() ? kSideShieldGeneratorMaxHP : 0);
+}
+
+bool Boss::ApplySideShieldGeneratorDamage(size_t face, int damage) {
+    if (!IsSideShieldGeneratorVulnerable(face) || damage <= 0) return false;
+    sideShieldGeneratorHP_[face] = (std::max)(0, sideShieldGeneratorHP_[face] - damage);
+    sideShieldGeneratorDestroyed_[face] = sideShieldGeneratorHP_[face] == 0;
+    return true;
+}
+
+bool Boss::TryGetSideShieldFaceAtWorldPosition(const Vector3& worldPosition, float radius, size_t& outFace) const {
+    const Vector3 relative = SubtractVector(worldPosition, position_);
+    const Quaternion hull = MakeEulerQuaternion(rotation_);
+    const Quaternion inverseHull = { -hull.x, -hull.y, -hull.z, hull.w };
+    const Vector3 scaledLocal = MyMath::RotateVector(relative, inverseHull);
+    const Vector3 local = {
+        scaledLocal.x / kBossScale.x,
+        scaledLocal.y / kBossScale.y,
+        scaledLocal.z / kBossScale.z,
+    };
+    const float localRadius = radius / (std::min)(kBossScale.x, (std::min)(kBossScale.y, kBossScale.z));
+
+    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
+        const Vector3& center = kSideShieldPlaneCenters[face];
+        const float outwardDirection = face == 0 ? 1.0f : -1.0f;
+        const float outwardDistance = (local.x - center.x) * outwardDirection;
+        const bool withinHeight = std::abs(local.y - center.y) <= kSideShieldHeight * 0.55f + localRadius;
+        const bool withinLength = std::abs(local.z - center.z) <= kSideShieldChordLength * 0.55f + localRadius;
+        // 弾はシールドを通過した後に船体側の OBB で着弾位置が確定する。
+        // その位置でも防御を判定できるよう、発生装置から船体表面までを側面防御領域に含める。
+        const bool withinArcDepth = outwardDistance >= -2.10f - localRadius &&
+            outwardDistance <= kSideShieldArcRadius * 0.42f + localRadius;
+        if (withinHeight && withinLength && withinArcDepth) {
+            outFace = face;
+            return true;
+        }
+    }
+    return false;
 }
 
 Vector3 Boss::GetBodyLockOnPosition() const {
@@ -943,34 +1067,144 @@ void Boss::InitializeSideShields() {
         sideShieldSegments_[index]->Initialize(Object3dCommon::GetInstance());
         sideShieldSegments_[index]->SetModel(kSideShieldModels[index]);
     }
+
+    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
+        const char* modelName = kSideShieldGeneratorModels[face];
+        if (!modelManager->FindModel(modelName)) {
+            modelManager->LoadModel(modelName);
+        }
+        sideShieldGenerators_[face] = std::make_unique<Object3d>();
+        sideShieldGenerators_[face]->Initialize(Object3dCommon::GetInstance());
+        sideShieldGenerators_[face]->SetModel(modelName);
+        if (Model* model = sideShieldGenerators_[face]->GetModel()) {
+            model->SetEnableLighting(true);
+            model->SetShininess(112.0f);
+            model->SetColor({ 0.25f, 0.48f, 0.56f, 1.0f });
+        }
+    }
+}
+
+bool Boss::IsSideShieldVisible() const {
+    return sideShieldState_ == SideShieldState::Deploying ||
+        sideShieldState_ == SideShieldState::Active ||
+        sideShieldState_ == SideShieldState::Warning;
+}
+
+bool Boss::IsSideShieldProtectingFace(size_t face) const {
+    return face < kSideShieldGeneratorCount && !sideShieldGeneratorDestroyed_[face] && IsSideShieldVisible();
+}
+
+bool Boss::IsSideShieldGeneratorVulnerable(size_t face) const {
+    return face < kSideShieldGeneratorCount && !sideShieldGeneratorDestroyed_[face] &&
+        (sideShieldState_ == SideShieldState::Charging || sideShieldState_ == SideShieldState::Cooldown);
+}
+
+void Boss::AdvanceSideShieldState() {
+    const bool hasGenerator = std::any_of(sideShieldGeneratorDestroyed_.begin(), sideShieldGeneratorDestroyed_.end(),
+        [](bool destroyed) { return !destroyed; });
+    if (!hasGenerator) {
+        sideShieldState_ = SideShieldState::Cooldown;
+        sideShieldStateTimer_ = 0;
+        return;
+    }
+
+    ++sideShieldStateTimer_;
+    int duration = kSideShieldChargingFrames;
+    switch (sideShieldState_) {
+    case SideShieldState::Charging: duration = kSideShieldChargingFrames; break;
+    case SideShieldState::Deploying: duration = kSideShieldDeployFrames; break;
+    case SideShieldState::Active: duration = kSideShieldActiveFrames; break;
+    case SideShieldState::Warning: duration = kSideShieldWarningFrames; break;
+    case SideShieldState::Cooldown: duration = kSideShieldCooldownFrames; break;
+    }
+    if (sideShieldStateTimer_ < duration) return;
+
+    sideShieldStateTimer_ = 0;
+    switch (sideShieldState_) {
+    case SideShieldState::Charging: sideShieldState_ = SideShieldState::Deploying; break;
+    case SideShieldState::Deploying: sideShieldState_ = SideShieldState::Active; break;
+    case SideShieldState::Active: sideShieldState_ = SideShieldState::Warning; break;
+    case SideShieldState::Warning: sideShieldState_ = SideShieldState::Cooldown; break;
+    case SideShieldState::Cooldown: sideShieldState_ = SideShieldState::Charging; break;
+    }
 }
 
 void Boss::UpdateSideShields() {
-    // 出現から 1.2 秒で、平面の左右端から中央まで円弧を伸ばす。
-    sideShieldDeployProgress_ = SmoothStep01(
-        static_cast<float>(actionTimer_) / static_cast<float>(kSideShieldDeployFrames));
+    AdvanceSideShieldState();
+
+    if (sideShieldState_ == SideShieldState::Deploying) {
+        sideShieldDeployProgress_ = SmoothStep01(
+            static_cast<float>(sideShieldStateTimer_) / static_cast<float>(kSideShieldDeployFrames));
+    } else if (sideShieldState_ == SideShieldState::Active) {
+        sideShieldDeployProgress_ = 1.0f;
+    } else if (sideShieldState_ == SideShieldState::Warning) {
+        // 解除予告の点滅と同時に、外端から中央へ畳んで消す。
+        sideShieldDeployProgress_ = 1.0f - SmoothStep01(
+            static_cast<float>(sideShieldStateTimer_) / static_cast<float>(kSideShieldWarningFrames));
+    } else {
+        sideShieldDeployProgress_ = 0.0f;
+    }
+
+    float alpha = tuning_.sideShieldOpacity;
+    Vector4 shieldColor = { 0.30f, 0.78f, 1.00f, alpha };
+    Vector4 generatorColor = { 0.25f, 0.48f, 0.56f, 1.0f };
+    switch (sideShieldState_) {
+    case SideShieldState::Charging: {
+        const float pulse = 0.62f + 0.38f * std::sin(static_cast<float>(sideShieldStateTimer_) * 0.40f);
+        generatorColor = { 0.20f + 0.30f * pulse, 0.64f + 0.28f * pulse, 0.92f + 0.08f * pulse, 1.0f };
+        break;
+    }
+    case SideShieldState::Deploying:
+        alpha *= 0.35f + 0.65f * sideShieldDeployProgress_;
+        generatorColor = { 0.24f, 0.74f, 1.00f, 1.0f };
+        break;
+    case SideShieldState::Active:
+        generatorColor = { 0.18f, 0.68f, 1.00f, 1.0f };
+        break;
+    case SideShieldState::Warning: {
+        const float blink = 0.25f + 0.75f * (0.5f + 0.5f * std::sin(static_cast<float>(sideShieldStateTimer_) * 1.30f));
+        alpha *= blink;
+        generatorColor = blink > 0.62f
+            ? Vector4{ 1.00f, 0.34f, 0.06f, 1.0f }
+            : Vector4{ 0.16f, 0.62f, 1.00f, 1.0f };
+        break;
+    }
+    case SideShieldState::Cooldown:
+        generatorColor = { 1.00f, 0.18f, 0.035f, 1.0f };
+        break;
+    }
 
     const float arcAngle = kSideShieldArcHalfAngle * (std::max)(0.001f, sideShieldDeployProgress_);
     const float endpointInset = kSideShieldArcRadius * 0.70710678f;
-    const float alpha = tuning_.sideShieldOpacity * sideShieldDeployProgress_;
     const bool needsMeshRebuild = std::abs(sideShieldBuiltProgress_ - sideShieldDeployProgress_) > 0.0001f;
     if (needsMeshRebuild) sideShieldBuiltProgress_ = sideShieldDeployProgress_;
+    const Quaternion hullQuaternion = MakeEulerQuaternion(rotation_);
 
-    for (size_t face = 0; face < 2; ++face) {
-        // face は表裏ではなく、ボスの左舷・右舷を表す。
+    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
+        Object3d* generator = sideShieldGenerators_[face].get();
+        if (generator && !sideShieldGeneratorDestroyed_[face]) {
+            if (Model* model = generator->GetModel()) {
+                model->SetColor(generatorColor);
+            }
+            // 切り出した OBJ はボス原点基準の頂点座標を持つため、船体と同じ変換だけを適用する。
+            generator->SetTranslate(position_);
+            generator->SetQuaternionRotate(hullQuaternion);
+            generator->SetScale(kBossScale);
+            generator->Update();
+        }
+
+        if (sideShieldGeneratorDestroyed_[face]) continue;
         const float outwardDirection = face == 0 ? 1.0f : -1.0f;
         for (size_t half = 0; half < 2; ++half) {
             Object3d* segment = sideShieldSegments_[face * 2 + half].get();
             if (!segment) continue;
 
-            const float startAngle = outwardDirection < 0.0f
-                ? (half == 0 ? 45.0f : 135.0f - arcAngle)
-                : (half == 0 ? 225.0f : 315.0f - arcAngle);
-            const float endAngle = outwardDirection < 0.0f
-                ? (half == 0 ? 45.0f + arcAngle : 135.0f)
-                : (half == 0 ? 225.0f + arcAngle : 315.0f);
+            // 2枚とも中央から外端へ広げる。Warning では progress が 1→0 になるため、
+            // 逆に外端から中央へ収束して消える。
+            const float centerAngle = outwardDirection < 0.0f ? 90.0f : 270.0f;
+            const float startAngle = half == 0 ? centerAngle - arcAngle : centerAngle;
+            const float endAngle = half == 0 ? centerAngle : centerAngle + arcAngle;
 
-            // 各端を平面の左右端へ固定し、中央だけが外側へ膨らむ円弧にする。
             Model* model = ModelManager::GetInstance()->FindModel(kSideShieldModels[face * 2 + half]);
             if (model) {
                 if (needsMeshRebuild) {
@@ -980,16 +1214,15 @@ void Boss::UpdateSideShields() {
                 }
                 model->SetTextureFilePath(kSideShieldTexturePath);
                 model->SetEnableLighting(true);
-				model->SetDoubleSidedLighting(true);
+                model->SetDoubleSidedLighting(true);
                 model->SetShininess(24.0f);
                 model->SetAlphaReference(0.0f);
-                model->SetColor({ 0.30f, 0.78f, 1.00f, alpha });
+                model->SetColor({ shieldColor.x, shieldColor.y, shieldColor.z, alpha });
             }
 
             Vector3 localPosition = kSideShieldPlaneCenters[face];
             localPosition.x += outwardDirection * (kSideShieldAnchorOffset - endpointInset);
             localPosition.y -= kSideShieldHeight * 0.5f;
-
             segment->SetTranslate(LocalPointToWorld(localPosition));
             segment->SetRotate({ 0.0f, rotation_.y, 0.0f });
             segment->SetScale(kBossScale);
@@ -999,12 +1232,17 @@ void Boss::UpdateSideShields() {
 }
 
 void Boss::DrawSideShields() {
-    if (sideShieldDeployProgress_ <= 0.001f) return;
+    if (!IsSideShieldVisible() || sideShieldDeployProgress_ <= 0.001f) return;
 
     Object3dCommon* object3dCommon = Object3dCommon::GetInstance();
     object3dCommon->SetAlphaBlendDrawSettings();
-    for (const std::unique_ptr<Object3d>& segment : sideShieldSegments_) {
-        if (segment) segment->Draw();
+    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
+        if (sideShieldGeneratorDestroyed_[face]) continue;
+        for (size_t half = 0; half < 2; ++half) {
+            if (const std::unique_ptr<Object3d>& segment = sideShieldSegments_[face * 2 + half]) {
+                segment->Draw();
+            }
+        }
     }
     object3dCommon->SetCommonDrawSettings();
 }
@@ -1135,8 +1373,21 @@ void Boss::Draw() {
             forwardTurrets_[index]->Draw();
         }
     }
+    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
+        if (!sideShieldGeneratorDestroyed_[face] && sideShieldGenerators_[face]) {
+            sideShieldGenerators_[face]->Draw();
+        }
+    }
     if (!cinematicWreckPresentation_) {
         DrawRearThrusters();
-        DrawSideShields();
     }
+}
+
+void Boss::DrawTransparent() {
+    // 地形などすべての不透明物が深度を書き終えた後で描く。
+    // これによりシールドは地形の奥では隠れ、手前では上書きされずに表示される。
+    if (cinematicDebrisActive_ || cinematicWreckPresentation_) {
+        return;
+    }
+    DrawSideShields();
 }

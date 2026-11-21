@@ -385,7 +385,7 @@ private:
 	std::vector<int> enemyRespawnTimers_;
 	EnemyEventManager enemyEventManager_;
 	Enemy *lockedEnemy_ = nullptr;
-	// -1 は敵本体。0 以上は Boss の前方砲台をロックしている。
+	// -1 は敵本体。0 以上は Boss の砲台または側面シールド発生装置をロックしている。
 	int lockedBossTurretIndex_ = -1;
 	bool bossSpawned_ = false;
 	// ボスを配置してから戦闘を始めるまでの短い警告カット。0 なら通常戦闘。

@@ -4146,6 +4146,18 @@ void GamePlayScene::Draw() {
 		myModelObject->Draw();
 	}
 
+	// 地形・障害物を含む不透明物の深度を書き終えてから、敵の半透明部位を描く。
+	// シールドは Z テストを行いながら Z 書き込みをしないため、この順序が必要になる。
+	for (const auto& enemy : enemies_) {
+		Sphere enemySphere;
+		enemySphere.center = enemy->GetPosition();
+		enemySphere.radius = enemy->GetCollisionRadius();
+		if (MyMath::IsInFrustum(enemySphere, frustumPlanes)) {
+			enemy->DrawTransparent();
+		}
+	}
+	Object3dCommon::GetInstance()->SetCommonDrawSettings();
+
 	// 訓練中は敵も危険地帯も存在しないため、境界シールドを出さない。
 	if (!tutorialEnabled_ && player_ && boundaryAlertObject_ && ceilingBoundaryAlertObject_) {
 		static float pulseTime = 0.0f;
@@ -5781,8 +5793,8 @@ void GamePlayScene::DrawOverlay() {
 			int maxHp = lockedEnemy_->GetMaxHP();
 			if (lockedTurretIndex >= 0) {
 				if (const Boss* boss = dynamic_cast<const Boss*>(lockedEnemy_)) {
-					currentHp = boss->GetTurretHP(static_cast<size_t>(lockedTurretIndex));
-					maxHp = boss->GetTurretMaxHP();
+					currentHp = boss->GetLockOnPartHP(static_cast<size_t>(lockedTurretIndex));
+					maxHp = boss->GetLockOnPartMaxHP(static_cast<size_t>(lockedTurretIndex));
 				}
 			} else {
 				hpBarWorldPosition.y += collisionRadius * 1.35f;

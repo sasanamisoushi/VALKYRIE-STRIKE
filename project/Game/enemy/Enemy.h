@@ -35,6 +35,10 @@ public:
     // 描画
     virtual void Draw();
 
+    // 不透明物をすべて描画した後に行う半透明描画用のパス。
+    // 通常の敵には半透明の専用部位がないため何もしない。
+    virtual void DrawTransparent() {}
+
     // 更新だけしてロジックを動かさない処理（シミュレーション時など用）
     virtual void UpdateModel();
 
@@ -60,10 +64,11 @@ public:
     virtual void TakeDamage(int damage, const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f });
     // 弾の着弾位置を利用できる敵向け。部位判定を持たない敵は従来どおり本体へダメージを受ける。
     virtual void TakeDamageAt(int damage, const Vector3 &hitPosition,
-        const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f });
+        const Vector3 &hitDirection = { 0.0f, 0.0f, 0.0f }, float impactRadius = 0.0f);
     // ロックオン点を持つ弾用。通常敵は実際の着弾位置で従来どおり処理する。
     virtual void TakeDamageAtTargetPoint(int damage, const Vector3& targetPoint,
-        const Vector3& hitPosition, const Vector3& hitDirection = { 0.0f, 0.0f, 0.0f });
+        const Vector3& hitPosition, const Vector3& hitDirection = { 0.0f, 0.0f, 0.0f },
+        float impactRadius = 0.0f);
     // 撃破演出中など、当たり判定には残るが追加ダメージを受け付けない敵のための問い合わせ。
     virtual bool CanReceiveDamage() const { return !isDead_; }
     void StartChasingPlayer();

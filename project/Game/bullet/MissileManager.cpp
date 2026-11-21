@@ -191,9 +191,9 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
                         // 通常敵は Enemy::TakeDamageAt が既存の本体ダメージへ委譲する。
                         if (missile->HasTargetPoint() && missile->GetTarget() == enemy.get()) {
                             enemy->TakeDamageAtTargetPoint(1, missile->GetTargetPoint(),
-                                impactSphere.center, missile->GetVelocity());
+                                impactSphere.center, missile->GetVelocity(), impactSphere.radius);
                         } else {
-                            enemy->TakeDamageAt(1, impactSphere.center, missile->GetVelocity());
+                            enemy->TakeDamageAt(1, impactSphere.center, missile->GetVelocity(), impactSphere.radius);
                         }
 
                         if (enemy->IsDead()) {

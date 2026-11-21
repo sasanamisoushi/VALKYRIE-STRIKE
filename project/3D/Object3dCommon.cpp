@@ -320,6 +320,11 @@ void Object3dCommon::CreateGraphicsPipeline() {
 	graphicsPipelineStateDesc.DepthStencilState.DepthEnable = true;
 
 	// アルファブレンド（半透明）用
+	// 深度は手前の不透明物で正しく隠すが、半透明シェル自身は深度を書き換えない。
+	graphicsPipelineStateDesc.DepthStencilState.DepthEnable = true;
+	graphicsPipelineStateDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	// 厚み付きシェルは全ての面の巻き順を揃えているため、背面は描画しない。
+	graphicsPipelineStateDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 	graphicsPipelineStateDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
 	
 	alphaBlendPipelineState_ = nullptr;

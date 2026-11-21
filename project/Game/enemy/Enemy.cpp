@@ -321,13 +321,13 @@ void Enemy::TakeDamage(int damage, const Vector3 &) {
     EnemyActionController{}.TakeDamage(*this, damage);
 }
 
-void Enemy::TakeDamageAt(int damage, const Vector3 &, const Vector3 &hitDirection) {
+void Enemy::TakeDamageAt(int damage, const Vector3 &, const Vector3 &hitDirection, float) {
     TakeDamage(damage, hitDirection);
 }
 
 void Enemy::TakeDamageAtTargetPoint(int damage, const Vector3&, const Vector3& hitPosition,
-    const Vector3& hitDirection) {
-    TakeDamageAt(damage, hitPosition, hitDirection);
+    const Vector3& hitDirection, float impactRadius) {
+    TakeDamageAt(damage, hitPosition, hitDirection, impactRadius);
 }
 
 void Enemy::StartChasingPlayer() {

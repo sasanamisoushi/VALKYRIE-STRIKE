@@ -244,9 +244,9 @@ void LockOnManager::SwitchLockOnTarget(Camera *activeCamera) {
 		if (IsFighterReacquireBlocked(enemy.get())) continue;
 
 		if (Boss *boss = dynamic_cast<Boss*>(enemy.get())) {
-			for (size_t i = 0; i < boss->GetTurretCount(); ++i) {
-				if (boss->IsTurretAlive(i)) {
-					addCandidateIfValid(boss, static_cast<int>(i), boss->GetTurretLockOnPosition(i));
+			for (size_t i = 0; i < boss->GetLockOnPartCount(); ++i) {
+				if (boss->IsLockOnPartAvailable(i)) {
+					addCandidateIfValid(boss, static_cast<int>(i), boss->GetLockOnPartPosition(i));
 				}
 			}
 			addCandidateIfValid(boss, -1, boss->GetBodyLockOnPosition());
@@ -420,7 +420,7 @@ bool LockOnManager::IsLockedEnemyAlive() const {
 
 	if (scene_->lockedBossTurretIndex_ >= 0) {
 		const Boss* boss = dynamic_cast<const Boss*>(scene_->lockedEnemy_);
-		return boss && boss->IsTurretAlive(static_cast<size_t>(scene_->lockedBossTurretIndex_));
+		return boss && boss->IsLockOnPartAvailable(static_cast<size_t>(scene_->lockedBossTurretIndex_));
 	}
 
 	for (const auto &enemy : scene_->enemies_) {
@@ -453,9 +453,9 @@ void LockOnManager::SelectBossTurretForLock(Camera *activeCamera) {
 	if (width <= 0.0f || height <= 0.0f) return;
 
 	float bestScore = (std::numeric_limits<float>::max)();
-	for (size_t index = 0; index < boss->GetTurretCount(); ++index) {
-		if (!boss->IsTurretAlive(index)) continue;
-		const Vector3 screenPosition = MyMath::WorldToScreen(boss->GetTurretLockOnPosition(index),
+	for (size_t index = 0; index < boss->GetLockOnPartCount(); ++index) {
+		if (!boss->IsLockOnPartAvailable(index)) continue;
+		const Vector3 screenPosition = MyMath::WorldToScreen(boss->GetLockOnPartPosition(index),
 			activeCamera->GetViewProjectionMatrix(), width, height);
 		if (screenPosition.z < 0.0f || screenPosition.z > 1.0f ||
 			screenPosition.x < 0.0f || screenPosition.x > width ||
@@ -477,7 +477,7 @@ bool LockOnManager::HasLockedBossTurret() const {
 Vector3 LockOnManager::GetLockedTargetPosition() const {
 	if (HasLockedBossTurret()) {
 		const Boss* boss = static_cast<const Boss*>(scene_->lockedEnemy_);
-		return boss->GetTurretLockOnPosition(static_cast<size_t>(scene_->lockedBossTurretIndex_));
+		return boss->GetLockOnPartPosition(static_cast<size_t>(scene_->lockedBossTurretIndex_));
 	}
 	if (const Boss* boss = dynamic_cast<const Boss*>(scene_->lockedEnemy_)) {
 		return boss->GetBodyLockOnPosition();
@@ -488,7 +488,7 @@ Vector3 LockOnManager::GetLockedTargetPosition() const {
 float LockOnManager::GetLockedTargetRadius() const {
 	if (HasLockedBossTurret()) {
 		const Boss* boss = static_cast<const Boss*>(scene_->lockedEnemy_);
-		return boss->GetTurretLockOnRadius(static_cast<size_t>(scene_->lockedBossTurretIndex_));
+		return boss->GetLockOnPartRadius(static_cast<size_t>(scene_->lockedBossTurretIndex_));
 	}
 	return scene_->lockedEnemy_ ? scene_->lockedEnemy_->GetCollisionRadius() : 1.0f;
 }
@@ -697,9 +697,9 @@ bool LockOnManager::FindNextMultiLockTarget(Camera *activeCamera, MultiLockTarge
 		} catch (...) { continue; }
 
 		if (Boss *boss = dynamic_cast<Boss*>(enemy.get())) {
-			for (size_t i = 0; i < boss->GetTurretCount(); ++i) {
-				if (boss->IsTurretAlive(i)) {
-					evaluateCandidate(boss, static_cast<int>(i), boss->GetTurretLockOnPosition(i));
+			for (size_t i = 0; i < boss->GetLockOnPartCount(); ++i) {
+				if (boss->IsLockOnPartAvailable(i)) {
+					evaluateCandidate(boss, static_cast<int>(i), boss->GetLockOnPartPosition(i));
 				}
 			}
 			evaluateCandidate(boss, -1, boss->GetBodyLockOnPosition());
@@ -746,7 +746,7 @@ void LockOnManager::PruneMultiLockTargets() {
 
 		if (target.turretIndex >= 0) {
 			if (const Boss *boss = dynamic_cast<const Boss*>(target.enemy)) {
-				if (!boss->IsTurretAlive(static_cast<size_t>(target.turretIndex))) {
+				if (!boss->IsLockOnPartAvailable(static_cast<size_t>(target.turretIndex))) {
 					return false;
 				}
 			}
@@ -774,7 +774,7 @@ void LockOnManager::UpdateMultiLock(Camera *activeCamera) {
 		if (target.enemy) {
 			if (target.turretIndex >= 0) {
 				if (const Boss *boss = dynamic_cast<const Boss*>(target.enemy)) {
-					target.targetPoint = boss->GetTurretLockOnPosition(static_cast<size_t>(target.turretIndex));
+					target.targetPoint = boss->GetLockOnPartPosition(static_cast<size_t>(target.turretIndex));
 					target.hasTargetPoint = true;
 				}
 			} else {

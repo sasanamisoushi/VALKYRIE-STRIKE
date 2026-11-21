@@ -1251,11 +1251,11 @@ void Model::InitializeCylinderShell(ModelCommon* modelCommon,
 	auto appendQuad = [this](const VertexData& a, const VertexData& b,
 		const VertexData& c, const VertexData& d) {
 		modelData.vertices.push_back(a);
-		modelData.vertices.push_back(c);
 		modelData.vertices.push_back(b);
-		modelData.vertices.push_back(a);
-		modelData.vertices.push_back(d);
 		modelData.vertices.push_back(c);
+		modelData.vertices.push_back(a);
+		modelData.vertices.push_back(c);
+		modelData.vertices.push_back(d);
 	};
 
 	std::vector<std::vector<VertexData>> outer(verticalSubdivision + 1,
@@ -1302,8 +1302,13 @@ void Model::InitializeCylinderShell(ModelCommon* modelCommon,
 				return makeVertex({ source.position.x, source.position.y, source.position.z }, capNormal,
 					source.texcoord.x, source.texcoord.y);
 			};
-			appendQuad(makeCapVertex(inner[vertical][horizontal]), makeCapVertex(inner[vertical + 1][horizontal]),
-				makeCapVertex(outer[vertical + 1][horizontal]), makeCapVertex(outer[vertical][horizontal]));
+			if (end == 0) {
+				appendQuad(makeCapVertex(inner[vertical][horizontal]), makeCapVertex(inner[vertical + 1][horizontal]),
+					makeCapVertex(outer[vertical + 1][horizontal]), makeCapVertex(outer[vertical][horizontal]));
+			} else {
+				appendQuad(makeCapVertex(outer[vertical][horizontal]), makeCapVertex(outer[vertical + 1][horizontal]),
+					makeCapVertex(inner[vertical + 1][horizontal]), makeCapVertex(inner[vertical][horizontal]));
+			}
 		}
 	}
 
@@ -1316,13 +1321,13 @@ void Model::InitializeCylinderShell(ModelCommon* modelCommon,
 				source.texcoord.x, source.texcoord.y);
 		};
 		appendQuad(makeCapVertex(outer[verticalSubdivision][horizontal], topNormal),
-			makeCapVertex(outer[verticalSubdivision][horizontal + 1], topNormal),
+			makeCapVertex(inner[verticalSubdivision][horizontal], topNormal),
 			makeCapVertex(inner[verticalSubdivision][horizontal + 1], topNormal),
-			makeCapVertex(inner[verticalSubdivision][horizontal], topNormal));
+			makeCapVertex(outer[verticalSubdivision][horizontal + 1], topNormal));
 		appendQuad(makeCapVertex(inner[0][horizontal], bottomNormal),
-			makeCapVertex(inner[0][horizontal + 1], bottomNormal),
+			makeCapVertex(outer[0][horizontal], bottomNormal),
 			makeCapVertex(outer[0][horizontal + 1], bottomNormal),
-			makeCapVertex(outer[0][horizontal], bottomNormal));
+			makeCapVertex(inner[0][horizontal + 1], bottomNormal));
 	}
 
 	CreateVertexData();
