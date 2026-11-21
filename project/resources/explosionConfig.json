@@ -7,5 +7,9 @@
   "scaleVariance": 0.12,
   "lifeTimeMin": 0.35,
   "lifeTimeMax": 0.65,
-  "posVariance": 0.45
+  "posVariance": 0.45,
+  "destructionParticleType": 0,
+  "smokeColor": [0.1, 0.1, 0.12, 0.6],
+  "flameToSmokeScale": 2.8,
+  "flameToSmokeTransition": 0.35
 }

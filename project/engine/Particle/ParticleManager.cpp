@@ -355,6 +355,13 @@ void ParticleManager::Update(Camera *camera) {
 			it->transform.translate.y += it->velocity.y;
 			it->transform.translate.z += it->velocity.z;
 			it->transform.rotate.z += it->angularVelocity;
+			if (it->velocityDrag > 0.0f) {
+				const float drag = (std::clamp)(it->velocityDrag, 0.0f, 0.95f);
+				it->velocity.x *= 1.0f - drag;
+				it->velocity.y *= 1.0f - drag;
+				it->velocity.z *= 1.0f - drag;
+			}
+			it->velocity.y += it->upwardAcceleration;
 
 			// ■ 経過時間を加算 (スライド)
 			const float kDeltaTime = 1.0f / 60.0f; // 固定60fps想定
@@ -366,6 +373,19 @@ void ParticleManager::Update(Camera *camera) {
 			const float currentScale =
 				it->initialScale + (it->finalScale - it->initialScale) * lifeProgress;
 			it->transform.scale = { currentScale, currentScale, 1.0f };
+			if (it->useColorTransition) {
+				const float transitionRange = (std::max)(0.001f, 1.0f - it->colorTransitionStart);
+				const float transition = (std::clamp)(
+					(lifeProgress - it->colorTransitionStart) / transitionRange, 0.0f, 1.0f);
+				// 滑らかな補間にして、炎の色が急に灰色へ切り替わらないようにする。
+				const float smoothTransition = transition * transition * (3.0f - 2.0f * transition);
+				it->color = {
+					it->startColor.x + (it->endColor.x - it->startColor.x) * smoothTransition,
+					it->startColor.y + (it->endColor.y - it->startColor.y) * smoothTransition,
+					it->startColor.z + (it->endColor.z - it->startColor.z) * smoothTransition,
+					it->startColor.w + (it->endColor.w - it->startColor.w) * smoothTransition,
+				};
+			}
 
 
 			// ■ インスタンシング用データ1個分の書き込み (スライド)
@@ -546,6 +566,18 @@ void ParticleManager::SetParticleGroupAlphaBlend(const std::string& name, bool e
 	if (it != particleGroups_.end()) {
 		it->second.useAlphaBlend = enabled;
 	}
+}
+
+void ParticleManager::ClearParticleGroup(const std::string& name) {
+	auto it = particleGroups_.find(name);
+	if (it != particleGroups_.end()) {
+		it->second.particle.clear();
+	}
+}
+
+std::size_t ParticleManager::GetParticleCount(const std::string& name) const {
+	const auto it = particleGroups_.find(name);
+	return it != particleGroups_.end() ? it->second.particle.size() : 0;
 }
 
 void ParticleManager::CreateParticleGroup(const std::string name, const std::string textureFilePath) {
@@ -1033,6 +1065,72 @@ void ParticleManager::EmitFireball(const std::string name, const Vector3 &positi
 		particle.lifeTime = lifeTime * distLife(engine);
 		particle.currentTime = 0.0f;
 
+		group.particle.push_back(particle);
+	}
+}
+
+void ParticleManager::EmitFlameToSmoke(const std::string& name, const Vector3& position, uint32_t count,
+	const Vector4& flameColor, const Vector4& smokeColor,
+	float initialScale, float finalScale,
+	float speed, float speedVariance,
+	float lifeTimeMin, float lifeTimeMax,
+	float posVariance, float transitionStart) {
+	if (particleGroups_.find(name) == particleGroups_.end()) {
+		return;
+	}
+
+	ParticleGroup& group = particleGroups_[name];
+	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
+	if (emitCount == 0) {
+		return;
+	}
+
+	static std::random_device seedGenerator;
+	static std::mt19937_64 engine(seedGenerator());
+	constexpr float kPi = 3.14159265f;
+	std::uniform_real_distribution<float> distZ(-1.0f, 1.0f);
+	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
+	std::uniform_real_distribution<float> distRadius(0.0f, (std::max)(0.0f, posVariance));
+	std::uniform_real_distribution<float> distScale(0.82f, 1.18f);
+	std::uniform_real_distribution<float> distSpeed((std::max)(0.0f, speed - speedVariance), (std::max)(0.0f, speed + speedVariance));
+	std::uniform_real_distribution<float> distLife((std::max)(0.05f, lifeTimeMin), (std::max)(0.05f, lifeTimeMax));
+	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
+	std::uniform_real_distribution<float> distAngularSpeed(0.018f, 0.065f);
+
+	for (uint32_t i = 0; i < emitCount; ++i) {
+		const float z = distZ(engine);
+		const float angle = distAngle(engine);
+		const float xyLength = std::sqrt((std::max)(0.0f, 1.0f - z * z));
+		const Vector3 direction = { xyLength * std::cos(angle), z, xyLength * std::sin(angle) };
+		const float scaleFactor = distScale(engine);
+		const float spawnRadius = distRadius(engine);
+
+		Particle particle{};
+		particle.transform.translate = {
+			position.x + direction.x * spawnRadius,
+			position.y + direction.y * spawnRadius,
+			position.z + direction.z * spawnRadius,
+		};
+		const float particleSpeed = distSpeed(engine);
+		particle.velocity = {
+			direction.x * particleSpeed,
+			direction.y * particleSpeed + 0.012f,
+			direction.z * particleSpeed,
+		};
+		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
+		particle.angularVelocity = distAngularSpeed(engine);
+		particle.initialScale = (std::max)(0.01f, initialScale * scaleFactor);
+		particle.finalScale = (std::max)(particle.initialScale, finalScale * scaleFactor);
+		particle.transform.scale = { particle.initialScale, particle.initialScale, 1.0f };
+		particle.color = flameColor;
+		particle.startColor = flameColor;
+		particle.endColor = smokeColor;
+		particle.colorTransitionStart = (std::clamp)(transitionStart, 0.0f, 0.95f);
+		particle.velocityDrag = 0.040f;
+		particle.upwardAcceleration = 0.0016f;
+		particle.useColorTransition = true;
+		particle.lifeTime = distLife(engine);
+		particle.currentTime = 0.0f;
 		group.particle.push_back(particle);
 	}
 }

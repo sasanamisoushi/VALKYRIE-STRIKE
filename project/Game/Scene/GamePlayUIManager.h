@@ -17,6 +17,8 @@ public:
 
 	void Initialize();
 	void UpdateUI();
+	// 編集停止中でも撃破エフェクトの更新を許可するためのフラグ。
+	bool IsDestructionEffectPreviewActive() const { return destructionEffectPreviewFrames_ > 0; }
 
 	void DrawGameplayActionControls();
 	void DrawAmmoSettingsUI();
@@ -56,4 +58,17 @@ private:
 	// -1: 未選択、0: ボス本体、1以降: 後部スラスター。
 	int selectedBossEditorPart_ = -1;
 	bool bossEditorSelectionDrag_ = false;
+
+	// 撃破パーティクル調整用。選択中の対象とプレビュー状態を画面遷移中も保持する。
+	int destructionEffectTargetIndex_ = 0;
+	bool destructionEffectPreviewLoop_ = false;
+	bool destructionEffectClearBeforePreview_ = true;
+	bool destructionEffectAutoPreview_ = true;
+	bool destructionEffectPreviewShowShockwave_ = false;
+	float destructionEffectPreviewTimer_ = 0.0f;
+	float destructionEffectPreviewLoopInterval_ = 1.25f;
+	float destructionEffectPreviewElapsed_ = 0.0f;
+	float destructionEffectPreviewDuration_ = 1.0f;
+	float destructionEffectPreviewDistance_ = 12.0f;
+	int destructionEffectPreviewFrames_ = 0;
 };

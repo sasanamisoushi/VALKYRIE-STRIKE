@@ -122,6 +122,9 @@ private:
 	void ApplyGameplayBalanceSettings();
 	bool LoadGameplayBalanceSettings();
 	bool SaveGameplayBalanceSettings() const;
+	void ApplyTutorialRequirements();
+	bool LoadTutorialRequirements();
+	bool SaveTutorialRequirements() const;
 	void UpdateCinematicLockOnCamera();
 	void UpdateGameOverCinematicCamera(Camera* renderCamera);
 	void UpdateBossClearCinematicCamera(Camera* renderCamera);
@@ -367,6 +370,7 @@ private:
 	GameplayBalanceSettings gameplayBalanceSettings_;
 	std::string gameplayBalanceSettingsMessage_;
 	static constexpr const char* kGameplayBalanceSettingsPath = "resources/gameplay_balance_settings.json";
+	static constexpr const char* kTutorialRequirementsPath = "resources/tutorial_requirements.json";
 
 	std::unique_ptr<Player> player_;
 
@@ -535,14 +539,29 @@ private:
 	TutorialPhase tutorialPhase_ = TutorialPhase::Disabled;
 	bool tutorialEnabled_ = false;
 	int tutorialPhaseFrames_ = 0;
-	int tutorialForwardFrames_ = 0;
-	int tutorialAltitudeHoldFrames_ = 0;
-	int tutorialTurnHoldFrames_ = 0;
-	int tutorialGerwalkHoverHoldFrames_ = 0;
-	int tutorialGerwalkStrafeHoldFrames_ = 0;
-	int tutorialLockHoldFrames_ = 0;
-	int tutorialNormalFireHoldFrames_ = 0;
-	int tutorialFighterHoldFrames_ = 0;
+	// チュートリアルで必要な操作回数。F1 の開発UIから個別に調整できる。
+	struct TutorialActionRequirements {
+		int forward = 3;
+		int altitude = 3;
+		int turn = 3;
+		int gerwalkHover = 3;
+		int gerwalkStrafe = 3;
+		int lockOn = 3;
+		int normalShots = 3;
+		int fighterTransform = 1;
+		int homingLaunches = 1;
+	} tutorialRequirements_;
+	std::string tutorialRequirementsMessage_;
+	int tutorialForwardCount_ = 0;
+	int tutorialAltitudeCount_ = 0;
+	int tutorialTurnCount_ = 0;
+	int tutorialGerwalkHoverCount_ = 0;
+	int tutorialGerwalkStrafeCount_ = 0;
+	int tutorialLockCount_ = 0;
+	int tutorialFighterCount_ = 0;
+	bool tutorialAltitudeInputActive_ = false;
+	bool tutorialLockWasActive_ = false;
+	bool tutorialFighterWasActive_ = false;
 	bool tutorialAltitudeObserved_ = false;
 	bool tutorialTurnObserved_ = false;
 	bool tutorialGerwalkHoverObserved_ = false;

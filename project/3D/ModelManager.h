@@ -38,6 +38,9 @@ public:
 	// 指定した角度範囲だけを持つ円柱側面。エネルギーシールドのような曲面に使う。
 	void CreateCylinderArcModel(const std::string& modelName, int subdivision, float radius, float height,
 		float startAngleDegree, float endAngleDegree);
+	// 内外面と端面を持つ、実際に厚みのある円弧シールドモデル。
+	void CreateCylinderArcShellModel(const std::string& modelName, int subdivision, float radius, float height,
+		float thickness, float startAngleDegree, float endAngleDegree);
 
 	// ラインモデルの作成
 	void CreateLineModel(const std::string &modelName);

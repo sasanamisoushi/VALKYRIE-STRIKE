@@ -132,6 +132,14 @@ bool GamePlayScene::ApplySimulationAction(const std::string &filePath, const std
 		config.lifeTimeMin = ReadJsonFloat(explosionData, "lifeTimeMin", config.lifeTimeMin);
 		config.lifeTimeMax = ReadJsonFloat(explosionData, "lifeTimeMax", config.lifeTimeMax);
 		config.posVariance = ReadJsonFloat(explosionData, "posVariance", config.posVariance);
+		config.destructionParticleType = (std::clamp)(ReadJsonInt(explosionData, "destructionParticleType", config.destructionParticleType), 0, 3);
+		if (explosionData.contains("smokeColor") && explosionData["smokeColor"].is_array() && explosionData["smokeColor"].size() >= 4) {
+			for (int index = 0; index < 4; ++index) {
+				config.smokeColor[index] = explosionData["smokeColor"][index].get<float>();
+			}
+		}
+		config.flameToSmokeScale = ReadJsonFloat(explosionData, "flameToSmokeScale", config.flameToSmokeScale);
+		config.flameToSmokeTransition = ReadJsonFloat(explosionData, "flameToSmokeTransition", config.flameToSmokeTransition);
 	}
 
 	if (action->contains("obstacles") && (*action)["obstacles"].is_array()) {
@@ -788,8 +796,20 @@ void GamePlayScene::UpdateUI() {
 				ImGui::Text("=== Explosion Particles ===");
 				if (explosionManager_) {
 					auto& config = explosionManager_->GetConfig();
+					const char* destructionParticleTypes[] = {
+						"炎 → 煙（推奨）", "火球", "煙雲", "火花"
+					};
+					config.destructionParticleType = (std::clamp)(config.destructionParticleType, 0, IM_ARRAYSIZE(destructionParticleTypes) - 1);
+					ImGui::Combo("撃破パーティクル", &config.destructionParticleType,
+						destructionParticleTypes, IM_ARRAYSIZE(destructionParticleTypes));
+					ImGui::TextDisabled("撃破時に使うパーティクルの種類を選択します。");
 					ImGui::DragInt("発生数", &config.count, 1, 0, 1000);
 					ImGui::ColorEdit4("カラー", config.color);
+					if (config.destructionParticleType == static_cast<int>(ExplosionManager::DestructionParticleType::FlameToSmoke)) {
+						ImGui::ColorEdit4("煙カラー", config.smokeColor);
+						ImGui::DragFloat("煙への変化開始", &config.flameToSmokeTransition, 0.01f, 0.0f, 0.95f);
+						ImGui::DragFloat("最終スケール倍率", &config.flameToSmokeScale, 0.05f, 1.0f, 8.0f);
+					}
 					ImGui::DragFloat("速度", &config.speed, 0.01f, 0.0f, 10.0f);
 					ImGui::DragFloat("速度ばらつき", &config.speedVariance, 0.01f, 0.0f, 5.0f);
 					ImGui::DragFloat("スケール", &config.scale, 0.001f, 0.0f, 5.0f);

@@ -10,6 +10,9 @@
 namespace {
 	constexpr bool kEnableMissileTrails = true;
 	constexpr int kHomingForwardLaunchFrames = 10; // 30から10に短縮して、すぐ誘導開始する
+	constexpr float kTargetPassedDistance = 32.0f;
+	constexpr float kTargetBehindDotThreshold = -0.15f;
+	constexpr int kMissedTargetRemainingFrames = 30;
 
 	float LengthSq(const Vector3 &value) {
 		return value.x * value.x + value.y * value.y + value.z * value.z;
@@ -41,6 +44,13 @@ namespace {
 
 	Vector3 BlendDirection(const Vector3 &from, const Vector3 &to, float blend) {
 		return NormalizeOr(Add(Scale(from, 1.0f - blend), Scale(to, blend)), to);
+	}
+
+	bool HasPassedTarget(const Vector3& currentDirection, const Vector3& desiredDirection, float distanceToTarget) {
+		// 十分に接近した後、目標が弾の後方へ回ったら回避成功として追尾を終了する。
+		// 敵は横移動で回避できる一方、弾が反転して周回し続けることはない。
+		return distanceToTarget < kTargetPassedDistance &&
+			MyMath::Dot(currentDirection, desiredDirection) < kTargetBehindDotThreshold;
 	}
 
 }
@@ -115,15 +125,21 @@ void Missile::Update(Camera *camera) {
 			const Vector3 desiredDirection = NormalizeOr(toTarget, NormalizeOr(velocity_, { 0.0f, 0.0f, 1.0f }));
 			const Vector3 currentDirection = NormalizeOr(velocity_, desiredDirection);
 
-			// 通常弾は直進らしさを残しつつ、接近時だけ曲がりを少し強めて
-			// ロックオン中の移動目標を取り逃がさないようにする。
-			float homingStrength = std::clamp(tuning_.homingStrength, 0.0f, 1.0f);
-			if (distanceToTarget < 25.0f) {
-				homingStrength = (std::max)(homingStrength, 0.55f);
+			if (HasPassedTarget(currentDirection, desiredDirection, distanceToTarget)) {
+				target_ = nullptr;
+				hasTargetPoint_ = false;
+				lifeTimer_ = (std::min)(lifeTimer_, kMissedTargetRemainingFrames);
+			} else {
+				// 通常弾は直進らしさを残しつつ、接近時だけ曲がりを少し強めて
+				// ロックオン中の移動目標を取り逃がさないようにする。
+				float homingStrength = std::clamp(tuning_.homingStrength, 0.0f, 1.0f);
+				if (distanceToTarget < 25.0f) {
+					homingStrength = (std::max)(homingStrength, 0.55f);
+				}
+				const Vector3 homingDirection = BlendDirection(currentDirection, desiredDirection, homingStrength);
+				const float speed = (std::max)(0.01f, Length(velocity_));
+				velocity_ = Scale(homingDirection, speed);
 			}
-			const Vector3 homingDirection = BlendDirection(currentDirection, desiredDirection, homingStrength);
-			const float speed = (std::max)(0.01f, Length(velocity_));
-			velocity_ = Scale(homingDirection, speed);
 		}
 	}
 
@@ -145,36 +161,42 @@ void Missile::Update(Camera *camera) {
 			float distToTarget = Length(toTarget);
 			Vector3 desiredDirection = NormalizeOr(toTarget, { 0.0f, 0.0f, 1.0f });
 			Vector3 currentDirection = NormalizeOr(velocity_, desiredDirection);
-			
-			float actualHomingStrength = tuning_.homingStrength;
-			if (distToTarget < 30.0f) {
-				actualHomingStrength = (std::max)(actualHomingStrength, 1.0f - (distToTarget / 30.0f));
+
+			if (HasPassedTarget(currentDirection, desiredDirection, distToTarget)) {
+				target_ = nullptr;
+				hasTargetPoint_ = false;
+				lifeTimer_ = (std::min)(lifeTimer_, kMissedTargetRemainingFrames);
+			} else {
+				float actualHomingStrength = tuning_.homingStrength;
+				if (distToTarget < 30.0f) {
+					actualHomingStrength = (std::max)(actualHomingStrength, 1.0f - (distToTarget / 30.0f));
+				}
+
+				Vector3 homingDirection = BlendDirection(currentDirection, desiredDirection, std::clamp(actualHomingStrength, 0.0f, 1.0f));
+
+				Vector3 rightVec = NormalizeOr(MyMath::Cross(homingDirection, { 0.0f, 1.0f, 0.0f }), { 1.0f, 0.0f, 0.0f });
+				if (LengthSq(rightVec) < 0.001f) {
+					rightVec = { 1.0f, 0.0f, 0.0f };
+				}
+				Vector3 upVec = NormalizeOr(MyMath::Cross(rightVec, homingDirection), { 0.0f, 1.0f, 0.0f });
+
+				float time = (float)(tuning_.lifeTime - lifeTimer_);
+				float theta = time * spiralSpeed_ + phaseOffset_;
+
+				float fade = std::clamp(distToTarget / 40.0f, 0.0f, 1.0f);
+				if (lifeTimer_ < 60) {
+					fade *= (lifeTimer_ / 60.0f);
+				}
+
+				// 振幅が強すぎるとうねりが蓄積して一定の場所をループしてしまうため弱める
+				float amplitude = 0.2f * fade;
+				Vector3 wave = Add(Scale(rightVec, std::cos(theta) * amplitude), Scale(upVec, std::sin(theta) * waveSign_ * amplitude));
+
+				// 前進ベクトルを強めに合成して軌道の破綻を防ぐ
+				Vector3 finalDirection = NormalizeOr(Add(Scale(homingDirection, 2.0f), wave), homingDirection);
+				float homingSpeed = (std::max)(0.01f, tuning_.speed * 1.5f);
+				velocity_ = Scale(finalDirection, homingSpeed);
 			}
-
-			Vector3 homingDirection = BlendDirection(currentDirection, desiredDirection, std::clamp(actualHomingStrength, 0.0f, 1.0f));
-
-			Vector3 rightVec = NormalizeOr(MyMath::Cross(homingDirection, { 0.0f, 1.0f, 0.0f }), { 1.0f, 0.0f, 0.0f });
-			if (LengthSq(rightVec) < 0.001f) {
-				rightVec = { 1.0f, 0.0f, 0.0f };
-			}
-			Vector3 upVec = NormalizeOr(MyMath::Cross(rightVec, homingDirection), { 0.0f, 1.0f, 0.0f });
-
-			float time = (float)(tuning_.lifeTime - lifeTimer_);
-			float theta = time * spiralSpeed_ + phaseOffset_;
-			
-			float fade = std::clamp(distToTarget / 40.0f, 0.0f, 1.0f);
-			if (lifeTimer_ < 60) {
-				fade *= (lifeTimer_ / 60.0f);
-			}
-
-			// 振幅が強すぎるとうねりが蓄積して一定の場所をループしてしまうため弱める
-			float amplitude = 0.2f * fade; 
-			Vector3 wave = Add(Scale(rightVec, std::cos(theta) * amplitude), Scale(upVec, std::sin(theta) * waveSign_ * amplitude));
-
-			// 前進ベクトルを強めに合成して軌道の破綻を防ぐ
-			Vector3 finalDirection = NormalizeOr(Add(Scale(homingDirection, 2.0f), wave), homingDirection);
-			float homingSpeed = (std::max)(0.01f, tuning_.speed * 1.5f);
-			velocity_ = Scale(finalDirection, homingSpeed);
 		} else {
 			Vector3 currentDirection = NormalizeOr(velocity_, { 0.0f, 0.0f, 1.0f });
 			Vector3 rightVec = NormalizeOr(MyMath::Cross(currentDirection, { 0.0f, 1.0f, 0.0f }), { 1.0f, 0.0f, 0.0f });

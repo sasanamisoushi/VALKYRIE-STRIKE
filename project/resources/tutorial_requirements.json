@@ -1,0 +1,13 @@
+{
+  "tutorial_requirements": {
+    "altitude": 3,
+    "fighter_transform": 1,
+    "forward": 2,
+    "gerwalk_hover": 3,
+    "gerwalk_strafe": 3,
+    "homing_launches": 1,
+    "lock_on": 2,
+    "normal_shots": 3,
+    "turn": 3
+  }
+}

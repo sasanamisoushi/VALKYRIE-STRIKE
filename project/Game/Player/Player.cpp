@@ -336,6 +336,8 @@ void Player::Initialize(const std::string &modelName) {
 	position_ = { 0.0f, 0.0f, 0.0f };
 	velocity_ = { 0.0f, 0.0f, 0.0f };
 	quaternion_ = { 0.0f, 0.0f, 0.0f, 1.0f };
+	cameraFollowPosition_ = { 0.0f, 0.0f, 0.0f };
+	isCameraFollowInitialized_ = false;
 	hp_ = kMaxHP;
 	isDead_ = false;
 	isSpecialAttackActive_ = false;
@@ -1200,7 +1202,8 @@ void Player::UpdateCamera(Camera *camera, const Vector3 *targetPos, bool allowIn
 		}
 
 		cameraDirection = targetDir;
-		float pitchBlend = std::clamp(toTarget.y / 50.0f, -0.5f, 0.5f);
+		// ロック対象との高低差で視点が急角度にならないよう、カメラ台の傾きは抑える。
+		float pitchBlend = std::clamp(toTarget.y / 50.0f, -0.28f, 0.28f);
 		cameraDirection.y = pitchBlend;
 		cameraDirection = NormalizeOrZero(cameraDirection);
 
@@ -1226,7 +1229,9 @@ void Player::UpdateCamera(Camera *camera, const Vector3 *targetPos, bool allowIn
 	} else {
 		Vector3 rawDirection = {
 			playerForward.x,
-			std::clamp(playerForward.y, -0.75f, 0.75f),
+			// 機体のピッチをそのまま視点に反映すると、急上昇・急降下で
+			// 地平線が大きく動いて酔いやすくなるため、追従角を制限する。
+			std::clamp(playerForward.y, -0.28f, 0.28f),
 			playerForward.z
 		};
 		if (LengthSq({ rawDirection.x, 0.0f, rawDirection.z }) <= 0.0001f) {
@@ -1273,6 +1278,14 @@ void Player::UpdateCamera(Camera *camera, const Vector3 *targetPos, bool allowIn
 		lookTarget = Add(GetOBB().center, Scale(cameraLockReleaseFocusOffset_, 1.0f - t));
 	}
 
+	// 必殺技中を含め、カメラ位置に使う上下方向を常に穏やかに保つ。
+	// 注視点自体は維持するため、敵を画面外へ逃がさずに地平線の揺れだけを減らす。
+	cameraDirection.y = std::clamp(cameraDirection.y, -0.28f, 0.28f);
+	cameraDirection = NormalizeOrZero(cameraDirection);
+	if (LengthSq(cameraDirection) <= 0.0001f) {
+		cameraDirection = flatForward;
+	}
+
 	lastCameraDirection_ = cameraDirection;
 
 	float backDistance = 12.0f;
@@ -1283,21 +1296,35 @@ void Player::UpdateCamera(Camera *camera, const Vector3 *targetPos, bool allowIn
 		backDistance = 12.0f + (speed * 1.5f);
 	}
 
-	float targetFov = 0.45f;
+	// 狭すぎる画角は高速移動時に周辺視野が失われ、酔いにつながりやすい。
+	float targetFov = 0.60f;
 	if (currentMode_ == PlayerMode::Fighter) {
-		targetFov = 0.45f + (speed * 0.15f);
-		targetFov = std::clamp(targetFov, 0.45f, 1.10f);
+		targetFov = 0.60f + (speed * 0.15f);
+		targetFov = std::clamp(targetFov, 0.60f, 0.78f);
 	}
 	float currentFov = camera->GetFovY();
 	camera->SetFovY(currentFov + (targetFov - currentFov) * 0.1f);
 
 	Vector3 cameraBackOffset = Scale(cameraDirection, -backDistance);
 	Vector3 playerOBBCenter = GetOBB().center;
-	Vector3 camPos = {
+	const Vector3 desiredCameraPosition = {
 		playerOBBCenter.x + cameraBackOffset.x,
 		playerOBBCenter.y + heightOffset + cameraBackOffset.y,
 		playerOBBCenter.z + cameraBackOffset.z
 	};
+
+	// 通常時は少し遅れて追従させ、急な進行方向の変更による画面の跳ねを抑える。
+	// ロックオン中は敵を見失わないよう、通常より速く目標位置へ寄せる。
+	constexpr float kNormalCameraFollowBlend = 0.16f;
+	constexpr float kLockOnCameraFollowBlend = 0.24f;
+	const float followBlend = isNormalLockOnCamera ? kLockOnCameraFollowBlend : kNormalCameraFollowBlend;
+	if (!isCameraFollowInitialized_) {
+		cameraFollowPosition_ = desiredCameraPosition;
+		isCameraFollowInitialized_ = true;
+	} else {
+		cameraFollowPosition_ = Lerp(cameraFollowPosition_, desiredCameraPosition, followBlend);
+	}
+	const Vector3 camPos = cameraFollowPosition_;
 	Vector3 lookForward = NormalizeOrZero({
 		lookTarget.x - camPos.x,
 		lookTarget.y - camPos.y,
@@ -1317,11 +1344,12 @@ void Player::UpdateCamera(Camera *camera, const Vector3 *targetPos, bool allowIn
 			auto input = Input::GetInstance();
 			float rollAngle = 0.0f;
 			if (input->PushAction(PlayerAction::DodgeLeft) || input->PushAction(PlayerAction::TurnLeft)) {
-				rollAngle = 0.35f;
+				rollAngle = 0.08f;
 			} else if (input->PushAction(PlayerAction::DodgeRight) || input->PushAction(PlayerAction::TurnRight)) {
-				rollAngle = -0.35f;
+				rollAngle = -0.08f;
 			}
-			currentCameraRoll = currentCameraRoll + (rollAngle - currentCameraRoll) * 0.1f;
+			// バンクは方向転換の手掛かりとして残しつつ、視界の回転を最小限にする。
+			currentCameraRoll = currentCameraRoll + (rollAngle - currentCameraRoll) * 0.06f;
 		}
 
 		Quaternion rollQ = MyMath::MakeAxisAngle({0.0f, 0.0f, 1.0f}, currentCameraRoll);

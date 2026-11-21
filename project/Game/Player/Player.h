@@ -218,6 +218,9 @@ private:
     Quaternion quaternion_ = { 0.0f, 0.0f, 0.0f, 1.0f }; // 単位クォータニオン（無回転）
     float cameraPitch_ = 0.0f;
     Vector3 lastCameraDirection_ = { 0.0f, 0.0f, 1.0f };
+    // プレイヤーの急旋回時に視点が跳ねないよう、実際に適用するカメラ位置を補間する。
+    Vector3 cameraFollowPosition_ = { 0.0f, 0.0f, 0.0f };
+    bool isCameraFollowInitialized_ = false;
     // ロックオン解除時に、敵を注視していたカメラを自機追従へ自然に戻すための状態。
     bool wasCameraLockOnActive_ = false;
     float cameraLockReleaseProgress_ = 1.0f;

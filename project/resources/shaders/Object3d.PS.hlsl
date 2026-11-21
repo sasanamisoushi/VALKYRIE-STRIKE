@@ -4,6 +4,8 @@ struct Material
 {
     float32_t4 color;
     int32_t enableLighting;
+    int32_t doubleSidedLighting;
+    float32_t2 padding;
     float32_t4x4 uvTransform;
     float32_t shininess;
     float32_t alphaReference;
@@ -47,7 +49,7 @@ struct PixelShaderOutput
     float32_t4 color : SV_TARGET0;
 };
 
-PixelShaderOutput main(VertexShaderOutput input)
+PixelShaderOutput main(VertexShaderOutput input, bool isFrontFace : SV_IsFrontFace)
 {
     PixelShaderOutput output;
 
@@ -62,6 +64,14 @@ PixelShaderOutput main(VertexShaderOutput input)
     float4 transformedUV = mul(float32_t4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
     float32_t4 textureColor = gTexture.Sample(gSampler, transformedUV.xy);
     float32_t3 toEye = normalize(gCamera.worldPosition - input.worldPosition);
+    float32_t3 surfaceNormal = normalize(input.normal);
+
+    // シールドのようにカリングなしで描く薄い曲面は、内側から見ると法線が逆向きになる。
+    // 背面だけ法線を反転すると、内外のどちらから見ても同じ照明計算になる。
+    if (gMaterial.doubleSidedLighting != 0 && !isFrontFace)
+    {
+        surfaceNormal = -surfaceNormal;
+    }
 
     if (gMaterial.enableLighting != 0)
     {
@@ -73,12 +83,12 @@ PixelShaderOutput main(VertexShaderOutput input)
     float32_t3 halfVector = normalize(lightDirection + toEye);
 
     // 3. 法線とハーフベクトルの内積を求める
-    float NDotH = dot(normalize(input.normal), halfVector);
+    float NDotH = dot(surfaceNormal, halfVector);
 
     // 4. ハイライトの強さを計算
     float specularPow = pow(saturate(NDotH), gMaterial.shininess);
    
-    float Ndotl = dot(normalize(input.normal), -gDirectionalLight.direction);
+    float Ndotl = dot(surfaceNormal, -gDirectionalLight.direction);
     float cos = pow(Ndotl * 0.5f + 0.5f, 2.0f);
         
     float3 diffuse = gMaterial.color.rgb * textureColor.rgb * input.color.rgb * gDirectionalLight.color.rgb * cos * gDirectionalLight.intensity;
@@ -96,7 +106,7 @@ PixelShaderOutput main(VertexShaderOutput input)
         
         // 反射ベクトルを計算(入射ベクトルと法線を使用)
 
-            float3 refVector = reflect(incident, normalize(input.normal));
+            float3 refVector = reflect(incident, surfaceNormal);
         
         // キューブマップから反射した方向の色をサンプリング
             float4 envColor = gEnvironmentMap.Sample(gSampler, refVector);

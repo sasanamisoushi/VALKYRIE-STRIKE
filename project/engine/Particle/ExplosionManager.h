@@ -9,6 +9,24 @@
 
 class ExplosionManager {
 public:
+	// 撃破対象ごとに設定を分けられる。通常敵の設定を共通値として初期値にする。
+	enum class EffectTarget : int {
+		StandardEnemy = 0,
+		GroundEnemy,
+		JammerEnemy,
+		Boss,
+		Player,
+		Count,
+	};
+
+	// 撃破時に使用するパーティクルのプリセット。ImGui の選択値としても使う。
+	enum class DestructionParticleType : int {
+		FlameToSmoke = 0,
+		Fireball,
+		SmokeCloud,
+		Sparks,
+	};
+
     struct ExplosionConfig {
         int count = 100;
         float color[4] = { 1.0f, 0.5f, 0.1f, 1.0f };
@@ -19,6 +37,10 @@ public:
         float lifeTimeMin = 0.5f;
         float lifeTimeMax = 1.0f;
         float posVariance = 0.1f;
+		int destructionParticleType = static_cast<int>(DestructionParticleType::FlameToSmoke);
+		float smokeColor[4] = { 0.10f, 0.10f, 0.12f, 0.60f };
+		float flameToSmokeScale = 2.8f;
+		float flameToSmokeTransition = 0.35f;
     };
 
     // 初期化（ParticleManagerのポインタを受け取っておく）
@@ -31,12 +53,27 @@ public:
     void Draw();
 
     // 報告された座標リストを受け取り、爆発を一気に発生させる
-    void CreateExplosions(const std::vector<Vector3> &hitPositions);
+    void CreateExplosions(const std::vector<Vector3> &hitPositions,
+		EffectTarget target = EffectTarget::StandardEnemy);
     void CreateHitEffects(const std::vector<Vector3> &hitPositions);
-    void CreateDestructionEffects(const std::vector<Vector3> &hitPositions);
+    void CreateDestructionEffects(const std::vector<Vector3> &hitPositions,
+		EffectTarget target = EffectTarget::StandardEnemy);
+	// エディタ専用。粒子は同じ設定で再生し、3D衝撃波メッシュだけを任意に隠せる。
+	void CreateDestructionPreview(const std::vector<Vector3>& hitPositions, EffectTarget target,
+		bool includeShockwaveMeshes);
+	// エフェクトエディタの再生停止／状態表示に用いる。
+	void ClearEffects();
+	std::size_t GetActiveEffectCount() const;
 
     // 設定の取得
-    ExplosionConfig& GetConfig() { return config_; }
+    ExplosionConfig& GetConfig() { return commonConfig_; }
+    ExplosionConfig& GetConfig(EffectTarget target);
+    const ExplosionConfig& GetConfig(EffectTarget target) const;
+    bool UsesCommonConfig(EffectTarget target) const;
+    void SetUseCommonConfig(EffectTarget target, bool useCommon);
+
+	// 敵の実型から、適用する撃破設定を求める。
+	static EffectTarget ClassifyEnemy(const class Enemy& enemy);
 
     // JSON保存/読込
     void SaveToJson(const std::string &filepath);
@@ -57,10 +94,14 @@ private:
 
     void InitializeExplosionObjects(Explosion &explosion);
     Explosion *AcquireExplosion();
-    void CreateEffects(const std::vector<Vector3> &hitPositions, bool includeMeshes);
+	void CreateEffects(const std::vector<Vector3> &hitPositions, bool useDestructionParticle,
+		bool includeMeshes,
+		const ExplosionConfig& config);
 
     std::array<Explosion, kMaxExplosions> explosions_;
     ParticleManager *particleManager_ = nullptr; // エミッター生成時に必要な大元
-    ExplosionConfig config_;
+    ExplosionConfig commonConfig_;
+    std::array<ExplosionConfig, static_cast<size_t>(EffectTarget::Count)> targetConfigs_{};
+    std::array<bool, static_cast<size_t>(EffectTarget::Count)> useCommonConfig_{};
 };
 

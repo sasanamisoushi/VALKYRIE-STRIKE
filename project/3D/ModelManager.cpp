@@ -120,6 +120,16 @@ void ModelManager::CreateCylinderArcModel(const std::string& modelName, int subd
 	models.insert(std::make_pair(modelName, std::move(newModel)));
 }
 
+void ModelManager::CreateCylinderArcShellModel(const std::string& modelName, int subdivision, float radius, float height,
+	float thickness, float startAngleDegree, float endAngleDegree) {
+	if (models.contains(modelName)) return;
+
+	std::unique_ptr<Model> newModel = std::make_unique<Model>();
+	newModel->InitializeCylinderShell(modelCommon.get(), subdivision, 6, radius, height, thickness,
+		startAngleDegree, endAngleDegree);
+	models.insert(std::make_pair(modelName, std::move(newModel)));
+}
+
 void ModelManager::CreateLineModel(const std::string &modelName) {
 	if (models.contains(modelName)) return;
 

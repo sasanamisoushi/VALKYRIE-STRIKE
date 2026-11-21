@@ -14,7 +14,9 @@ public:
     void Initialize(ParticleManager* particleManager);
 
     // 全ミサイルの更新と、死んだミサイルの削除
-    void Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies, const std::list<std::unique_ptr<Obstacle>> &obstacles, std::vector<Vector3> &hitPositions, std::vector<Vector3> &destroyedPositions);
+    void Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies,
+        const std::list<std::unique_ptr<Obstacle>> &obstacles,
+        std::vector<Vector3> &hitPositions, std::vector<Enemy *> &destroyedEnemies);
 
     void UpdateModels(Camera *camera = nullptr);
 

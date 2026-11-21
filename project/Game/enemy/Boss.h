@@ -141,5 +141,6 @@ private:
     // 左右の船体側面で、各装甲板の端から中央へ展開するシールド。
     std::array<std::unique_ptr<Object3d>, 4> sideShieldSegments_;
     float sideShieldDeployProgress_ = 0.0f;
+    float sideShieldBuiltProgress_ = -1.0f;
     Tuning tuning_{};
 };

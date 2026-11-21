@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/Debug/ImGuiManager.h"
+#include "engine/Input/Input.h"
 #include <externals/imgui/imgui.h>
 #include "engine/math/MyMath.h"
 #include "externals/json.hpp"
@@ -441,7 +442,8 @@ namespace {
 		}
 	}
 
-	void DrawAimCursorOverlaySprite(Sprite* aimCursorSprite_, bool isJammed = false) {
+	void DrawAimCursorOverlaySprite(Sprite* aimCursorSprite_, bool isJammed = false,
+		float opacity = 220.0f / 255.0f, float size = 44.0f) {
 		float minX = 0.0f;
 		float minY = 0.0f;
 		float maxX = 0.0f;
@@ -468,11 +470,92 @@ namespace {
 
 		if (aimCursorSprite_) {
 			aimCursorSprite_->SetPosition(center);
-			aimCursorSprite_->SetSize({ 44.0f * aspectScaleX, 44.0f });
-			aimCursorSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 220.0f / 255.0f });
+			aimCursorSprite_->SetSize({ size * aspectScaleX, size });
+			aimCursorSprite_->SetColor({ 1.0f, 1.0f, 1.0f, opacity });
 			aimCursorSprite_->Update();
 			aimCursorSprite_->Draw();
 		}
+	}
+
+	// ガウォークの非ロック時は、隠したOSカーソルと同じ位置へゲーム内照準を描く。
+	void DrawMouseAimCursorOverlaySprite(Sprite* aimCursorSprite_, bool isJammed = false) {
+		if (!aimCursorSprite_) {
+			return;
+		}
+
+		float minX = 0.0f;
+		float minY = 0.0f;
+		float maxX = 0.0f;
+		float maxY = 0.0f;
+		if (!GetOverlayBounds(minX, minY, maxX, maxY)) {
+			return;
+		}
+
+		const float width = maxX - minX;
+		const float height = maxY - minY;
+		POINT mousePosition{};
+		if (!Input::GetInstance()->GetMouseClientPosition(mousePosition)) {
+			DrawAimCursorOverlaySprite(aimCursorSprite_, isJammed, 0.32f, 30.0f);
+			return;
+		}
+
+		float spriteX = static_cast<float>(mousePosition.x);
+		float spriteY = static_cast<float>(mousePosition.y);
+		if (isJammed) {
+			spriteX += (rand() % 11 - 5) * 1.5f;
+			spriteY += (rand() % 11 - 5) * 1.5f;
+		}
+
+		const float aspectScaleX = (height / width) *
+			(static_cast<float>(WinApp::GetClientWidth()) / static_cast<float>(WinApp::GetClientHeight()));
+		aimCursorSprite_->SetPosition({ spriteX, spriteY });
+		aimCursorSprite_->SetSize({ 36.0f * aspectScaleX, 36.0f });
+		aimCursorSprite_->SetColor({ 0.35f, 0.92f, 1.0f, 0.90f });
+		aimCursorSprite_->Update();
+		aimCursorSprite_->Draw();
+	}
+
+	// ガウォーク時は、照準の中心ではなく狙っている敵（または画面端の方向）へ
+	// 小さな追従カーソルを置く。ロックオン枠とは役割を分け、狙いの向きを示す。
+	void DrawTargetTrackingCursorOverlaySprite(const Enemy* target, const Matrix4x4& viewProjectionMatrix,
+		Sprite* aimCursorSprite_, bool isJammed = false, const Vector3* targetPoint = nullptr) {
+		if (!target || !aimCursorSprite_) {
+			return;
+		}
+
+		float minX = 0.0f;
+		float minY = 0.0f;
+		float maxX = 0.0f;
+		float maxY = 0.0f;
+		if (!GetOverlayBounds(minX, minY, maxX, maxY)) {
+			return;
+		}
+
+		const float width = maxX - minX;
+		const float height = maxY - minY;
+		const Vector3 worldPosition = targetPoint ? *targetPoint : target->GetAimPosition();
+		Vector3 screenPosition = MyMath::WorldToScreen(worldPosition, viewProjectionMatrix, width, height);
+		if (screenPosition.z < 0.0f) {
+			return;
+		}
+
+		// 画面外の対象も端に止め、プレイヤーが追うべき方向を示す。
+		screenPosition.x = std::clamp(screenPosition.x, 22.0f, width - 22.0f);
+		screenPosition.y = std::clamp(screenPosition.y, 22.0f, height - 22.0f);
+		float spriteX = screenPosition.x * static_cast<float>(WinApp::GetClientWidth()) / width;
+		float spriteY = screenPosition.y * static_cast<float>(WinApp::GetClientHeight()) / height;
+		if (isJammed) {
+			spriteX += (rand() % 11 - 5) * 1.5f;
+			spriteY += (rand() % 11 - 5) * 1.5f;
+		}
+
+		const float aspectScaleX = (height / width) *
+			(static_cast<float>(WinApp::GetClientWidth()) / static_cast<float>(WinApp::GetClientHeight()));
+		aimCursorSprite_->SetPosition({ spriteX, spriteY });
+		aimCursorSprite_->SetSize({ 32.0f * aspectScaleX, 32.0f });
+		aimCursorSprite_->SetColor({ 0.35f, 0.92f, 1.0f, 0.90f });
+		aimCursorSprite_->Update();
+		aimCursorSprite_->Draw();
 	}
 }
 

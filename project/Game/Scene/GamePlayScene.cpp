@@ -37,20 +37,18 @@ using json = nlohmann::json;
 
 namespace {
 	constexpr int kNoEnemyRespawnTimer = -1;
-	// チュートリアルの操作は、一度触れただけでは通過させず、約2秒間継続させる。
-	// ゲームの更新は60fpsを前提としているため、120フレームを採用する。
-	constexpr int kTutorialRequiredHoldFrames = 120;
 	constexpr char kSongParticleGroup[] = "songSparkle";
 	constexpr char kSpeedRushParticleGroup[] = "lowAltitudeSpeedRush";
 
-	bool UpdateTutorialHoldFrames(int& frames, bool isHeld) {
-		// 100% に到達した操作は完了済みとして保持する。これにより、複数の
-		// 操作を同時に入力し続けなくても、それぞれを順番に達成できる。
-		if (frames >= kTutorialRequiredHoldFrames) {
+	bool UpdateTutorialActionCount(int& count, bool wasTriggered, int requiredCount) {
+		requiredCount = (std::max)(requiredCount, 1);
+		if (count >= requiredCount) {
 			return true;
 		}
-		frames = isHeld ? (std::min)(frames + 1, kTutorialRequiredHoldFrames) : 0;
-		return frames >= kTutorialRequiredHoldFrames;
+		if (wasTriggered) {
+			count = (std::min)(count + 1, requiredCount);
+		}
+		return count >= requiredCount;
 	}
 
 	float SmoothStep01(float value) {
@@ -308,6 +306,72 @@ bool GamePlayScene::SaveGameplayBalanceSettings() const {
 	return output.good();
 }
 
+void GamePlayScene::ApplyTutorialRequirements() {
+	auto& requirements = tutorialRequirements_;
+	requirements.forward = std::clamp(requirements.forward, 1, 20);
+	requirements.altitude = std::clamp(requirements.altitude, 1, 20);
+	requirements.turn = std::clamp(requirements.turn, 1, 20);
+	requirements.gerwalkHover = std::clamp(requirements.gerwalkHover, 1, 20);
+	requirements.gerwalkStrafe = std::clamp(requirements.gerwalkStrafe, 1, 20);
+	requirements.lockOn = std::clamp(requirements.lockOn, 1, 20);
+	requirements.normalShots = std::clamp(requirements.normalShots, 1, 20);
+	requirements.fighterTransform = std::clamp(requirements.fighterTransform, 1, 20);
+	requirements.homingLaunches = std::clamp(requirements.homingLaunches, 1, 20);
+}
+
+bool GamePlayScene::LoadTutorialRequirements() {
+	std::ifstream input(kTutorialRequirementsPath);
+	if (!input.is_open()) {
+		return false;
+	}
+
+	try {
+		json root;
+		input >> root;
+		const json& settings = root.contains("tutorial_requirements") ? root["tutorial_requirements"] : root;
+		auto readInt = [&settings](const char* name, int& value) {
+			if (settings.contains(name) && settings[name].is_number_integer()) {
+				value = settings[name].get<int>();
+			}
+		};
+		readInt("forward", tutorialRequirements_.forward);
+		readInt("altitude", tutorialRequirements_.altitude);
+		readInt("turn", tutorialRequirements_.turn);
+		readInt("gerwalk_hover", tutorialRequirements_.gerwalkHover);
+		readInt("gerwalk_strafe", tutorialRequirements_.gerwalkStrafe);
+		readInt("lock_on", tutorialRequirements_.lockOn);
+		readInt("normal_shots", tutorialRequirements_.normalShots);
+		readInt("fighter_transform", tutorialRequirements_.fighterTransform);
+		readInt("homing_launches", tutorialRequirements_.homingLaunches);
+		ApplyTutorialRequirements();
+		return true;
+	} catch (const std::exception&) {
+		return false;
+	}
+}
+
+bool GamePlayScene::SaveTutorialRequirements() const {
+	std::ofstream output(kTutorialRequirementsPath, std::ios::trunc);
+	if (!output.is_open()) {
+		return false;
+	}
+
+	const auto& requirements = tutorialRequirements_;
+	const json root = { { "tutorial_requirements", {
+		{ "forward", requirements.forward },
+		{ "altitude", requirements.altitude },
+		{ "turn", requirements.turn },
+		{ "gerwalk_hover", requirements.gerwalkHover },
+		{ "gerwalk_strafe", requirements.gerwalkStrafe },
+		{ "lock_on", requirements.lockOn },
+		{ "normal_shots", requirements.normalShots },
+		{ "fighter_transform", requirements.fighterTransform },
+		{ "homing_launches", requirements.homingLaunches },
+	} } };
+	output << root.dump(2) << '\n';
+	return output.good();
+}
+
 void GamePlayScene::BeginTitleLaunch() {
 	if (!IsTitleBackgroundMode() || !player_ || titleLaunchActive_) {
 		return;
@@ -380,14 +444,16 @@ void GamePlayScene::ActivateFromWarp() {
 	warpFadeInAlpha_ = 1.0f;
 	tutorialPhase_ = tutorialEnabled_ ? TutorialPhase::Flight : TutorialPhase::Disabled;
 	tutorialPhaseFrames_ = 0;
-	tutorialForwardFrames_ = 0;
-	tutorialAltitudeHoldFrames_ = 0;
-	tutorialTurnHoldFrames_ = 0;
-	tutorialGerwalkHoverHoldFrames_ = 0;
-	tutorialGerwalkStrafeHoldFrames_ = 0;
-	tutorialLockHoldFrames_ = 0;
-	tutorialNormalFireHoldFrames_ = 0;
-	tutorialFighterHoldFrames_ = 0;
+	tutorialForwardCount_ = 0;
+	tutorialAltitudeCount_ = 0;
+	tutorialTurnCount_ = 0;
+	tutorialGerwalkHoverCount_ = 0;
+	tutorialGerwalkStrafeCount_ = 0;
+	tutorialLockCount_ = 0;
+	tutorialFighterCount_ = 0;
+	tutorialAltitudeInputActive_ = false;
+	tutorialLockWasActive_ = false;
+	tutorialFighterWasActive_ = false;
 	tutorialAltitudeObserved_ = false;
 	tutorialTurnObserved_ = false;
 	tutorialGerwalkHoverObserved_ = false;
@@ -465,6 +531,7 @@ void GamePlayScene::ClearAllEnemyReferences() {
 void GamePlayScene::Initialize() {
 
 	LoadBoundaryShieldSettings();
+	LoadTutorialRequirements();
 
 	camera = std::make_unique<Camera>();
 	ammoManager_ = std::make_unique<AmmoManager>();
@@ -622,14 +689,16 @@ void GamePlayScene::Initialize() {
 	tutorialEnabled_ = false;
 	tutorialPhase_ = TutorialPhase::Disabled;
 	tutorialPhaseFrames_ = 0;
-	tutorialForwardFrames_ = 0;
-	tutorialAltitudeHoldFrames_ = 0;
-	tutorialTurnHoldFrames_ = 0;
-	tutorialGerwalkHoverHoldFrames_ = 0;
-	tutorialGerwalkStrafeHoldFrames_ = 0;
-	tutorialLockHoldFrames_ = 0;
-	tutorialNormalFireHoldFrames_ = 0;
-	tutorialFighterHoldFrames_ = 0;
+	tutorialForwardCount_ = 0;
+	tutorialAltitudeCount_ = 0;
+	tutorialTurnCount_ = 0;
+	tutorialGerwalkHoverCount_ = 0;
+	tutorialGerwalkStrafeCount_ = 0;
+	tutorialLockCount_ = 0;
+	tutorialFighterCount_ = 0;
+	tutorialAltitudeInputActive_ = false;
+	tutorialLockWasActive_ = false;
+	tutorialFighterWasActive_ = false;
 	tutorialAltitudeObserved_ = false;
 	tutorialTurnObserved_ = false;
 	tutorialGerwalkHoverObserved_ = false;
@@ -867,14 +936,16 @@ void GamePlayScene::Initialize() {
 			tutorialEnabled_ = titleTransition.stage == GameStartStage::Tutorial;
 			tutorialPhase_ = tutorialEnabled_ ? TutorialPhase::Flight : TutorialPhase::Disabled;
 			tutorialPhaseFrames_ = 0;
-			tutorialForwardFrames_ = 0;
-			tutorialAltitudeHoldFrames_ = 0;
-			tutorialTurnHoldFrames_ = 0;
-			tutorialGerwalkHoverHoldFrames_ = 0;
-			tutorialGerwalkStrafeHoldFrames_ = 0;
-			tutorialLockHoldFrames_ = 0;
-			tutorialNormalFireHoldFrames_ = 0;
-			tutorialFighterHoldFrames_ = 0;
+			tutorialForwardCount_ = 0;
+			tutorialAltitudeCount_ = 0;
+			tutorialTurnCount_ = 0;
+			tutorialGerwalkHoverCount_ = 0;
+			tutorialGerwalkStrafeCount_ = 0;
+			tutorialLockCount_ = 0;
+			tutorialFighterCount_ = 0;
+			tutorialAltitudeInputActive_ = false;
+			tutorialLockWasActive_ = false;
+			tutorialFighterWasActive_ = false;
 			tutorialAltitudeObserved_ = false;
 			tutorialTurnObserved_ = false;
 			tutorialGerwalkHoverObserved_ = false;
@@ -1334,6 +1405,19 @@ void GamePlayScene::ReloadSceneJson() {
 }
 
 void GamePlayScene::ResetEditorPreview() {
+	// チュートリアルの敵は scene.json ではなく BeginTutorialCombat() が専用に生成する。
+	// ここで通常ステージの scene.json を読み直すと、その訓練用編成がステージ1の敵へ
+	// 置き換わってしまうため、訓練中は現在の配置を保ったまま編集停止へ移行する。
+	const bool preserveTutorialLayout = tutorialEnabled_ && tutorialPhase_ != TutorialPhase::Disabled;
+	Vector3 tutorialPlayerPosition{};
+	Vector3 tutorialPlayerForward{};
+	PlayerMode tutorialPlayerMode = PlayerMode::Fighter;
+	if (preserveTutorialLayout && player_) {
+		tutorialPlayerPosition = player_->GetPosition();
+		tutorialPlayerForward = player_->GetForwardVector();
+		tutorialPlayerMode = player_->GetCurrentMode();
+	}
+
 	isEditorPreviewPlaying_ = false;
 	isGameOver_ = false;
 	gameOverTimer_ = 0;
@@ -1360,7 +1444,22 @@ void GamePlayScene::ResetEditorPreview() {
 		explosionManager_->Initialize(environmentRenderer_->GetParticleManager());
 	}
 
-	ReloadSceneJson();
+	if (preserveTutorialLayout) {
+		// Initialize() によるプレイヤーの初期位置への巻き戻しも防ぐ。
+		if (player_) {
+			player_->SetPosition(tutorialPlayerPosition);
+			player_->ChangeMode(tutorialPlayerMode);
+			const float horizontalLength = std::sqrt(
+				tutorialPlayerForward.x * tutorialPlayerForward.x +
+				tutorialPlayerForward.z * tutorialPlayerForward.z);
+			if (horizontalLength > 0.0001f) {
+				const float yaw = std::atan2(tutorialPlayerForward.x, tutorialPlayerForward.z);
+				player_->SetRotation({ 0.0f, yaw, 0.0f });
+			}
+		}
+	} else {
+		ReloadSceneJson();
+	}
 
 	if (!isDebugCameraActive_ && player_) {
 		Vector3* targetPos = nullptr;
@@ -1748,7 +1847,8 @@ void GamePlayScene::Update() {
 
 		std::vector<Vector3> playerHitPos = { player_->GetPosition() };
 		if (explosionManager_) {
-			explosionManager_->CreateDestructionEffects(playerHitPos);
+			explosionManager_->CreateDestructionEffects(
+				playerHitPos, ExplosionManager::EffectTarget::Player);
 		}
 
 		if (pVoice2) {
@@ -1913,7 +2013,7 @@ void GamePlayScene::Update() {
 							{ bossClearExplosionCenter_.x - radius, bossClearExplosionCenter_.y, bossClearExplosionCenter_.z },
 							{ bossClearExplosionCenter_.x, bossClearExplosionCenter_.y + radius * 0.5f, bossClearExplosionCenter_.z },
 							{ bossClearExplosionCenter_.x, bossClearExplosionCenter_.y, bossClearExplosionCenter_.z + radius },
-						});
+						}, ExplosionManager::EffectTarget::Boss);
 					}
 					if (environmentRenderer_) {
 						if (ParticleManager* particles = environmentRenderer_->GetParticleManager()) {
@@ -2162,7 +2262,8 @@ void GamePlayScene::Update() {
 				gameOverFocusPosition_.y + std::sin(burstIndex * 1.73f) * 1.10f,
 				gameOverFocusPosition_.z + std::sin(burstIndex * 2.41f) * 1.75f,
 			};
-			explosionManager_->CreateDestructionEffects({ burstPosition });
+			explosionManager_->CreateDestructionEffects(
+				{ burstPosition }, ExplosionManager::EffectTarget::Player);
 			if (environmentRenderer_) {
 				if (ParticleManager* particles = environmentRenderer_->GetParticleManager()) {
 					particles->EmitDirectionalBurst("test", burstPosition,
@@ -2855,7 +2956,8 @@ void GamePlayScene::Update() {
 						break;
 					case GroundEnemy::EffectEvent::Type::FinalExplosion:
 						if (explosionManager_) {
-							explosionManager_->CreateDestructionEffects({ effect.position });
+							explosionManager_->CreateDestructionEffects(
+								{ effect.position }, ExplosionManager::EffectTarget::GroundEnemy);
 						}
 						if (particleManager) {
 							particleManager->EmitDirectionalBurst("smoke", effect.position, { 0.0f, 1.0f, 0.0f }, 64,
@@ -3695,17 +3797,24 @@ void GamePlayScene::Update() {
 
 	// ==========================================
 	std::vector<Vector3> hitPositions;
-	std::vector<Vector3> destroyedPositions;
+		std::vector<Enemy*> destroyedEnemies;
 	if (updateSelectedMissiles) {
 		if (missileManager_) {
-			missileManager_->Update(activeCamera, enemies_, obstacles_, hitPositions, destroyedPositions);
+			missileManager_->Update(activeCamera, enemies_, obstacles_, hitPositions, destroyedEnemies);
 		}
 
 		if (explosionManager_ && !hitPositions.empty()) {
 			explosionManager_->CreateHitEffects(hitPositions);
 		}
-		if (explosionManager_ && !destroyedPositions.empty()) {
-			explosionManager_->CreateDestructionEffects(destroyedPositions);
+		if (explosionManager_) {
+			for (Enemy* destroyedEnemy : destroyedEnemies) {
+				if (!destroyedEnemy) {
+					continue;
+				}
+				explosionManager_->CreateDestructionEffects(
+					{ destroyedEnemy->GetAimPosition() },
+					ExplosionManager::ClassifyEnemy(*destroyedEnemy));
+			}
 		}
 
 	} else {
@@ -3716,7 +3825,8 @@ void GamePlayScene::Update() {
 
 
 	if (((shouldUpdateGame && !isSimulation) || isBossClearSequenceActive || updateSelectedMissiles || updateSelectedParticles ||
-		(shouldUpdateGame && isFullFlowPreview)) && explosionManager_) {
+		(shouldUpdateGame && isFullFlowPreview) ||
+		(uiManager_ && uiManager_->IsDestructionEffectPreviewActive())) && explosionManager_) {
 		explosionManager_->Update();
 	}
 
@@ -3916,7 +4026,8 @@ void GamePlayScene::Update() {
 	if (environmentRenderer_) {
 		// 編集モード停止中は、パーティクル・UVスクロールを含む環境演出も止める。
 		const bool updateEnvironment = shouldUpdateGame || isBossClearSequenceActive ||
-			(isGameOver_ && gameOverTimer_ % 5 == 0);
+			(isGameOver_ && gameOverTimer_ % 5 == 0) ||
+			(uiManager_ && uiManager_->IsDestructionEffectPreviewActive());
 		environmentRenderer_->Update(activeCamera, updateEnvironment);
 	}
 
@@ -4556,27 +4667,31 @@ void GamePlayScene::UpdateTutorial() {
 
 	switch (tutorialPhase_) {
 	case TutorialPhase::Flight: {
-		// Phase 1: 各操作を約2秒連続で維持し、偶発的な一回の入力では進行しない。
-		const bool forwardComplete = UpdateTutorialHoldFrames(
-			tutorialForwardFrames_, input->PushAction(PlayerAction::MoveForward));
-		tutorialAltitudeObserved_ = UpdateTutorialHoldFrames(
-			tutorialAltitudeHoldFrames_, input->GetMouseDeltaY() != 0);
-		tutorialTurnObserved_ = UpdateTutorialHoldFrames(
-			tutorialTurnHoldFrames_, input->PushAction(PlayerAction::DodgeLeft) || input->PushAction(PlayerAction::DodgeRight));
+		const bool altitudeInput = input->GetMouseDeltaY() != 0;
+		const bool altitudeTriggered = altitudeInput && !tutorialAltitudeInputActive_;
+		tutorialAltitudeInputActive_ = altitudeInput;
+		const bool forwardComplete = UpdateTutorialActionCount(
+			tutorialForwardCount_, input->TriggerAction(PlayerAction::MoveForward), tutorialRequirements_.forward);
+		tutorialAltitudeObserved_ = UpdateTutorialActionCount(
+			tutorialAltitudeCount_, altitudeTriggered, tutorialRequirements_.altitude);
+		tutorialTurnObserved_ = UpdateTutorialActionCount(
+			tutorialTurnCount_, input->TriggerAction(PlayerAction::DodgeLeft) || input->TriggerAction(PlayerAction::DodgeRight),
+			tutorialRequirements_.turn);
 		if (forwardComplete && tutorialAltitudeObserved_ && tutorialTurnObserved_) {
 			advance(TutorialPhase::Gerwalk);
 		}
 		break;
 	}
 	case TutorialPhase::Gerwalk: {
-		// Phase 2: 変形後も、上下・横移動をそれぞれ連続で実演させる。
 		const bool isGerwalk = player_ && player_->GetCurrentMode() == PlayerMode::Gerwalk;
-		tutorialGerwalkHoverObserved_ = UpdateTutorialHoldFrames(
-			tutorialGerwalkHoverHoldFrames_, isGerwalk &&
-			(input->PushAction(PlayerAction::MoveUp) || input->PushAction(PlayerAction::MoveDown)));
-		tutorialGerwalkStrafeObserved_ = UpdateTutorialHoldFrames(
-			tutorialGerwalkStrafeHoldFrames_, isGerwalk &&
-			(input->PushAction(PlayerAction::DodgeLeft) || input->PushAction(PlayerAction::DodgeRight)));
+		tutorialGerwalkHoverObserved_ = UpdateTutorialActionCount(
+			tutorialGerwalkHoverCount_, isGerwalk &&
+			(input->TriggerAction(PlayerAction::MoveUp) || input->TriggerAction(PlayerAction::MoveDown)),
+			tutorialRequirements_.gerwalkHover);
+		tutorialGerwalkStrafeObserved_ = UpdateTutorialActionCount(
+			tutorialGerwalkStrafeCount_, isGerwalk &&
+			(input->TriggerAction(PlayerAction::DodgeLeft) || input->TriggerAction(PlayerAction::DodgeRight)),
+			tutorialRequirements_.gerwalkStrafe);
 		if (player_ && player_->GetCurrentMode() == PlayerMode::Gerwalk &&
 			tutorialGerwalkHoverObserved_ && tutorialGerwalkStrafeObserved_) {
 			BeginTutorialCombat();
@@ -4584,31 +4699,34 @@ void GamePlayScene::UpdateTutorial() {
 		}
 		break;
 	}
-	case TutorialPhase::LockOn:
-		// ロック対象を選ぶだけでなく、ロック状態を維持してから次へ進める。
-		tutorialLockObserved_ = UpdateTutorialHoldFrames(
-			tutorialLockHoldFrames_, lockedEnemy_ && !lockedEnemy_->IsDead());
+	case TutorialPhase::LockOn: {
+		const bool isLocked = lockedEnemy_ && !lockedEnemy_->IsDead();
+		const bool lockJustAcquired = isLocked && !tutorialLockWasActive_;
+		tutorialLockWasActive_ = isLocked;
+		tutorialLockObserved_ = UpdateTutorialActionCount(
+			tutorialLockCount_, lockJustAcquired, tutorialRequirements_.lockOn);
 		if (tutorialLockObserved_) {
 			advance(TutorialPhase::NormalFire);
 		}
 		break;
+	}
 	case TutorialPhase::NormalFire: {
-		// 長押しで約2秒間射撃し、かつ実際に3発以上が発射されてから進める。
-		const bool normalFireComplete = UpdateTutorialHoldFrames(
-			tutorialNormalFireHoldFrames_, input->PushMouseButton(0) || input->PushAction(PlayerAction::NormalFire));
-		if (normalFireComplete && tutorialNormalShotsFired_ >= 3) {
+		if (tutorialNormalShotsFired_ >= tutorialRequirements_.normalShots) {
 			advance(TutorialPhase::MultiLock);
 		}
 		break;
 	}
-	case TutorialPhase::MultiLock:
-		// Phase 3: ファイター形態を安定して維持してから、実際にホーミング弾を発射する。
-		tutorialFighterReengaged_ = UpdateTutorialHoldFrames(
-			tutorialFighterHoldFrames_, player_ && player_->GetCurrentMode() == PlayerMode::Fighter);
-		if (tutorialFighterReengaged_ && tutorialHomingLaunches_ > 0) {
+	case TutorialPhase::MultiLock: {
+		const bool isFighter = player_ && player_->GetCurrentMode() == PlayerMode::Fighter;
+		const bool fighterJustEngaged = isFighter && !tutorialFighterWasActive_;
+		tutorialFighterWasActive_ = isFighter;
+		tutorialFighterReengaged_ = UpdateTutorialActionCount(
+			tutorialFighterCount_, fighterJustEngaged, tutorialRequirements_.fighterTransform);
+		if (tutorialFighterReengaged_ && tutorialHomingLaunches_ >= tutorialRequirements_.homingLaunches) {
 			advance(TutorialPhase::Combat);
 		}
 		break;
+	}
 	case TutorialPhase::Combat:
 		// 3機の訓練標的を全滅させるまで、ゴールは表示しない。
 		if (tutorialCombatTargetsSpawned_ && enemies_.empty()) {
@@ -4668,8 +4786,9 @@ void GamePlayScene::DrawTutorialOverlay(float screenWidth, float screenHeight) {
 	const char* supportText = "";
 	std::string progressText;
 	std::string inputHint;
-	const auto holdProgress = [](int frames) {
-		return std::to_string((std::min)(frames, kTutorialRequiredHoldFrames) * 100 / kTutorialRequiredHoldFrames) + "%";
+	const auto actionProgress = [](int count, int requiredCount) {
+		requiredCount = (std::max)(requiredCount, 1);
+		return std::to_string((std::min)(count, requiredCount) * 100 / requiredCount) + "%";
 	};
 	const auto keyForAction = [](PlayerAction action) {
 		const PlayerActionBinding& binding = Input::GetInstance()->GetActionBinding(action);
@@ -4695,10 +4814,11 @@ void GamePlayScene::DrawTutorialOverlay(float screenWidth, float screenHeight) {
 	case TutorialPhase::Flight:
 		step = 1;
 		title = "ファイター飛行訓練";
-		message = "加速・マウス上下・A/D旋回を、それぞれ約2秒続けてください。";
+		message = "加速・マウス上下・A/D旋回を、それぞれ規定回数行ってください。";
 		supportText = "FIGHTER: high-speed flight and evasive movement";
-		progressText = "前進 " + holdProgress(tutorialForwardFrames_) + "  高度 " +
-			holdProgress(tutorialAltitudeHoldFrames_) + "  旋回 " + holdProgress(tutorialTurnHoldFrames_);
+		progressText = "前進 " + actionProgress(tutorialForwardCount_, tutorialRequirements_.forward) + "  高度 " +
+			actionProgress(tutorialAltitudeCount_, tutorialRequirements_.altitude) + "  旋回 " +
+			actionProgress(tutorialTurnCount_, tutorialRequirements_.turn);
 		// キーコンフィグの変更後も、実際の割り当てをそのまま案内する。
 		inputHint = "前進: " + keyForAction(PlayerAction::MoveForward) +
 			"  /  高度: マウス上下  /  旋回: " + keyForAction(PlayerAction::DodgeLeft) + "・" + keyForAction(PlayerAction::DodgeRight);
@@ -4707,11 +4827,11 @@ void GamePlayScene::DrawTutorialOverlay(float screenWidth, float screenHeight) {
 	case TutorialPhase::Gerwalk:
 		step = 2;
 		title = "ガウォーク機動訓練";
-		message = "ガウォークを維持し、上下移動と横移動をそれぞれ約2秒続けてください。";
+		message = "ガウォークを維持し、上下移動と横移動をそれぞれ規定回数行ってください。";
 		supportText = "GERWALK: hover, strafe, and keep your aim steady";
 		progressText = "変形 " + std::to_string(player_ && player_->GetCurrentMode() == PlayerMode::Gerwalk) +
-			"/1  滞空 " + holdProgress(tutorialGerwalkHoverHoldFrames_) + "  横移動 " +
-			holdProgress(tutorialGerwalkStrafeHoldFrames_);
+			"/1  滞空 " + actionProgress(tutorialGerwalkHoverCount_, tutorialRequirements_.gerwalkHover) + "  横移動 " +
+			actionProgress(tutorialGerwalkStrafeCount_, tutorialRequirements_.gerwalkStrafe);
 		inputHint = "ガウォーク: " + keyForAction(PlayerAction::TransformGerwalk) +
 			"  /  滞空: " + keyForAction(PlayerAction::MoveUp) + "・" + keyForAction(PlayerAction::MoveDown) +
 			"  /  横移動: " + keyForAction(PlayerAction::DodgeLeft) + "・" + keyForAction(PlayerAction::DodgeRight);
@@ -4720,29 +4840,28 @@ void GamePlayScene::DrawTutorialOverlay(float screenWidth, float screenHeight) {
 	case TutorialPhase::LockOn:
 		step = 3;
 		title = "攻撃フェーズ：ロックオン";
-		message = "照準内の訓練標的をロックし、約2秒間維持してください。";
+		message = "照準内の訓練標的を、規定回数ロックしてください。";
 		supportText = "Press lock once to select a target. Press release to cancel it.";
-		progressText = "ロック維持  " + holdProgress(tutorialLockHoldFrames_);
+		progressText = "ロック  " + actionProgress(tutorialLockCount_, tutorialRequirements_.lockOn);
 		inputHint = "ロック: " + keyForAction(PlayerAction::LockToggle) +
 			"  /  解除: " + keyForAction(PlayerAction::LockRelease);
 		break;
 	case TutorialPhase::NormalFire:
 		step = 3;
 		title = "攻撃フェーズ：主砲";
-		message = "主砲を約2秒長押しし、出現した訓練標的へ3発以上発射してください。";
+		message = "主砲を出現した訓練標的へ、規定回数発射してください。";
 		supportText = "Three stationary targets are deployed for weapons practice";
-		progressText = "主砲長押し " + holdProgress(tutorialNormalFireHoldFrames_) + "  発射 " +
-			std::to_string((std::min)(tutorialNormalShotsFired_, 3)) + " / 3";
+		progressText = "主砲発射 " + actionProgress(tutorialNormalShotsFired_, tutorialRequirements_.normalShots);
 		inputHint = "主砲発射: " + keyForAction(PlayerAction::NormalFire);
 		highlightX = screenWidth - 445.0f; highlightY = screenHeight - 355.0f; highlightWidth = 430.0f; highlightHeight = 160.0f;
 		break;
 	case TutorialPhase::MultiLock:
 		step = 3;
 		title = "攻撃フェーズ：複数ロック";
-		message = "ファイターを約2秒維持し、標的をロックしてミサイルを発射します。";
+		message = "ファイターへ変形し、標的へ規定回数ミサイルを発射します。";
 		supportText = "FIGHTER: long-range multi-lock and homing missiles";
-		progressText = "ファイター " + holdProgress(tutorialFighterHoldFrames_) + "  ミサイル " +
-			std::to_string((std::min)(tutorialHomingLaunches_, 1)) + "/1";
+		progressText = "ファイター " + actionProgress(tutorialFighterCount_, tutorialRequirements_.fighterTransform) + "  ミサイル " +
+			actionProgress(tutorialHomingLaunches_, tutorialRequirements_.homingLaunches);
 		inputHint = "ファイター: " + keyForAction(PlayerAction::TransformFighter) +
 			"  /  ホーミング: " + keyForAction(PlayerAction::HomingFire) + " を長押し→離す";
 		highlightX = screenWidth - 445.0f; highlightY = screenHeight - 190.0f; highlightWidth = 430.0f; highlightHeight = 160.0f;
@@ -5612,14 +5731,16 @@ void GamePlayScene::DrawOverlay() {
 	DrawRadar();
 
 	bool isJammed = lockOnManager_->IsPlayerJammed(activeCamera);
+	const bool isGerwalk = player_ && player_->GetCurrentMode() == PlayerMode::Gerwalk;
+	Enemy* overlayTarget = lockedEnemy_ ? lockedEnemy_ : aimAssistEnemy_;
+	Vector3 lockedTargetPosition{};
+	const Vector3* lockedTargetPoint = nullptr;
+	float lockedTargetRadius = 0.0f;
 
-	// 黄色のターゲットマーカー (単体ロックオン / エイムアシスト時)
-	if (Enemy *overlayTarget = lockedEnemy_ ? lockedEnemy_ : aimAssistEnemy_) {
+	// 敵のロックオン枠は両形態で表示する。マルチロックの視認性も維持する。
+	if (overlayTarget) {
 		if (!overlayTarget->IsDead()) {
 			const bool isFighterLockDanger = lockedEnemy_ && lockOnManager_->IsFighterLockDanger();
-			Vector3 lockedTargetPosition{};
-			const Vector3* lockedTargetPoint = nullptr;
-			float lockedTargetRadius = 0.0f;
 			if (overlayTarget == lockedEnemy_) {
 				if (lockOnManager_->HasLockedBossTurret() || dynamic_cast<Boss*>(overlayTarget)) {
 					lockedTargetPosition = lockOnManager_->GetLockedTargetPosition();
@@ -5629,7 +5750,17 @@ void GamePlayScene::DrawOverlay() {
 			}
 			DrawLockOnOverlaySprite(overlayTarget, activeCamera->GetViewProjectionMatrix(), lockOnReticleSprite_.get(), isJammed, isFighterLockDanger, lockedTargetPoint, lockedTargetRadius);
 		}
+	}
+
+	if (isGerwalk && lockedEnemy_ && !lockedEnemy_->IsDead()) {
+		// ガウォークでは、ロックオン成立後にゲーム内カーソルも対象位置へ固定する。
+		DrawTargetTrackingCursorOverlaySprite(lockedEnemy_, activeCamera->GetViewProjectionMatrix(),
+			aimCursorSprite_.get(), isJammed, lockedTargetPoint);
+	} else if (isGerwalk) {
+		// 非ロック時は、マウス位置をそのまま狙いのターゲットカーソルとして使う。
+		DrawMouseAimCursorOverlaySprite(aimCursorSprite_.get(), isJammed);
 	} else {
+		// ファイターは機体正面の照準として中央固定レティクルを常に表示する。
 		DrawAimCursorOverlaySprite(aimCursorSprite_.get(), isJammed);
 	}
 
@@ -6293,7 +6424,8 @@ void GamePlayScene::DrawRadar() {
 	const float radarSize = (std::min)(230.0f, screenHeight * 0.30f);
 	const float radarRadius = radarSize * 0.39f;
 	const Vector2 radarCenter = {
-		screenWidth - radarSize * 0.5f - 20.0f,
+		// 右側に高度メモリ専用の余白を確保するため、レーダー本体を少し左へ寄せる。
+		screenWidth - radarSize * 0.5f - 56.0f,
 		radarSize * 0.5f + 20.0f
 	};
 
@@ -6308,6 +6440,7 @@ void GamePlayScene::DrawRadar() {
 		radarSweepAngle_ -= 6.2831853f;
 	}
 	if (radarSweepSprite_) {
+		radarSweepSprite_->SetAnchorPoint({ 0.0f, 0.5f });
 		radarSweepSprite_->SetPosition(radarCenter);
 		radarSweepSprite_->SetSize({ radarRadius, 2.0f });
 		radarSweepSprite_->SetRotation(radarSweepAngle_ - 1.5707963f);
@@ -6325,7 +6458,90 @@ void GamePlayScene::DrawRadar() {
 	const float rightX = forwardZ;
 	const float rightZ = -forwardX;
 
+	// レーダーの右側に、プレイヤーを基準にした相対高度の目盛りを描く。
+	// 敵機の高度マーカーはレーダーの三角マーカーと同じ赤色にすることで、平面上の
+	// 位置と高低差を一目で対応付けられるようにしている。
+	constexpr float kAltitudeRange = 80.0f;
+	// レーダー円の外側へ完全に出し、ブリップや円周線と重ならない位置に固定する。
+	const float altitudeScaleX = radarCenter.x + radarSize * 0.56f;
+	const float altitudeScaleHalfHeight = radarRadius * 0.88f;
+	const float altitudeScaleHeight = altitudeScaleHalfHeight * 2.0f;
+	bool drawVectorRadarMarkers = false;
+#ifdef ENABLE_IMGUI
+	ImDrawList* radarDrawList = nullptr;
+	float radarOverlayMinX = 0.0f;
+	float radarOverlayMinY = 0.0f;
+	float radarOverlayWidth = 0.0f;
+	float radarOverlayHeight = 0.0f;
+	if (ImGui::GetCurrentContext()) {
+		float maxX = 0.0f;
+		float maxY = 0.0f;
+		if (GetOverlayBounds(radarOverlayMinX, radarOverlayMinY, maxX, maxY)) {
+			radarOverlayWidth = maxX - radarOverlayMinX;
+			radarOverlayHeight = maxY - radarOverlayMinY;
+			if (radarOverlayWidth > 0.0f && radarOverlayHeight > 0.0f) {
+				radarDrawList = ImGui::GetForegroundDrawList();
+				drawVectorRadarMarkers = radarDrawList != nullptr;
+			}
+		}
+	}
+	if (drawVectorRadarMarkers) {
+		auto toRadarOverlay = [&](const Vector2& position) {
+			return ImVec2(
+				radarOverlayMinX + position.x * radarOverlayWidth / screenWidth,
+				radarOverlayMinY + position.y * radarOverlayHeight / screenHeight);
+		};
+		const ImU32 scaleColor = IM_COL32(92, 238, 255, 230);
+		const ImU32 scaleDimColor = IM_COL32(52, 156, 184, 180);
+		radarDrawList->AddLine(toRadarOverlay({ altitudeScaleX, radarCenter.y - altitudeScaleHalfHeight }),
+			toRadarOverlay({ altitudeScaleX, radarCenter.y + altitudeScaleHalfHeight }), scaleColor, 2.0f);
+		for (int tick = -4; tick <= 4; ++tick) {
+			const float tickY = radarCenter.y - static_cast<float>(tick) * (altitudeScaleHalfHeight / 4.0f);
+			const float tickWidth = tick == 0 ? 14.0f : ((tick % 2 == 0) ? 10.0f : 7.0f);
+			radarDrawList->AddLine(toRadarOverlay({ altitudeScaleX - tickWidth * 0.5f, tickY }),
+				toRadarOverlay({ altitudeScaleX + tickWidth * 0.5f, tickY }),
+				tick == 0 ? scaleColor : scaleDimColor, tick == 0 ? 2.0f : 1.0f);
+		}
+		// 自機は中央の水色三角。敵の赤三角と混同しない。
+		radarDrawList->AddTriangleFilled(
+			toRadarOverlay({ altitudeScaleX - 13.0f, radarCenter.y }),
+			toRadarOverlay({ altitudeScaleX - 21.0f, radarCenter.y - 4.5f }),
+			toRadarOverlay({ altitudeScaleX - 21.0f, radarCenter.y + 4.5f }),
+			IM_COL32(105, 240, 255, 255));
+	}
+#endif
+
+	// ImGui が利用できない構成では従来のスプライト描画をフォールバックにする。
+	if (!drawVectorRadarMarkers) {
+	auto drawAltitudeElement = [this](const Vector2& position, const Vector2& size, const Vector4& color) {
+		if (!radarSweepSprite_) {
+			return;
+		}
+		radarSweepSprite_->SetAnchorPoint({ 0.5f, 0.5f });
+		radarSweepSprite_->SetRotation(0.0f);
+		radarSweepSprite_->SetPosition(position);
+		radarSweepSprite_->SetSize(size);
+		radarSweepSprite_->SetColor(color);
+		radarSweepSprite_->Update();
+		radarSweepSprite_->Draw();
+	};
+
+	drawAltitudeElement({ altitudeScaleX, radarCenter.y }, { 2.0f, altitudeScaleHeight },
+		{ 0.12f, 0.95f, 0.72f, 0.72f });
+	for (int tick = -4; tick <= 4; ++tick) {
+		const float tickY = radarCenter.y - static_cast<float>(tick) * (altitudeScaleHalfHeight / 4.0f);
+		const float tickWidth = tick == 0 ? 12.0f : ((tick % 2 == 0) ? 9.0f : 6.0f);
+		drawAltitudeElement({ altitudeScaleX, tickY }, { tickWidth, tick == 0 ? 2.5f : 1.5f },
+			{ 0.12f, 0.95f, 0.72f, tick == 0 ? 0.95f : 0.58f });
+	}
+	// 中央の水色マーカーが自機の高度（相対高度 0）を示す。
+	drawAltitudeElement({ altitudeScaleX - 8.0f, radarCenter.y }, { 10.0f, 4.0f },
+		{ 0.25f, 0.90f, 1.0f, 1.0f });
+	}
+
 	size_t blipIndex = 0;
+	std::vector<float> placedAltitudeMarkerYs;
+	placedAltitudeMarkerYs.reserve(enemies_.size());
 	for (const auto &enemy : enemies_) {
 		if (!enemy || enemy->IsDead() || blipIndex >= radarBlipSprites_.size()) {
 			continue;
@@ -6346,16 +6562,131 @@ void GamePlayScene::DrawRadar() {
 			radarCenter.x + (localRight * positionScale / kRadarRange) * radarRadius,
 			radarCenter.y - (localForward * positionScale / kRadarRange) * radarRadius
 		});
-		const float blipSize = enemy->IsBoss() ? 12.0f : (enemy.get() == lockedEnemy_ ? 9.0f : 6.0f);
+		int multiLockCount = 0;
+		if (isMultiLockCharging_) {
+			for (const MultiLockTarget& target : multiLockTargets_) {
+				if (target.enemy == enemy.get()) {
+					++multiLockCount;
+				}
+			}
+		} else if (missileManager_) {
+			// 発射後も着弾するまでマーカーを残し、どの敵に誘導弾が向かっているか分かるようにする。
+			for (const auto& missile : missileManager_->GetMissiles()) {
+				if (missile && !missile->IsDead() && missile->GetTarget() == enemy.get()) {
+					++multiLockCount;
+				}
+			}
+		}
+
+		const float multiLockPulse = 0.78f + 0.22f * std::sin(radarSweepAngle_ * 5.0f);
+		const float blipSize = multiLockCount > 0 ? 12.0f + multiLockPulse * 3.0f
+			: (enemy->IsBoss() ? 12.0f : (enemy.get() == lockedEnemy_ ? 9.0f : 6.0f));
 		blip->SetSize({ blipSize, blipSize });
-		if (enemy.get() == lockedEnemy_) {
+		Vector4 markerColor{};
+		if (multiLockCount > 0) {
+			markerColor = { 1.0f, 0.10f, 0.12f, multiLockPulse };
+		} else if (enemy.get() == lockedEnemy_) {
+			markerColor = { 1.0f, 0.95f, 0.05f, 1.0f };
+		} else if (enemy->IsBoss()) {
+			markerColor = { 1.0f, 0.12f, 0.05f, 1.0f };
+		} else {
+			markerColor = { 1.0f, 0.38f, 0.05f, 1.0f };
+		}
+		if (drawVectorRadarMarkers) {
+			// ベクター描画時は下地の四角いスプライトを描かない。
+			blip->SetColor({ 0.0f, 0.0f, 0.0f, 0.0f });
+		} else if (multiLockCount > 0) {
+			// 赤い脈動点は、マルチロックされた敵（または同敵へ飛行中の誘導弾）を表す。
+			blip->SetColor(markerColor);
+		} else if (enemy.get() == lockedEnemy_) {
 			blip->SetColor({ 1.0f, 0.95f, 0.05f, 1.0f });
 		} else if (enemy->IsBoss()) {
 			blip->SetColor({ 1.0f, 0.12f, 0.05f, 1.0f });
 		} else {
 			blip->SetColor({ 1.0f, 0.38f, 0.05f, 1.0f });
 		}
-		blip->Update();
-		blip->Draw();
+		if (!drawVectorRadarMarkers) {
+			blip->Update();
+			blip->Draw();
+		}
+
+		const float relativeAltitude = enemyPosition.y - playerPosition.y;
+		const float altitudeRatio = std::clamp(relativeAltitude / kAltitudeRange, -1.0f, 1.0f);
+		const float altitudeY = radarCenter.y - altitudeRatio * altitudeScaleHalfHeight;
+		if (drawVectorRadarMarkers) {
+#ifdef ENABLE_IMGUI
+			auto toRadarOverlay = [&](const Vector2& position) {
+				return ImVec2(
+					radarOverlayMinX + position.x * radarOverlayWidth / screenWidth,
+					radarOverlayMinY + position.y * radarOverlayHeight / screenHeight);
+			};
+			const Vector2 blipPosition = {
+				radarCenter.x + (localRight * positionScale / kRadarRange) * radarRadius,
+				radarCenter.y - (localForward * positionScale / kRadarRange) * radarRadius
+			};
+			const float triangleSize = enemy->IsBoss() ? 8.0f : 6.0f;
+			const int markerAlpha = multiLockCount > 0
+				? static_cast<int>(170.0f + 85.0f * multiLockPulse) : 255;
+			const ImU32 enemyColor = IM_COL32(255, 54, 62, markerAlpha);
+
+			// 通常の敵は常に赤い三角で表示する。先端はレーダー上の前方を向く。
+			radarDrawList->AddTriangleFilled(
+				toRadarOverlay({ blipPosition.x, blipPosition.y - triangleSize }),
+				toRadarOverlay({ blipPosition.x - triangleSize * 0.82f, blipPosition.y + triangleSize * 0.72f }),
+				toRadarOverlay({ blipPosition.x + triangleSize * 0.82f, blipPosition.y + triangleSize * 0.72f }),
+				enemyColor);
+			if (multiLockCount > 0) {
+				// マルチロック済みは、三角を囲むリングで明確に区別する。
+				const float ringRadius = triangleSize + 4.0f + multiLockPulse * 2.0f;
+				radarDrawList->AddCircle(toRadarOverlay(blipPosition), ringRadius, enemyColor, 20, 2.0f);
+			}
+
+			// 高度目盛り上にも、対応する赤い横マーカーを出す。
+			float displayAltitudeY = altitudeY;
+			constexpr float kAltitudeMarkerMinimumSpacing = 10.0f;
+			for (int attempt = 0; attempt < 12; ++attempt) {
+				if (attempt > 0) {
+					const float direction = (attempt % 2 == 0) ? 1.0f : -1.0f;
+					const float distance = static_cast<float>((attempt + 1) / 2) * 12.0f;
+					displayAltitudeY = std::clamp(
+						altitudeY + direction * distance,
+						radarCenter.y - altitudeScaleHalfHeight + 4.0f,
+						radarCenter.y + altitudeScaleHalfHeight - 4.0f);
+				}
+				bool hasEnoughSpace = true;
+				for (float placedY : placedAltitudeMarkerYs) {
+					if (std::abs(displayAltitudeY - placedY) < kAltitudeMarkerMinimumSpacing) {
+						hasEnoughSpace = false;
+						break;
+					}
+				}
+				if (hasEnoughSpace) {
+					break;
+				}
+			}
+			placedAltitudeMarkerYs.push_back(displayAltitudeY);
+			const float altitudeMarkerWidth = multiLockCount > 0 ? 18.0f : 12.0f;
+			radarDrawList->AddLine(
+				toRadarOverlay({ altitudeScaleX + 3.0f, displayAltitudeY }),
+				toRadarOverlay({ altitudeScaleX + altitudeMarkerWidth, displayAltitudeY }),
+				enemyColor, multiLockCount > 0 ? 3.0f : 2.0f);
+#endif
+		} else {
+			const float altitudeMarkerWidth = multiLockCount > 0 ? 16.0f : 10.0f;
+			auto drawAltitudeElement = [this](const Vector2& position, const Vector2& size, const Vector4& color) {
+				if (!radarSweepSprite_) {
+					return;
+				}
+				radarSweepSprite_->SetAnchorPoint({ 0.5f, 0.5f });
+				radarSweepSprite_->SetRotation(0.0f);
+				radarSweepSprite_->SetPosition(position);
+				radarSweepSprite_->SetSize(size);
+				radarSweepSprite_->SetColor(color);
+				radarSweepSprite_->Update();
+				radarSweepSprite_->Draw();
+			};
+			drawAltitudeElement({ altitudeScaleX + altitudeMarkerWidth * 0.5f + 2.0f, altitudeY },
+				{ altitudeMarkerWidth, multiLockCount > 0 ? 4.0f : 3.0f }, markerColor);
+		}
 	}
 }

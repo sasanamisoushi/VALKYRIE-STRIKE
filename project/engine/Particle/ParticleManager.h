@@ -22,6 +22,14 @@ public://構造体定義
 		float initialScale;
 		float finalScale;
 		Vector4 color;
+		// 同じ粒子の寿命内で色を変化させるためのパラメータ。
+		// 炎から煙への遷移など、別の粒子を発生させずに表現できる。
+		Vector4 startColor;
+		Vector4 endColor;
+		float colorTransitionStart = 0.0f;
+		float velocityDrag = 0.0f;
+		float upwardAcceleration = 0.0f;
+		bool useColorTransition = false;
 		float lifeTime;
 		float currentTime;
 	};
@@ -115,6 +123,9 @@ public://メンバ関数
 	//パーティクルグループの生成
 	void CreateParticleGroup(const std::string name, const std::string textureFilePath);
 	void SetParticleGroupAlphaBlend(const std::string& name, bool enabled);
+	// エディタのプレビューを即座に消去・集計するための操作。
+	void ClearParticleGroup(const std::string& name);
+	std::size_t GetParticleCount(const std::string& name) const;
 
 	void Emit(const std::string name, const Vector3 &position, uint32_t count, const Vector4 &color,
 		float speed = 0.5f, float speedVariance = 0.2f,
@@ -140,6 +151,14 @@ public://メンバ関数
 		float riseSpeed, float spreadSpeed,
 		float lifeTimeMin, float lifeTimeMax,
 		float posVariance);
+
+	// 炎色で発生して、減速・上昇しながら煙色へ変化する単一粒子のバースト。
+	void EmitFlameToSmoke(const std::string& name, const Vector3& position, uint32_t count,
+		const Vector4& flameColor, const Vector4& smokeColor,
+		float initialScale, float finalScale,
+		float speed, float speedVariance,
+		float lifeTimeMin, float lifeTimeMax,
+		float posVariance, float transitionStart);
 
 	// getter/setter
 	EmitterSphere* GetEmitterSphere() { return emitterDataPtr_; }

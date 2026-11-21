@@ -330,6 +330,7 @@ void Model::CreateMaterialData() {
 	//今回は赤を書き込んで見る
 	materialData->color = modelData.material.color;
 	materialData->enableLighting = 1;
+	materialData->doubleSidedLighting = 0;
 	materialData->uvTransform = math->MakeIdentity4x4();
 
 	materialData->shininess = 40.0f;
@@ -1216,6 +1217,118 @@ void Model::InitializeCylinder(ModelCommon *modelCommon,
 	textureFilePath_ = "resources/gradationLine.png";
 	modelData.material.textureFilePath = textureFilePath_;
 	TextureManager::GetInstance()->LoadTexture(textureFilePath_);
+	modelData.material.textureIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(textureFilePath_);
+	RecalculateBounds();
+}
+
+void Model::InitializeCylinderShell(ModelCommon* modelCommon,
+	int subdivision, int verticalSubdivision, float radius, float height, float thickness,
+	float startAngleDegree, float endAngleDegree) {
+	this->modelCommon_ = modelCommon;
+	modelData = ModelData{};
+	textureFilePath_ = "resources/white1x1.png";
+	TextureManager::GetInstance()->LoadTexture(textureFilePath_);
+
+	subdivision = (std::max)(1, subdivision);
+	verticalSubdivision = (std::max)(1, verticalSubdivision);
+	const float safeThickness = (std::max)(0.001f, thickness);
+	const float outerRadius = (std::max)(0.001f, radius + safeThickness * 0.5f);
+	const float innerRadius = (std::max)(0.001f, radius - safeThickness * 0.5f);
+	if (endAngleDegree <= startAngleDegree) endAngleDegree += 360.0f;
+
+	constexpr float kPi = 3.1415926535f;
+	const float startRadians = startAngleDegree * kPi / 180.0f;
+	const float totalRadians = (endAngleDegree - startAngleDegree) * kPi / 180.0f;
+
+	auto makeVertex = [](const Vector3& position, const Vector3& normal, float u, float v) {
+		VertexData vertex{};
+		vertex.position = { position.x, position.y, position.z, 1.0f };
+		vertex.normal = { normal.x, normal.y, normal.z, 0.0f };
+		vertex.texcoord = { u, v, 0.0f, 0.0f };
+		vertex.color = { 1.0f, 1.0f, 1.0f, 1.0f };
+		return vertex;
+	};
+	auto appendQuad = [this](const VertexData& a, const VertexData& b,
+		const VertexData& c, const VertexData& d) {
+		modelData.vertices.push_back(a);
+		modelData.vertices.push_back(c);
+		modelData.vertices.push_back(b);
+		modelData.vertices.push_back(a);
+		modelData.vertices.push_back(d);
+		modelData.vertices.push_back(c);
+	};
+
+	std::vector<std::vector<VertexData>> outer(verticalSubdivision + 1,
+		std::vector<VertexData>(subdivision + 1));
+	std::vector<std::vector<VertexData>> inner(verticalSubdivision + 1,
+		std::vector<VertexData>(subdivision + 1));
+	for (int vertical = 0; vertical <= verticalSubdivision; ++vertical) {
+		const float verticalRatio = static_cast<float>(vertical) / verticalSubdivision;
+		const float y = height * verticalRatio;
+		for (int horizontal = 0; horizontal <= subdivision; ++horizontal) {
+			const float horizontalRatio = static_cast<float>(horizontal) / subdivision;
+			const float angle = startRadians + totalRadians * horizontalRatio;
+			const float sine = std::sin(angle);
+			const float cosine = std::cos(angle);
+			const Vector3 outerNormal = { -sine, 0.0f, cosine };
+			outer[vertical][horizontal] = makeVertex(
+				{ outerNormal.x * outerRadius, y, outerNormal.z * outerRadius },
+				outerNormal, horizontalRatio, 1.0f - verticalRatio);
+			inner[vertical][horizontal] = makeVertex(
+				{ outerNormal.x * innerRadius, y, outerNormal.z * innerRadius },
+				{ -outerNormal.x, 0.0f, -outerNormal.z }, 1.0f - horizontalRatio, 1.0f - verticalRatio);
+		}
+	}
+
+	// 外面と内面。内面は巻き順を反転して、内側から正面として描画されるようにする。
+	for (int vertical = 0; vertical < verticalSubdivision; ++vertical) {
+		for (int horizontal = 0; horizontal < subdivision; ++horizontal) {
+			appendQuad(outer[vertical][horizontal], outer[vertical + 1][horizontal],
+				outer[vertical + 1][horizontal + 1], outer[vertical][horizontal + 1]);
+			appendQuad(inner[vertical][horizontal + 1], inner[vertical + 1][horizontal + 1],
+				inner[vertical + 1][horizontal], inner[vertical][horizontal]);
+		}
+	}
+
+	// 円弧の左右端を塞ぐ。ここが見えることで真横からも厚みを認識できる。
+	for (int vertical = 0; vertical < verticalSubdivision; ++vertical) {
+		for (int end = 0; end < 2; ++end) {
+			const int horizontal = end == 0 ? 0 : subdivision;
+			const float angle = startRadians + totalRadians * (end == 0 ? 0.0f : 1.0f);
+			const Vector3 capNormal = end == 0
+				? Vector3{ std::cos(angle), 0.0f, std::sin(angle) }
+				: Vector3{ -std::cos(angle), 0.0f, -std::sin(angle) };
+			auto makeCapVertex = [&](const VertexData& source) {
+				return makeVertex({ source.position.x, source.position.y, source.position.z }, capNormal,
+					source.texcoord.x, source.texcoord.y);
+			};
+			appendQuad(makeCapVertex(inner[vertical][horizontal]), makeCapVertex(inner[vertical + 1][horizontal]),
+				makeCapVertex(outer[vertical + 1][horizontal]), makeCapVertex(outer[vertical][horizontal]));
+		}
+	}
+
+	// 上面・下面も閉じ、斜め上や斜め下から見ても中空に見えないようにする。
+	for (int horizontal = 0; horizontal < subdivision; ++horizontal) {
+		const Vector3 topNormal = { 0.0f, 1.0f, 0.0f };
+		const Vector3 bottomNormal = { 0.0f, -1.0f, 0.0f };
+		auto makeCapVertex = [&](const VertexData& source, const Vector3& normal) {
+			return makeVertex({ source.position.x, source.position.y, source.position.z }, normal,
+				source.texcoord.x, source.texcoord.y);
+		};
+		appendQuad(makeCapVertex(outer[verticalSubdivision][horizontal], topNormal),
+			makeCapVertex(outer[verticalSubdivision][horizontal + 1], topNormal),
+			makeCapVertex(inner[verticalSubdivision][horizontal + 1], topNormal),
+			makeCapVertex(inner[verticalSubdivision][horizontal], topNormal));
+		appendQuad(makeCapVertex(inner[0][horizontal], bottomNormal),
+			makeCapVertex(inner[0][horizontal + 1], bottomNormal),
+			makeCapVertex(outer[0][horizontal + 1], bottomNormal),
+			makeCapVertex(outer[0][horizontal], bottomNormal));
+	}
+
+	CreateVertexData();
+	CreateMaterialData();
+	if (materialData) materialData->enableLighting = 0;
+	modelData.material.textureFilePath = textureFilePath_;
 	modelData.material.textureIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(textureFilePath_);
 	RecalculateBounds();
 }

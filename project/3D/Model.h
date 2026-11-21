@@ -121,7 +121,9 @@ struct ModelData {
 struct Material {
 	Vector4 color;
 	int32_t enableLighting;
-	float padding[3];
+	// 背面を描くときに法線を反転して照らす。薄い曲面シールド専用の設定。
+	int32_t doubleSidedLighting;
+	float padding[2];
 	Matrix4x4 uvTransform;
 	float shininess;
 	float alphaReference;
@@ -187,6 +189,11 @@ public:
 		float startAngleDegree = 0.0f, float endAngleDegree = 360.0f,
 		bool isUvFlipped = false);
 
+	// 内側・外側・端面を持つ、厚み付きの円弧シェルを生成する。
+	void InitializeCylinderShell(ModelCommon* modelCommon,
+		int subdivision, int verticalSubdivision, float radius, float height, float thickness,
+		float startAngleDegree, float endAngleDegree);
+
 	// ラインの初期化
 	void InitializeLine(ModelCommon *modelCommon);
 	void UpdateLineVertices(const std::vector<VertexData>& lines);
@@ -223,6 +230,13 @@ public:
 	void SetEnableLighting(bool enable) {
 		if (materialData) {
 			materialData->enableLighting = enable ? 1 : 0;
+		}
+	}
+
+	// カリングなしで描く曲面について、内側から見た背面にも正しい照明を適用する。
+	void SetDoubleSidedLighting(bool enable) {
+		if (materialData) {
+			materialData->doubleSidedLighting = enable ? 1 : 0;
 		}
 	}
 

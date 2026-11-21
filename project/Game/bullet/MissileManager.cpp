@@ -27,7 +27,9 @@ void MissileManager::Initialize(ParticleManager* particleManager) {
 	missiles_.clear();
 }
 
-void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies, const std::list<std::unique_ptr<Obstacle>> &obstacles, std::vector<Vector3> &hitPositions, std::vector<Vector3> &destroyedPositions) {
+void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies,
+    const std::list<std::unique_ptr<Obstacle>> &obstacles,
+    std::vector<Vector3> &hitPositions, std::vector<Enemy *> &destroyedEnemies) {
     for (auto it = missiles_.begin(); it != missiles_.end(); ) {
         Missile *missile = it->get();
 
@@ -155,23 +157,53 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
         if (!hitObstacle) {
             for (auto &enemy : enemies) {
                 if (enemy->CanReceiveDamage() && !missile->IsDead()) {
-                    // ボスなどは、船体 OBB の外へ張り出す砲台も個別に判定する。
-                    if (enemy->IsHitBy(bulletSphere)) {
+                    // 前フレームから今フレームまでを分割して調べる。
+                    // 実際に敵の当たり判定を横切った弾は命中する一方、敵が横へ回避して
+                    // 経路にいなければ命中しないため、ロックオンによる必中にはならない。
+                    const Vector3 travel = {
+                        mPos.x - previousPos.x,
+                        mPos.y - previousPos.y,
+                        mPos.z - previousPos.z
+                    };
+                    const float travelLength = std::sqrt(
+                        travel.x * travel.x + travel.y * travel.y + travel.z * travel.z);
+                    const float sampleSpacing = (std::max)(0.10f, missile->GetCollisionRadius() * 0.5f);
+                    const int sampleCount = (std::min)(16,
+                        (std::max)(1, static_cast<int>(std::ceil(travelLength / sampleSpacing))));
+                    Sphere impactSphere = bulletSphere;
+                    bool hitEnemy = false;
+                    for (int sampleIndex = 1; sampleIndex <= sampleCount; ++sampleIndex) {
+                        const float t = static_cast<float>(sampleIndex) / static_cast<float>(sampleCount);
+                        impactSphere.center = {
+                            previousPos.x + travel.x * t,
+                            previousPos.y + travel.y * t,
+                            previousPos.z + travel.z * t
+                        };
+                        if (enemy->IsHitBy(impactSphere)) {
+                            hitEnemy = true;
+                            break;
+                        }
+                    }
+
+                    if (hitEnemy) {
                         missile->OnCollision();
                         // ボスなど部位ごとの当たり判定を持つ敵へ、実際の着弾位置を渡す。
                         // 通常敵は Enemy::TakeDamageAt が既存の本体ダメージへ委譲する。
                         if (missile->HasTargetPoint() && missile->GetTarget() == enemy.get()) {
                             enemy->TakeDamageAtTargetPoint(1, missile->GetTargetPoint(),
-                                missile->GetPosition(), missile->GetVelocity());
+                                impactSphere.center, missile->GetVelocity());
                         } else {
-                            enemy->TakeDamageAt(1, missile->GetPosition(), missile->GetVelocity());
+                            enemy->TakeDamageAt(1, impactSphere.center, missile->GetVelocity());
                         }
 
                         if (enemy->IsDead()) {
-                            destroyedPositions.push_back(enemy->GetAimPosition());
+                            // 削除はシーン側が後で行うため、このフレーム中は実型を保持できる。
+                            // これにより敵種別ごとの撃破パーティクルを選択できる。
+                            destroyedEnemies.push_back(enemy.get());
                         } else {
-                            hitPositions.push_back(missile->GetPosition());
+                            hitPositions.push_back(impactSphere.center);
                         }
+                        break;
                     }
                 }
             }

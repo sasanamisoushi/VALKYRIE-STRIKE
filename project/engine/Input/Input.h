@@ -145,6 +145,8 @@ public:
 	long GetMouseDeltaY() const { return mouseState_.lY; }
 	// マウスホイールの回転量（上=正, 下=負）
 	long GetMouseWheel() const { return mouseState_.lZ; }
+	// OSカーソルのクライアント座標を取得する。画面外の値はゲーム領域へ丸める。
+	bool GetMouseClientPosition(POINT& position) const;
 	void SetMouseCursorClipEnabled(bool enabled);
 	bool IsMouseCursorClipEnabled() const { return isMouseCursorClipEnabled_; }
 	void SetMouseCursorClipRect(float minX, float minY, float maxX, float maxY);

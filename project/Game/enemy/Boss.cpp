@@ -52,6 +52,7 @@ constexpr float kSideShieldChordLength = 7.3200f;
 constexpr float kSideShieldArcRadius = kSideShieldChordLength / 1.41421356f;
 constexpr float kSideShieldArcHalfAngle = 45.0f;
 constexpr float kSideShieldAnchorOffset = 0.0800f;
+constexpr float kSideShieldShellThickness = 0.18f;
 constexpr int kSideShieldArcSubdivisions = 16;
 constexpr int kSideShieldDeployFrames = 72;
 constexpr char kSideShieldTexturePath[] = "resources/boss_hex_shield_blue.png";
@@ -336,6 +337,7 @@ void Boss::Initialize(const Vector3 &position) {
     turretHP_.fill(kTurretMaxHP);
     turretDestroyed_.fill(false);
     sideShieldDeployProgress_ = 0.0f;
+    sideShieldBuiltProgress_ = -1.0f;
     UpdateRearThrusters();
     UpdateModel();
 }
@@ -923,13 +925,14 @@ void Boss::InitializeSideShields() {
     ModelManager* modelManager = ModelManager::GetInstance();
     for (const char* modelName : kSideShieldModels) {
         // 初期状態はほぼ閉じた円弧。UpdateSideShields() で左右から開く角度へ更新する。
-        modelManager->CreateCylinderArcModel(modelName, kSideShieldArcSubdivisions,
-            kSideShieldArcRadius, kSideShieldHeight, 45.0f, 45.1f);
+        modelManager->CreateCylinderArcShellModel(modelName, kSideShieldArcSubdivisions,
+            kSideShieldArcRadius, kSideShieldHeight, kSideShieldShellThickness, 45.0f, 45.1f);
         Model* model = modelManager->FindModel(modelName);
         if (!model) continue;
         model->SetTextureFilePath(kSideShieldTexturePath);
         // 曲面の法線へ光を当て、カメラ角度によっても円弧の陰影を見せる。
         model->SetEnableLighting(true);
+		model->SetDoubleSidedLighting(true);
         model->SetShininess(24.0f);
         model->SetAlphaReference(0.0f);
         model->SetColor({ 0.30f, 0.78f, 1.00f, 0.0f });
@@ -950,6 +953,8 @@ void Boss::UpdateSideShields() {
     const float arcAngle = kSideShieldArcHalfAngle * (std::max)(0.001f, sideShieldDeployProgress_);
     const float endpointInset = kSideShieldArcRadius * 0.70710678f;
     const float alpha = tuning_.sideShieldOpacity * sideShieldDeployProgress_;
+    const bool needsMeshRebuild = std::abs(sideShieldBuiltProgress_ - sideShieldDeployProgress_) > 0.0001f;
+    if (needsMeshRebuild) sideShieldBuiltProgress_ = sideShieldDeployProgress_;
 
     for (size_t face = 0; face < 2; ++face) {
         // face は表裏ではなく、ボスの左舷・右舷を表す。
@@ -968,12 +973,14 @@ void Boss::UpdateSideShields() {
             // 各端を平面の左右端へ固定し、中央だけが外側へ膨らむ円弧にする。
             Model* model = ModelManager::GetInstance()->FindModel(kSideShieldModels[face * 2 + half]);
             if (model) {
-                model->InitializeCylinder(model->GetModelCommon(), kSideShieldArcSubdivisions, 6,
-                    kSideShieldArcRadius, kSideShieldArcRadius, kSideShieldArcRadius, kSideShieldArcRadius,
-                    kSideShieldHeight, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f, 1.0f },
-                    startAngle, endAngle);
+                if (needsMeshRebuild) {
+                    model->InitializeCylinderShell(model->GetModelCommon(), kSideShieldArcSubdivisions, 6,
+                        kSideShieldArcRadius, kSideShieldHeight, kSideShieldShellThickness,
+                        startAngle, endAngle);
+                }
                 model->SetTextureFilePath(kSideShieldTexturePath);
                 model->SetEnableLighting(true);
+				model->SetDoubleSidedLighting(true);
                 model->SetShininess(24.0f);
                 model->SetAlphaReference(0.0f);
                 model->SetColor({ 0.30f, 0.78f, 1.00f, alpha });

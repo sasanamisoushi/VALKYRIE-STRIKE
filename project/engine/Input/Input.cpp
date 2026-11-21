@@ -1,4 +1,5 @@
 #include "Input.h"
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <externals/imgui/imgui.h>
@@ -412,6 +413,27 @@ bool Input::TriggerMouseButton(int button) const {
 	if (button < 0 || button > 3) return false;
 	return ((mouseState_.rgbButtons[button] & 0x80) != 0) &&
 	       ((mouseStatePre_.rgbButtons[button] & 0x80) == 0);
+}
+
+bool Input::GetMouseClientPosition(POINT& position) const {
+	if (!winApp_ || !winApp_->GetHwnd()) {
+		return false;
+	}
+
+	POINT screenPosition{};
+	if (!GetCursorPos(&screenPosition) || !ScreenToClient(winApp_->GetHwnd(), &screenPosition)) {
+		return false;
+	}
+
+	RECT clientRect{};
+	if (!GetClientRect(winApp_->GetHwnd(), &clientRect) ||
+		clientRect.right <= clientRect.left || clientRect.bottom <= clientRect.top) {
+		return false;
+	}
+
+	position.x = (std::clamp)(screenPosition.x, clientRect.left, clientRect.right - 1);
+	position.y = (std::clamp)(screenPosition.y, clientRect.top, clientRect.bottom - 1);
+	return true;
 }
 
 void Input::SetMouseCursorClipEnabled(bool enabled) {
