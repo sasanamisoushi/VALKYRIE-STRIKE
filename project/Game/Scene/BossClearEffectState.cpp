@@ -2,6 +2,7 @@
 
 void BossClearEffectState::Reset() {
 	smokeSeconds_ = 0.0f;
+	fallingExplosionSeconds_ = 0.0f;
 	phase3Initialized_ = false;
 	missionClearUiStarted_ = false;
 	missionClearUiSeconds_ = 0.0f;
@@ -17,6 +18,15 @@ bool BossClearEffectState::ShouldEmitSmoke(float deltaSeconds, float intervalSec
 		return false;
 	}
 	smokeSeconds_ = 0.0f;
+	return true;
+}
+
+bool BossClearEffectState::ShouldEmitFallingExplosion(float deltaSeconds, float intervalSeconds) {
+	fallingExplosionSeconds_ += deltaSeconds;
+	if (fallingExplosionSeconds_ < intervalSeconds) {
+		return false;
+	}
+	fallingExplosionSeconds_ = 0.0f;
 	return true;
 }
 

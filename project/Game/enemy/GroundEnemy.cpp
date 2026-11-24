@@ -244,6 +244,7 @@ void GroundEnemy::Initialize(const Vector3 &position) {
     legMotionBlend_ = 0.0f;
     destructionFrames_ = 0;
     finalExplosionQueued_ = false;
+    finalDestructionEffect_ = DestructionEffect::Standard;
     turretDetached_ = false;
     legDetached_.fill(false);
     pendingEffectEvents_.clear();
@@ -348,8 +349,9 @@ std::vector<GroundEnemy::EffectEvent> GroundEnemy::ConsumeEffectEvents() {
     return events;
 }
 
-void GroundEnemy::QueueEffect(EffectEvent::Type type, const Vector3 &position, const Vector3 &direction) {
-    pendingEffectEvents_.push_back({ type, position, direction });
+void GroundEnemy::QueueEffect(EffectEvent::Type type, const Vector3 &position, const Vector3 &direction,
+    DestructionEffect destructionEffect) {
+    pendingEffectEvents_.push_back({ type, position, direction, destructionEffect });
 }
 
 void GroundEnemy::TakeDamage(int damage, const Vector3 &hitDirection) {
@@ -507,7 +509,8 @@ void GroundEnemy::UpdateDestruction() {
             legDebrisRotations_[i] = visualRotation_;
         }
     }
-    if (destructionFrames_ == 14 || destructionFrames_ == 27 || destructionFrames_ == 40 || destructionFrames_ == 53) {
+    if (finalDestructionEffect_ == DestructionEffect::Standard &&
+        (destructionFrames_ == 14 || destructionFrames_ == 27 || destructionFrames_ == 40 || destructionFrames_ == 53)) {
         destructionState_ = DestructionState::ChainDetonating;
         const int index = destructionFrames_ / 13;
         const Vector3 local = {
@@ -522,7 +525,7 @@ void GroundEnemy::UpdateDestruction() {
 
     if (destructionFrames_ >= 66 && !finalExplosionQueued_) {
         finalExplosionQueued_ = true;
-        QueueEffect(EffectEvent::Type::FinalExplosion, position_, hitDirection_);
+        QueueEffect(EffectEvent::Type::FinalExplosion, position_, hitDirection_, finalDestructionEffect_);
         isDead_ = true;
     }
 }

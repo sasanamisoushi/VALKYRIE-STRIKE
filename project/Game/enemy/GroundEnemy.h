@@ -25,6 +25,14 @@ public:
     bool CanReceiveDamage() const override;
     int GetMaxHP() const override { return kMaxHP; }
 
+    // 最終撃破時の演出を、致命傷を与えた武器種に合わせて切り替える。
+    enum class DestructionEffect {
+        Standard,
+        NormalShot,
+        HomingMissile,
+    };
+    void SetFinalDestructionEffect(DestructionEffect effect) { finalDestructionEffect_ = effect; }
+
     // Scene 側が粒子・爆発マネージャへ渡す演出要求。敵ロジックを描画実装から分離する。
     struct EffectEvent {
         enum class Type {
@@ -37,6 +45,7 @@ public:
         Type type = Type::ArmorSpark;
         Vector3 position{};
         Vector3 direction{};
+        DestructionEffect destructionEffect = DestructionEffect::Standard;
     };
     std::vector<EffectEvent> ConsumeEffectEvents();
 
@@ -57,7 +66,8 @@ private:
     void UpdateDetachedParts();
     void UpdateDamageGlow();
     Vector3 GetLocalPartPosition(const Vector3 &localPosition) const;
-    void QueueEffect(EffectEvent::Type type, const Vector3 &position, const Vector3 &direction = { 0.0f, 0.0f, 0.0f });
+    void QueueEffect(EffectEvent::Type type, const Vector3 &position, const Vector3 &direction = { 0.0f, 0.0f, 0.0f },
+        DestructionEffect destructionEffect = DestructionEffect::Standard);
     float GetFootOffset() const;
 
     enum class LocomotionMode {
@@ -147,6 +157,7 @@ private:
 
     int destructionFrames_ = 0;
     bool finalExplosionQueued_ = false;
+    DestructionEffect finalDestructionEffect_ = DestructionEffect::Standard;
     bool turretDetached_ = false;
     std::array<bool, 4> legDetached_{};
     Vector3 turretDebrisPosition_{};

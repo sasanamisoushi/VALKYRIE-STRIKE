@@ -1,5 +1,7 @@
 #include "MissileManager.h"
+#include "Game/enemy/Boss.h"
 #include "Game/enemy/Enemy.h"
+#include "Game/enemy/GroundEnemy.h"
 #include "Game/obstacle/Obstacle.h" // 追加
 #include <cmath>
 
@@ -29,7 +31,9 @@ void MissileManager::Initialize(ParticleManager* particleManager) {
 
 void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies,
     const std::list<std::unique_ptr<Obstacle>> &obstacles,
-    std::vector<Vector3> &hitPositions, std::vector<DefeatedEnemy> &destroyedEnemies) {
+    std::vector<Vector3> &hitPositions, std::vector<Vector3>& homingHitPositions,
+	std::vector<ShieldImpact>& shieldImpacts,
+    std::vector<DefeatedEnemy> &destroyedEnemies) {
     for (auto it = missiles_.begin(); it != missiles_.end(); ) {
         Missile *missile = it->get();
 
@@ -151,7 +155,11 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
         }
 
 		if (hitObstacle) {
-			hitPositions.push_back(missile->GetPosition());
+			if (missile->GetType() == MissileType::MissileWithTrail) {
+				homingHitPositions.push_back(missile->GetPosition());
+			} else {
+				hitPositions.push_back(missile->GetPosition());
+			}
 		}
 
         if (!hitObstacle) {
@@ -187,6 +195,14 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
 
                     if (hitEnemy) {
                         missile->OnCollision();
+						// シールド防御中のボスには、本体の橙色ヒットを出さない。
+						Vector3 shieldNormal{};
+						const bool hitActiveShield = [&]() {
+							if (Boss* boss = dynamic_cast<Boss*>(enemy.get())) {
+								return boss->GetActiveSideShieldImpact(impactSphere.center, impactSphere.radius, shieldNormal);
+							}
+							return false;
+						}();
                         // ボスなど部位ごとの当たり判定を持つ敵へ、実際の着弾位置を渡す。
                         // 通常敵は Enemy::TakeDamageAt が既存の本体ダメージへ委譲する。
                         if (missile->HasTargetPoint() && missile->GetTarget() == enemy.get()) {
@@ -196,12 +212,30 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
                             enemy->TakeDamageAt(1, impactSphere.center, missile->GetVelocity(), impactSphere.radius);
                         }
 
+                        // 地上敵は即死せず、固有の倒壊シーケンスを経てから最終演出を出す。
+                        // 致命傷を与えた弾種をここで記録しておく。
+                        bool startedGroundEnemyDestruction = false;
+                        if (GroundEnemy* groundEnemy = dynamic_cast<GroundEnemy*>(enemy.get());
+                            groundEnemy && !groundEnemy->CanReceiveDamage()) {
+                            groundEnemy->SetFinalDestructionEffect(
+                                missile->GetType() == MissileType::Normal
+                                    ? GroundEnemy::DestructionEffect::NormalShot
+                                    : GroundEnemy::DestructionEffect::HomingMissile);
+                            startedGroundEnemyDestruction = true;
+                        }
+
                         if (enemy->IsDead()) {
                             // 削除はシーン側が後で行うため、このフレーム中は実型を保持できる。
                             // これにより敵種別と撃破した弾種ごとの演出を選択できる。
                             destroyedEnemies.push_back({ enemy.get(), missile->GetType() });
-                        } else {
-                            hitPositions.push_back(impactSphere.center);
+						} else if (hitActiveShield) {
+							shieldImpacts.push_back({ impactSphere.center, shieldNormal });
+						} else if (!startedGroundEnemyDestruction) {
+							if (missile->GetType() == MissileType::MissileWithTrail) {
+								homingHitPositions.push_back(impactSphere.center);
+							} else {
+								hitPositions.push_back(impactSphere.center);
+							}
                         }
                         break;
                     }

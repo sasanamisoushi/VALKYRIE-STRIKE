@@ -5,7 +5,8 @@
 #include "engine/Particle/ParticleManager.h"
 
 void GroundEnemyEffectProcessor::Process(GroundEnemy& enemy, ExplosionManager* explosionManager,
-	ParticleManager* particleManager) const {
+	ParticleManager* particleManager, const std::function<void(GroundEnemy&)>& onNormalShotDefeat,
+	const std::function<void(GroundEnemy&)>& onHomingMissileDefeat) const {
 	for (const GroundEnemy::EffectEvent& effect : enemy.ConsumeEffectEvents()) {
 		switch (effect.type) {
 		case GroundEnemy::EffectEvent::Type::ArmorSpark:
@@ -41,14 +42,33 @@ void GroundEnemyEffectProcessor::Process(GroundEnemy& enemy, ExplosionManager* e
 			}
 			break;
 		case GroundEnemy::EffectEvent::Type::FinalExplosion:
-			if (explosionManager) {
-				explosionManager->CreateDestructionEffects(
-					{ effect.position }, ExplosionManager::EffectTarget::GroundEnemy);
-			}
-			if (particleManager) {
-				particleManager->EmitDirectionalBurst("smoke", effect.position, { 0.0f, 1.0f, 0.0f }, 64,
-					{ 0.28f, 0.20f, 0.14f, 0.90f }, 1.30f,
-					0.55f, 0.22f, 0.22f, 0.10f, 0.55f, 1.10f, 0.80f);
+			switch (effect.destructionEffect) {
+			case GroundEnemy::DestructionEffect::NormalShot:
+				// 通常弾はリングを出さない。Scene 側で火花と実体破片を飛散させる。
+				if (onNormalShotDefeat) {
+					onNormalShotDefeat(enemy);
+				}
+				break;
+			case GroundEnemy::DestructionEffect::HomingMissile:
+				// 誘導弾は爆炎を出さず、リングと敵モデルを中心へ収束させる。
+				if (explosionManager) {
+					explosionManager->CreateImplosionEffects({ effect.position });
+				}
+				if (onHomingMissileDefeat) {
+					onHomingMissileDefeat(enemy);
+				}
+				break;
+			case GroundEnemy::DestructionEffect::Standard:
+				if (explosionManager) {
+					explosionManager->CreateDestructionEffects(
+						{ effect.position }, ExplosionManager::EffectTarget::GroundEnemy);
+				}
+				if (particleManager) {
+					particleManager->EmitDirectionalBurst("smoke", effect.position, { 0.0f, 1.0f, 0.0f }, 64,
+						{ 0.28f, 0.20f, 0.14f, 0.90f }, 1.30f,
+						0.55f, 0.22f, 0.22f, 0.10f, 0.55f, 1.10f, 0.80f);
+				}
+				break;
 			}
 			break;
 		}

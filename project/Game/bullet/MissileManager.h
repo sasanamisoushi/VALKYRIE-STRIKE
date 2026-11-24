@@ -15,6 +15,10 @@ public:
         Enemy* enemy = nullptr;
         MissileType projectileType = MissileType::Normal;
     };
+	struct ShieldImpact {
+		Vector3 position{};
+		Vector3 normal{};
+	};
 
     // 初期化（リストを空にするなど）
     void Initialize(ParticleManager* particleManager);
@@ -22,7 +26,9 @@ public:
     // 全ミサイルの更新と、死んだミサイルの削除
     void Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies,
         const std::list<std::unique_ptr<Obstacle>> &obstacles,
-        std::vector<Vector3> &hitPositions, std::vector<DefeatedEnemy> &destroyedEnemies);
+        std::vector<Vector3> &hitPositions, std::vector<Vector3>& homingHitPositions,
+		std::vector<ShieldImpact>& shieldImpacts,
+        std::vector<DefeatedEnemy> &destroyedEnemies);
 
     void UpdateModels(Camera *camera = nullptr);
 

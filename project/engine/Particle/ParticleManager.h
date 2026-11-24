@@ -139,6 +139,11 @@ public://メンバ関数
 		float scale = 0.1f, float scaleVariance = 0.05f,
 		float lifeTimeMin = 0.5f, float lifeTimeMax = 1.0f,
 		float posVariance = 0.1f);
+	// 球面上に配置した粒子を中心へ向けて飛ばす、収束・吸い込み演出用のバースト。
+	void EmitInwardBurst(const std::string name, const Vector3& position, uint32_t count,
+		const Vector4& color, float innerRadius, float outerRadius,
+		float speed, float speedVariance, float scale, float scaleVariance,
+		float lifeTimeMin, float lifeTimeMax);
 
 	// 中心に留まり、回転しながら膨らんで消える火球用Plane粒子
 	void EmitFireball(const std::string name, const Vector3 &position, uint32_t count, const Vector4 &color,
@@ -159,6 +164,23 @@ public://メンバ関数
 		float speed, float speedVariance,
 		float lifeTimeMin, float lifeTimeMax,
 		float posVariance, float transitionStart);
+
+	// 速度・膨張・空気抵抗・重力（上昇加速度）を個別に指定して1粒生成するためのパラメータ。
+	struct CustomParticleParams {
+		Vector3 position = { 0.0f, 0.0f, 0.0f };
+		Vector3 velocity = { 0.0f, 0.0f, 0.0f };
+		Vector4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+		float initialScale = 1.0f;
+		float finalScale = 1.0f;
+		float lifeTime = 1.0f;
+		float velocityDrag = 0.0f;
+		float upwardAcceleration = 0.0f;
+		float angularVelocity = 0.0f;
+		float initialRotation = 0.0f;
+	};
+
+	// 任意の物理パラメータでパーティクルを1粒生成する。
+	void EmitCustom(const std::string& name, const CustomParticleParams& params);
 
 	// getter/setter
 	EmitterSphere* GetEmitterSphere() { return emitterDataPtr_; }

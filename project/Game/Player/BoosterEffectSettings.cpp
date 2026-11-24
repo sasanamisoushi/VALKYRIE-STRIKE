@@ -8,7 +8,7 @@
 
 namespace {
 constexpr size_t kPlacementModeCount = 3;
-constexpr size_t kMaxExtraThrustersPerMode = 8;
+constexpr size_t kMaxExtraThrustersPerMode = 32;
 
 nlohmann::json ToJson(const Vector3& value) {
     return { value.x, value.y, value.z };
@@ -39,6 +39,27 @@ void BoosterEffect::SetPlacementSettings(int playerMode, const PlacementSettings
     placementSettings_[ToModeIndex(playerMode)] = validated;
 }
 
+const BoosterEffect::BaseThrusterSettings& BoosterEffect::GetBaseThrusterSettings(int playerMode, size_t index) const {
+    static const BaseThrusterSettings kDefaultSettings{};
+    if (index >= baseThrusterSettingsByMode_[0].size()) return kDefaultSettings;
+    return baseThrusterSettingsByMode_[ToModeIndex(playerMode)][index];
+}
+
+bool BoosterEffect::SetBaseThrusterSettings(int playerMode, size_t index, const BaseThrusterSettings& settings) {
+    if (index >= baseThrusterSettingsByMode_[0].size()) return false;
+    BaseThrusterSettings validated = settings;
+    validated.positionOffset = ClampVector3(validated.positionOffset, -3.0f, 3.0f);
+    validated.scale = ClampVector3(validated.scale, 0.2f, 3.0f);
+    validated.rotationDegrees = ClampVector3(validated.rotationDegrees, -180.0f, 180.0f);
+    baseThrusterSettingsByMode_[ToModeIndex(playerMode)][index] = validated;
+    return true;
+}
+
+size_t BoosterEffect::GetBaseThrusterCount(int playerMode) const {
+    (void)playerMode;
+    return 2u;
+}
+
 Vector3 BoosterEffect::GetPlacementAdjustment(int playerMode) const {
     return GetPlacementSettings(playerMode).positionOffset;
 }
@@ -64,7 +85,7 @@ bool BoosterEffect::SetExtraThrusterSettings(int playerMode, size_t index, const
 }
 
 bool BoosterEffect::AddExtraThruster(int playerMode) {
-    constexpr size_t kMaxExtraThrustersPerMode = 8;
+    constexpr size_t kMaxExtraThrustersPerMode = 32;
     std::vector<ExtraThrusterSettings>& extraThrusters = extraThrustersByMode_[ToModeIndex(playerMode)];
     if (extraThrusters.size() >= kMaxExtraThrustersPerMode) return false;
 
@@ -122,6 +143,18 @@ bool BoosterEffect::SaveSettings(const std::string& filePath) const {
             { "scale", ToJson(placement.scale) },
             { "rotationDegrees", ToJson(placement.rotationDegrees) },
         });
+    }
+    settings["baseThrustersByMode"] = nlohmann::json::array();
+    for (const auto& baseThrusters : baseThrusterSettingsByMode_) {
+        nlohmann::json modeThrusters = nlohmann::json::array();
+        for (const BaseThrusterSettings& thruster : baseThrusters) {
+            modeThrusters.push_back({
+                { "positionOffset", ToJson(thruster.positionOffset) },
+                { "scale", ToJson(thruster.scale) },
+                { "rotationDegrees", ToJson(thruster.rotationDegrees) },
+            });
+        }
+        settings["baseThrustersByMode"].push_back(std::move(modeThrusters));
     }
     settings["extraThrustersByMode"] = nlohmann::json::array();
     for (const auto& extraThrusters : extraThrustersByMode_) {
@@ -181,6 +214,7 @@ bool BoosterEffect::LoadSettings(const std::string& filePath) {
             };
         };
         std::array<PlacementSettings, kPlacementModeCount> placements{};
+        std::array<std::array<BaseThrusterSettings, 2>, kPlacementModeCount> baseThrustersByMode{};
         std::array<std::vector<ExtraThrusterSettings>, kPlacementModeCount> extraThrustersByMode{};
         bool thrusterPlumeEnabled = true;
         if (settings.contains("thrusterPlumeEnabled")) {
@@ -205,6 +239,39 @@ bool BoosterEffect::LoadSettings(const std::string& filePath) {
             const Vector3 legacyOffset = readVector3(settings.at("positionOffset"), -3.0f, 3.0f);
             for (PlacementSettings& placement : placements) {
                 placement.positionOffset = legacyOffset;
+            }
+        }
+        if (settings.contains("baseThrustersByMode")) {
+            const auto& savedBaseThrusters = settings.at("baseThrustersByMode");
+            if (!savedBaseThrusters.is_array() || savedBaseThrusters.size() != kPlacementModeCount) {
+                return false;
+            }
+            for (size_t mode = 0; mode < kPlacementModeCount; ++mode) {
+                const auto& savedModeThrusters = savedBaseThrusters.at(mode);
+                if (!savedModeThrusters.is_array() ||
+                    (savedModeThrusters.size() != 2 && savedModeThrusters.size() != 4)) {
+                    return false;
+                }
+                // 一時的に導入した4基形式は [上左, 上右, 下左, 下右] だった。
+                // ガウォークだけは上側がユーザー追加ノズルと重複するため下側を採用する。
+                // ファイター／バトロイドでは従来の左右2基（先頭2要素）を採用し、
+                // 古い4基形式でも設定全体の読み込みを失敗させない。
+                const size_t sourceOffset = (mode == 1 && savedModeThrusters.size() == 4) ? 2 : 0;
+                for (size_t index = 0; index < baseThrustersByMode[mode].size(); ++index) {
+                    const auto& savedThruster = savedModeThrusters.at(sourceOffset + index);
+                    if (!savedThruster.is_object()) return false;
+                    BaseThrusterSettings& destination = baseThrustersByMode[mode][index];
+                    destination.positionOffset = readVector3(savedThruster.at("positionOffset"), -3.0f, 3.0f);
+                    destination.scale = readVector3(savedThruster.at("scale"), 0.2f, 3.0f);
+                    destination.rotationDegrees = readVector3(savedThruster.at("rotationDegrees"), -180.0f, 180.0f);
+                    if (mode == 1) {
+                        // 旧ガウォークは脚側2基だけで、噴射方向を手動回転していた。
+                        // 新構成では上昇／後退の入力に応じて下側ノズルを自動回転するため、
+                        // 旧回転を残すと -90 度などが二重に掛かり、噴射口が大きくずれる。
+                        // 位置・サイズはそのまま下側2基へ移し、向きだけ自動制御へ委ねる。
+                        destination.rotationDegrees = { 0.0f, 0.0f, 0.0f };
+                    }
+                }
             }
         }
         if (settings.contains("extraThrustersByMode")) {
@@ -245,6 +312,7 @@ bool BoosterEffect::LoadSettings(const std::string& filePath) {
         }
         // Apply only after the entire document has been validated. Legacy position-only files remain valid.
         placementSettings_ = placements;
+        baseThrusterSettingsByMode_ = baseThrustersByMode;
         extraThrustersByMode_ = std::move(extraThrustersByMode);
         effectSettings_ = appearance;
         thrusterPlumeEnabled_ = thrusterPlumeEnabled;

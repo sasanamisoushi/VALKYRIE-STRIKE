@@ -25,6 +25,14 @@ struct GameplayBalanceSettings {
 	float speedRushParticleSpeed = 0.62f;
 	float speedRushParticleScale = 0.18f;
 	float speedRushParticleLifetime = 0.34f;
+	// 地面すれすれを飛行した際に発生する砂煙・砂礫。
+	bool lowAltitudeDustEnabled = true;
+	float lowAltitudeDustMaxGroundDistance = 10.0f;
+	float lowAltitudeDustMinIntensity = 0.14f;
+	float lowAltitudeDustEmissionMultiplier = 1.0f;
+	float lowAltitudeDustScaleMultiplier = 1.0f;
+	float lowAltitudeDustLifetimeMultiplier = 1.0f;
+	float lowAltitudeDustOpacityMultiplier = 1.0f;
 };
 
 // バランス設定 JSON に同梱されるミサイル調整値の受け渡し構造体。

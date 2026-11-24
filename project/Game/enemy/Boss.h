@@ -90,6 +90,8 @@ public:
     int GetLockOnPartHP(size_t partIndex) const override;
     int GetLockOnPartMaxHP(size_t partIndex) const override;
     bool IsSideShieldGeneratorDestroyed(size_t face) const;
+	// 展開中の側面シールドに命中しているかを判定し、火花用の外向き法線を返す。
+	bool GetActiveSideShieldImpact(const Vector3& hitPosition, float impactRadius, Vector3& outNormal) const;
     SideShieldState GetSideShieldState() const { return sideShieldState_; }
     const Tuning& GetTuning() const { return tuning_; }
     void SetTuning(const Tuning& tuning);
@@ -99,8 +101,11 @@ public:
 	void SetCinematicWreckPresentation(float burnRatio);
 	// 砲塔・砲身に加えて、通常は部分破壊できない船体装甲も実モデルのまま飛散させる。
 	void BeginCinematicDebris();
+	// 衝突した地面の高さを受け取り、一部のデブリをその場に残す。
+	void SetCinematicDebrisRestPlane(float worldY);
 	void StepCinematicDebris(float deltaTime);
 	std::vector<Vector3> GetCinematicDebrisWorldPositions() const;
+	std::vector<Vector3> GetCinematicWreckageWorldPositions() const;
 	bool IsCinematicDebrisActive() const { return cinematicDebrisActive_; }
 
 private:
@@ -144,6 +149,9 @@ private:
 	std::array<std::unique_ptr<Object3d>, kCinematicSmallDebrisCount> cinematicSmallDebris_{};
 	std::array<Vector3, kCinematicSmallDebrisCount> cinematicSmallDebrisVelocities_{};
 	std::array<Vector3, kCinematicSmallDebrisCount> cinematicSmallDebrisAngularVelocities_{};
+	std::array<bool, kCinematicSmallDebrisCount> cinematicSmallDebrisResting_{};
+	float cinematicDebrisRestPlaneY_ = 0.0f;
+	bool hasCinematicDebrisRestPlane_ = false;
     // 砲台ごとに異なる担当方位を持たせる。
     std::array<float, 3> mainTurretYaws_{};
     std::array<bool, 3> mainTurretEngaged_{};

@@ -87,6 +87,7 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
     const auto makeBurner = [this](const Vector3& offset, const Vector4& color,
         int trailLength, const std::string& nozzleModel, const std::string& trailModel,
         const std::string& speedTrailModel, const std::string& flareModel, float modelSide,
+        size_t baseThrusterIndex = 0, GerwalkThrusterRole gerwalkRole = GerwalkThrusterRole::None,
         bool isExtraThruster = false, size_t extraThrusterIndex = 0) {
         Burner burner;
         burner.trail = std::make_unique<Trail>();
@@ -121,6 +122,8 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
         burner.exhaustDirection = { 0.0f, 0.0f, -1.0f };
         burner.adjustedExhaustDirection = burner.exhaustDirection;
         burner.color = color;
+        burner.baseThrusterIndex = baseThrusterIndex;
+        burner.gerwalkRole = gerwalkRole;
         burner.isExtraThruster = isExtraThruster;
         burner.extraThrusterIndex = extraThrusterIndex;
         return burner;
@@ -133,14 +136,15 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
             0.771f, 7.998f - kVf15cModelCenterOffset.y,
             -10.772f - kVf15cModelCenterOffset.z
         };
-        burners_.push_back(makeBurner({ -fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f));
-        burners_.push_back(makeBurner({  fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f));
-    } else if (playerMode == 1) { // Gerwalk: 脚部のふくらはぎ後方・左右ノズル
-        burners_.push_back(makeBurner({ -2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f));
-        burners_.push_back(makeBurner({  2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f));
+        burners_.push_back(makeBurner({ -fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f, 0, GerwalkThrusterRole::None));
+        burners_.push_back(makeBurner({  fighterNozzleOffset.x * scale, fighterNozzleOffset.y * scale, fighterNozzleOffset.z * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 15, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f, 1, GerwalkThrusterRole::None));
+    } else if (playerMode == 1) {
+        // ガウォークの基本2基は脚側。上側はユーザーが追加したノズルを使用する。
+        burners_.push_back(makeBurner({ -2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLowerLeft", "PlayerThrusterSpeedTrailLowerLeft", "PlayerThrusterFlareLowerLeft", -1.0f, 0, GerwalkThrusterRole::Lower));
+        burners_.push_back(makeBurner({  2.1f * scale, -5.3f * scale, -1.6f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12, "vf-15c/thruster_right.obj", "PlayerThrusterTrailLowerRight", "PlayerThrusterSpeedTrailLowerRight", "PlayerThrusterFlareLowerRight", 1.0f, 1, GerwalkThrusterRole::Lower));
     } else { // Battroid: 脚部のふくらはぎ後方・左右ノズル
-        burners_.push_back(makeBurner({ -1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f));
-        burners_.push_back(makeBurner({  1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f));
+        burners_.push_back(makeBurner({ -1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_left.obj", "PlayerThrusterTrailLeft", "PlayerThrusterSpeedTrailLeft", "PlayerThrusterFlareLeft", -1.0f, 0, GerwalkThrusterRole::None));
+        burners_.push_back(makeBurner({  1.85f * scale, -6.2f * scale, -1.45f * scale }, { 1.0f, 0.08f, 0.72f, 0.9f }, 10, "vf-15c/thruster_right.obj", "PlayerThrusterTrailRight", "PlayerThrusterSpeedTrailRight", "PlayerThrusterFlareRight", 1.0f, 1, GerwalkThrusterRole::None));
     }
 
     // 追加ノズルは各形態ごとに独立して持つ。炎の頂点を共有しないよう、
@@ -157,7 +161,8 @@ void BoosterEffect::SetupBurnersForMode(int playerMode) {
         modelManager->CreateTrailModel(flareModel);
         burners_.push_back(makeBurner({ 0.0f, 0.0f, 0.0f }, { 1.0f, 0.08f, 0.72f, 0.9f }, 12,
             isRight ? "vf-15c/thruster_right.obj" : "vf-15c/thruster_left.obj", trailModel, speedTrailModel, flareModel,
-            isRight ? 1.0f : -1.0f, true, index));
+            isRight ? 1.0f : -1.0f, 0,
+            playerMode == 1 ? GerwalkThrusterRole::Upper : GerwalkThrusterRole::None, true, index));
     }
 }
 
@@ -180,19 +185,59 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
             burnerPlacement.scale = extra.scale;
             burnerPlacement.rotationDegrees = extra.rotationDegrees;
             baseOffset = { 0.0f, 0.0f, 0.0f };
+        } else if (burner.baseThrusterIndex < baseThrusterSettingsByMode_[modeIndex].size()) {
+            const BaseThrusterSettings& base = baseThrusterSettingsByMode_[modeIndex][burner.baseThrusterIndex];
+            burnerPlacement.positionOffset = {
+                burnerPlacement.positionOffset.x + base.positionOffset.x,
+                burnerPlacement.positionOffset.y + base.positionOffset.y,
+                burnerPlacement.positionOffset.z + base.positionOffset.z,
+            };
+            burnerPlacement.scale = {
+                burnerPlacement.scale.x * base.scale.x,
+                burnerPlacement.scale.y * base.scale.y,
+                burnerPlacement.scale.z * base.scale.z,
+            };
+            burnerPlacement.rotationDegrees = {
+                burnerPlacement.rotationDegrees.x + base.rotationDegrees.x,
+                burnerPlacement.rotationDegrees.y + base.rotationDegrees.y,
+                burnerPlacement.rotationDegrees.z + base.rotationDegrees.z,
+            };
         }
-        const Quaternion placementRotation = MakePlacementRotation(burnerPlacement.rotationDegrees);
+        const bool isGerwalk = playerMode == 1;
+        const bool isAscending = localMovementIntent_.y > 0.10f;
+        const bool isReversing = localMovementIntent_.z < -0.10f;
+        const bool isMovingForward = localMovementIntent_.z > 0.10f;
+        Quaternion directionalRotation = { 0.0f, 0.0f, 0.0f, 1.0f };
+        if (isGerwalk && burner.gerwalkRole == GerwalkThrusterRole::Lower) {
+            if (isAscending) {
+                // 基準の -Z 排気を下向きへ向け、上昇推力にする。
+                directionalRotation = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, -1.57079633f);
+            } else if (isReversing) {
+                // 後退時は脚側ノズルを前向きにし、+Z 側へ噴射する。
+                directionalRotation = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, 3.14159265f);
+            }
+        }
+        const Quaternion placementRotation = MyMath::Normalize(MyMath::Multiply(
+            directionalRotation, MakePlacementRotation(burnerPlacement.rotationDegrees)));
         const Quaternion nozzleRotation = MyMath::Normalize(MyMath::Multiply(placementRotation, rotation));
         const Vector3 adjustedOffset = {
             baseOffset.x + burnerPlacement.positionOffset.x * placementScaleFactor,
             baseOffset.y + burnerPlacement.positionOffset.y * placementScaleFactor,
             baseOffset.z + burnerPlacement.positionOffset.z * placementScaleFactor
         };
-        const Vector3 worldOffset = MyMath::Transform(adjustedOffset, rotationMatrix);
+        // ノズルOBJはメッシュ原点から離れた位置に配置されている。
+        // ノズルだけを回転させる場合も、その原点オフセットを同じ回転で補正しないと
+        // メッシュが原点の周りを回って、噴射口だけがマーカー／炎からずれてしまう。
+        // ガウォークの脚側ノズルだけは移動方向に応じて自動回転するため、
+        // 回転後の原点補正が必要になる。ファイター／バトロイドの既存配置は
+        // ユーザーが調整済みなので、従来の原点補正をそのまま使う。
+        const Vector3 rotatedNozzleOriginOffset = playerMode == 1
+            ? MyMath::RotateVector(burner.nozzleOriginOffset, placementRotation)
+            : burner.nozzleOriginOffset;
         const Vector3 modelTranslation = MyMath::Transform(
-            { adjustedOffset.x - burner.nozzleOriginOffset.x,
-                adjustedOffset.y - burner.nozzleOriginOffset.y,
-                adjustedOffset.z - burner.nozzleOriginOffset.z }, rotationMatrix);
+            { adjustedOffset.x - rotatedNozzleOriginOffset.x,
+                adjustedOffset.y - rotatedNozzleOriginOffset.y,
+                adjustedOffset.z - rotatedNozzleOriginOffset.z }, rotationMatrix);
 
         if (burner.nozzleObject) {
             burner.nozzleObject->SetTranslate({ position.x + modelTranslation.x,
@@ -200,12 +245,6 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
             burner.nozzleObject->SetScale({ playerModelScale_ * burnerPlacement.scale.x,
                 playerModelScale_ * burnerPlacement.scale.y, playerModelScale_ * burnerPlacement.scale.z });
             burner.nozzleObject->SetQuaternionRotate(nozzleRotation);
-        }
-        if (burner.positionMarkerObject) {
-            burner.positionMarkerObject->SetTranslate({ position.x + worldOffset.x,
-                position.y + worldOffset.y, position.z + worldOffset.z });
-            burner.positionMarkerObject->SetScale({ 0.045f * placementScaleFactor,
-                0.045f * placementScaleFactor, 0.045f * placementScaleFactor });
         }
         // 炎はノズル開口から始め、機体の向きに合わせて排気方向へ伸ばす。
         burner.adjustedExhaustDirection = MyMath::RotateVector(burner.exhaustDirection, placementRotation);
@@ -216,6 +255,15 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
             adjustedOffset.y + burner.adjustedExhaustDirection.y * playerModelScale_ * kNozzleRearOffsetMultiplier,
             adjustedOffset.z + burner.adjustedExhaustDirection.z * playerModelScale_ * kNozzleRearOffsetMultiplier
         };
+        // 位置合わせマーカーは、ノズル本体の原点ではなく実際の噴射口（炎・光跡の開始位置）へ置く。
+        // これにより、マーカーを基準に調整した結果がそのままエフェクトと一致する。
+        if (burner.positionMarkerObject) {
+            const Vector3 worldExitOffset = MyMath::Transform(localExit, rotationMatrix);
+            burner.positionMarkerObject->SetTranslate({ position.x + worldExitOffset.x,
+                position.y + worldExitOffset.y, position.z + worldExitOffset.z });
+            burner.positionMarkerObject->SetScale({ 0.045f * placementScaleFactor,
+                0.045f * placementScaleFactor, 0.045f * placementScaleFactor });
+        }
         if (burner.trail && burner.trailObject) {
             burner.trail->SetOrigin(localExit);
             burner.trailObject->SetTranslate(position);
@@ -256,12 +304,15 @@ void BoosterEffect::RefreshPlacement(const Vector3& position, const Quaternion& 
     }
 }
 
-void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, int playerMode, float speedRatio, bool isAccelerating) {
+void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, int playerMode, float speedRatio,
+    bool isAccelerating, const Vector3& localMovementIntent, bool showAllGerwalkThrusters) {
     if (playerMode != lastMode_) {
         SetupBurnersForMode(playerMode);
     }
 
     time_ += 0.4f;
+    localMovementIntent_ = localMovementIntent;
+    showAllGerwalkThrusters_ = showAllGerwalkThrusters;
 
     const float cappedSpeedRatio = std::clamp(speedRatio, 0.0f, 1.2f);
     // 加速・解除に約0.2秒で追従し、幅と光量が自然に変化する。
@@ -280,13 +331,25 @@ void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, 
     const float targetSpeedTrailLifetime = cappedSpeedRatio <= 0.10f ? 0.18f : std::clamp(
         0.30f + cappedSpeedRatio * 0.26f + accelerationBlend_ * 0.20f, 0.18f, 0.76f);
     for (auto& burner : burners_) {
+        float targetThrustIntensity = 1.0f;
+        if (playerMode == 1 && !showAllGerwalkThrusters_) {
+            const bool isAscending = localMovementIntent_.y > 0.10f;
+            const bool isReversing = localMovementIntent_.z < -0.10f;
+            const bool isMovingForward = localMovementIntent_.z > 0.10f;
+            if (burner.gerwalkRole == GerwalkThrusterRole::Upper) {
+                targetThrustIntensity = isMovingForward && !isAscending ? 1.0f : 0.06f;
+            } else if (burner.gerwalkRole == GerwalkThrusterRole::Lower) {
+                targetThrustIntensity = (isAscending || isReversing) ? 1.0f : 0.06f;
+            }
+        }
+        burner.thrustIntensity += (targetThrustIntensity - burner.thrustIntensity) * 0.28f;
         // 長い白い棒に見えないよう、短い噴射を基準に幅で加速を表す。
         burner.plumeLength = burner.plumeLength > 0.0f
             ? burner.plumeLength + (targetLength - burner.plumeLength) * 0.25f : targetLength;
         burner.plumeRadius = burner.plumeRadius > 0.0f
             ? burner.plumeRadius + (targetRadius - burner.plumeRadius) * 0.25f : targetRadius;
-        burner.color.w += (targetAlpha - burner.color.w) * 0.25f;
-        burner.speedTrailIntensity += (targetSpeedTrailIntensity - burner.speedTrailIntensity) * 0.20f;
+        burner.color.w += (targetAlpha * burner.thrustIntensity - burner.color.w) * 0.25f;
+        burner.speedTrailIntensity += (targetSpeedTrailIntensity * burner.thrustIntensity - burner.speedTrailIntensity) * 0.20f;
         burner.speedTrailLifetime += (targetSpeedTrailLifetime - burner.speedTrailLifetime) * 0.18f;
     }
     RefreshPlacement(position, rotation, playerMode);
@@ -294,7 +357,8 @@ void BoosterEffect::Update(const Vector3& position, const Quaternion& rotation, 
 
 void BoosterEffect::UpdateEditorPreview(const Vector3& position, const Quaternion& rotation, int playerMode) {
     // 停止中でも一定出力で更新し、向きや機体の角度を変えて見た目を確認できる。
-    Update(position, rotation, playerMode, 0.65f, editorPreviewAccelerating_);
+    Update(position, rotation, playerMode, 0.65f, editorPreviewAccelerating_,
+        { 0.0f, 0.0f, 0.0f }, true);
 }
 
 void BoosterEffect::DrawNozzles(Camera* camera) {

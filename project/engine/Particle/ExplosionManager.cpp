@@ -35,6 +35,10 @@ void ExplosionManager::Initialize(ParticleManager *particleManager) {
         ModelManager::GetInstance()->CreateRingModel(
             "Explosion_OrbitRing", 64, 1.0f, 0.72f, true,
             { 1.0f, 0.4f, 0.05f, 0.0f }, { 1.0f, 1.0f, 0.75f, 0.95f });
+		ModelManager::GetInstance()->CreateRingModel(
+			"Implosion_OrbitRing", 64, 1.0f, 0.76f, true,
+			{ 1.0f, 0.85f, 0.60f, 0.0f }, { 1.0f, 0.75f, 0.40f, 0.70f });
+		ModelManager::GetInstance()->CreateSphereModel("Implosion_Core", 16);
         ModelManager::GetInstance()->CreateCylinderModel(
             "Explosion_Cylinder", 32, 0.9f, 0.75f, 1.5f);
 
@@ -42,6 +46,10 @@ void ExplosionManager::Initialize(ParticleManager *particleManager) {
             cylinderModel->SetColor({ 1.0f, 0.25f, 0.02f, 0.25f });
             cylinderModel->SetAlphaReference(0.0f);
         }
+		if (Model* coreModel = ModelManager::GetInstance()->FindModel("Implosion_Core")) {
+			coreModel->SetColor({ 1.0f, 0.95f, 0.85f, 0.90f });
+			coreModel->SetEnableLighting(false);
+		}
 
         for (Explosion &explosion : explosions_) {
             InitializeExplosionObjects(explosion);
@@ -71,6 +79,14 @@ void ExplosionManager::InitializeExplosionObjects(Explosion &explosion) {
     explosion.cylinder->SetModel("Explosion_Cylinder");
     explosion.cylinder->SetScale({ 0.0f, 0.0f, 0.0f });
     explosion.cylinder->Update();
+
+	if (!explosion.core) {
+		explosion.core = std::make_unique<Object3d>();
+		explosion.core->Initialize(object3dCommon);
+	}
+	explosion.core->SetModel("Implosion_Core");
+	explosion.core->SetScale({ 0.0f, 0.0f, 0.0f });
+	explosion.core->Update();
 }
 
 ExplosionManager::Explosion *ExplosionManager::AcquireExplosion() {
@@ -95,6 +111,9 @@ ExplosionManager::Explosion *ExplosionManager::AcquireExplosion() {
     reuseTarget->active = true;
     reuseTarget->age = 0.0f;
     reuseTarget->duration = 0.7f;
+	reuseTarget->isImplosion = false;
+	reuseTarget->isHomingHit = false;
+	reuseTarget->activeRingCount = 3;
     return reuseTarget;
 }
 
@@ -106,8 +125,90 @@ void ExplosionManager::CreateHitEffects(const std::vector<Vector3> &hitPositions
     CreateEffects(hitPositions, false, false, commonConfig_);
 }
 
+void ExplosionManager::CreateHomingHitEffects(const std::vector<Vector3>& hitPositions) {
+	if (!kEnableExplosionMeshes) {
+		return;
+	}
+
+	for (const Vector3& pos : hitPositions) {
+		Explosion* explosion = AcquireExplosion();
+		if (!explosion) {
+			continue;
+		}
+
+		explosion->position = pos;
+		explosion->duration = 0.18f;
+		explosion->isImplosion = true;
+		explosion->isHomingHit = true;
+		explosion->activeRingCount = 1;
+		for (std::size_t i = 0; i < explosion->rings.size(); ++i) {
+			if (!explosion->rings[i]) {
+				continue;
+			}
+			explosion->rings[i]->SetModel("Implosion_OrbitRing");
+			explosion->rings[i]->SetTranslate(pos);
+			explosion->rings[i]->SetScale(i == 0 ? Vector3{ 2.0f, 2.0f, 2.0f } : Vector3{});
+		}
+		if (explosion->core) {
+			explosion->core->SetModel("Implosion_Core");
+			explosion->core->SetTranslate(pos);
+			explosion->core->SetScale({ 0.60f, 0.60f, 0.60f });
+		}
+		if (explosion->cylinder) {
+			explosion->cylinder->SetScale({ 0.0f, 0.0f, 0.0f });
+		}
+		if (particleManager_) {
+			particleManager_->EmitInwardBurst("test", pos, 10,
+				{ 1.0f, 0.90f, 0.70f, 0.62f }, 1.5f, 2.5f,
+				14.0f, 1.5f, 0.055f, 0.018f, 0.12f, 0.15f);
+			particleManager_->EmitFireball("test", pos, 1,
+				{ 1.0f, 1.0f, 1.0f, 0.82f }, 0.18f, 0.55f, 0.08f, 0.0f);
+		}
+	}
+}
+
 void ExplosionManager::CreateDestructionEffects(const std::vector<Vector3> &hitPositions, EffectTarget target) {
     CreateEffects(hitPositions, true, true, GetConfig(target));
+}
+
+void ExplosionManager::CreateImplosionEffects(const std::vector<Vector3>& hitPositions) {
+	if (!kEnableExplosionMeshes) {
+		return;
+	}
+
+	for (const Vector3& pos : hitPositions) {
+		Explosion* explosion = AcquireExplosion();
+		if (!explosion) {
+			continue;
+		}
+
+		explosion->position = pos;
+		// Keep this in sync with GamePlayScene's enemy model shrink duration.
+		explosion->duration = 30.0f / 60.0f;
+		explosion->isImplosion = true;
+		explosion->isHomingHit = false;
+		explosion->activeRingCount = 2;
+		for (std::size_t i = 0; i < explosion->rings.size(); ++i) {
+			if (explosion->rings[i]) {
+				explosion->rings[i]->SetModel("Implosion_OrbitRing");
+				explosion->rings[i]->SetTranslate(pos);
+				explosion->rings[i]->SetScale(i < 2 ? Vector3{ 6.0f, 6.0f, 6.0f } : Vector3{});
+			}
+		}
+		if (explosion->core) {
+			explosion->core->SetModel("Implosion_Core");
+			explosion->core->SetTranslate(pos);
+			explosion->core->SetScale({ 1.5f, 1.5f, 1.5f });
+		}
+		if (explosion->cylinder) {
+			explosion->cylinder->SetScale({ 0.0f, 0.0f, 0.0f });
+		}
+		if (particleManager_) {
+			particleManager_->EmitInwardBurst("test", pos, 24,
+				{ 1.0f, 0.80f, 0.50f, 0.64f }, 4.0f, 7.0f,
+				14.0f, 2.0f, 0.070f, 0.025f, 0.38f, 0.45f);
+		}
+	}
 }
 
 void ExplosionManager::CreateDestructionPreview(const std::vector<Vector3>& hitPositions,
@@ -132,6 +233,10 @@ void ExplosionManager::ClearEffects() {
 		if (explosion.cylinder) {
 			explosion.cylinder->SetScale({ 0.0f, 0.0f, 0.0f });
 			explosion.cylinder->Update();
+		}
+		if (explosion.core) {
+			explosion.core->SetScale({ 0.0f, 0.0f, 0.0f });
+			explosion.core->Update();
 		}
 	}
 }
@@ -285,34 +390,47 @@ void ExplosionManager::Update() {
                 explosion.cylinder->SetScale({ 0.0f, 0.0f, 0.0f });
                 explosion.cylinder->Update();
             }
+			if (explosion.core) {
+				explosion.core->SetScale({ 0.0f, 0.0f, 0.0f });
+				explosion.core->Update();
+			}
             continue;
         }
 
-        const float progress = explosion.age / explosion.duration;
-        const float pulse = std::sin(progress * 3.14159265f);
-        const float ringScale = pulse * 3.0f;
-        const float cylinderRadius = pulse * 1.8f;
-        const float cylinderHeight = pulse * 0.28f;
+		const float progress = explosion.age / explosion.duration;
+		const float pulse = std::sin(progress * 3.14159265f);
+		const float implosionScale = (1.0f - progress) * (1.0f - progress);
+		const float ringScale = explosion.isImplosion ? implosionScale * 3.6f : pulse * 3.0f;
+		const float cylinderRadius = explosion.isImplosion ? implosionScale * 1.7f : pulse * 1.8f;
+		const float cylinderHeight = explosion.isImplosion ? implosionScale * 0.26f : pulse * 0.28f;
 
         if (explosion.rings[0]) {
             explosion.rings[0]->SetScale({ ringScale, ringScale, ringScale });
-            explosion.rings[0]->SetRotate({ 0.75f, 0.15f, progress * 2.5f });
+			explosion.rings[0]->SetRotate({ 0.75f, 0.15f, progress * (explosion.isImplosion ? -2.5f : 2.5f) });
             explosion.rings[0]->Update();
         }
 
         if (explosion.rings[1]) {
             explosion.rings[1]->SetScale({ ringScale * 0.92f, ringScale * 0.92f, ringScale * 0.92f });
-            explosion.rings[1]->SetRotate({ -0.5f, 0.4f, -progress * 2.1f });
+			explosion.rings[1]->SetRotate({ -0.5f, 0.4f, progress * (explosion.isImplosion ? 2.1f : -2.1f) });
             explosion.rings[1]->Update();
         }
 
         if (explosion.rings[2]) {
             explosion.rings[2]->SetScale({ ringScale * 0.82f, ringScale * 0.82f, ringScale * 0.82f });
-            explosion.rings[2]->SetRotate({ 0.2f, -0.65f, progress * 1.8f });
+			explosion.rings[2]->SetRotate({ 0.2f, -0.65f, progress * (explosion.isImplosion ? -1.8f : 1.8f) });
             explosion.rings[2]->Update();
         }
 
-        if (explosion.cylinder) {
+        if (explosion.core && explosion.isImplosion) {
+				const float coreScale = 0.14f + implosionScale * 0.52f;
+			explosion.core->SetTranslate(explosion.position);
+			explosion.core->SetScale({ coreScale, coreScale, coreScale });
+			explosion.core->SetRotate({ progress * 1.9f, -progress * 3.1f, progress * 1.2f });
+			explosion.core->Update();
+		}
+
+        if (explosion.cylinder && !explosion.isImplosion) {
             explosion.cylinder->SetTranslate({
                 explosion.position.x,
                 explosion.position.y - cylinderHeight * 0.75f,
@@ -343,6 +461,9 @@ void ExplosionManager::Draw() {
         if (explosion.cylinder) {
             explosion.cylinder->Draw();
         }
+		if (explosion.core) {
+			explosion.core->Draw();
+		}
     }
 }
 

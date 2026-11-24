@@ -58,6 +58,12 @@ void GameplayBalanceSettingsManager::Apply(
 	settings_.speedRushParticleSpeed = std::clamp(settings_.speedRushParticleSpeed, 0.01f, 3.0f);
 	settings_.speedRushParticleScale = std::clamp(settings_.speedRushParticleScale, 0.01f, 3.0f);
 	settings_.speedRushParticleLifetime = std::clamp(settings_.speedRushParticleLifetime, 0.05f, 2.0f);
+	settings_.lowAltitudeDustMaxGroundDistance = std::clamp(settings_.lowAltitudeDustMaxGroundDistance, 0.1f, 100.0f);
+	settings_.lowAltitudeDustMinIntensity = std::clamp(settings_.lowAltitudeDustMinIntensity, 0.01f, 1.0f);
+	settings_.lowAltitudeDustEmissionMultiplier = std::clamp(settings_.lowAltitudeDustEmissionMultiplier, 0.1f, 4.0f);
+	settings_.lowAltitudeDustScaleMultiplier = std::clamp(settings_.lowAltitudeDustScaleMultiplier, 0.1f, 4.0f);
+	settings_.lowAltitudeDustLifetimeMultiplier = std::clamp(settings_.lowAltitudeDustLifetimeMultiplier, 0.1f, 4.0f);
+	settings_.lowAltitudeDustOpacityMultiplier = std::clamp(settings_.lowAltitudeDustOpacityMultiplier, 0.1f, 2.0f);
 
 	if (missileSettings) {
 		ClampMissileSettings(*missileSettings);
@@ -113,6 +119,15 @@ bool GameplayBalanceSettingsManager::Load(
 		readFloat("speed_rush_particle_speed", loaded.speedRushParticleSpeed);
 		readFloat("speed_rush_particle_scale", loaded.speedRushParticleScale);
 		readFloat("speed_rush_particle_lifetime", loaded.speedRushParticleLifetime);
+		if (source.contains("low_altitude_dust_enabled") && source["low_altitude_dust_enabled"].is_boolean()) {
+			loaded.lowAltitudeDustEnabled = source["low_altitude_dust_enabled"].get<bool>();
+		}
+		readFloat("low_altitude_dust_max_ground_distance", loaded.lowAltitudeDustMaxGroundDistance);
+		readFloat("low_altitude_dust_min_intensity", loaded.lowAltitudeDustMinIntensity);
+		readFloat("low_altitude_dust_emission_multiplier", loaded.lowAltitudeDustEmissionMultiplier);
+		readFloat("low_altitude_dust_scale_multiplier", loaded.lowAltitudeDustScaleMultiplier);
+		readFloat("low_altitude_dust_lifetime_multiplier", loaded.lowAltitudeDustLifetimeMultiplier);
+		readFloat("low_altitude_dust_opacity_multiplier", loaded.lowAltitudeDustOpacityMultiplier);
 
 		if (missileSettings) {
 			readFloat("normal_speed", missileSettings->normalSpeed);
@@ -212,6 +227,13 @@ bool GameplayBalanceSettingsManager::Save(
 			{ "speed_rush_particle_speed", settings_.speedRushParticleSpeed },
 			{ "speed_rush_particle_scale", settings_.speedRushParticleScale },
 			{ "speed_rush_particle_lifetime", settings_.speedRushParticleLifetime },
+			{ "low_altitude_dust_enabled", settings_.lowAltitudeDustEnabled },
+			{ "low_altitude_dust_max_ground_distance", settings_.lowAltitudeDustMaxGroundDistance },
+			{ "low_altitude_dust_min_intensity", settings_.lowAltitudeDustMinIntensity },
+			{ "low_altitude_dust_emission_multiplier", settings_.lowAltitudeDustEmissionMultiplier },
+			{ "low_altitude_dust_scale_multiplier", settings_.lowAltitudeDustScaleMultiplier },
+			{ "low_altitude_dust_lifetime_multiplier", settings_.lowAltitudeDustLifetimeMultiplier },
+			{ "low_altitude_dust_opacity_multiplier", settings_.lowAltitudeDustOpacityMultiplier },
 			{ "normal_speed", missiles.normalSpeed },
 			{ "normal_homing_strength", missiles.normalHomingStrength },
 			{ "normal_scale", missiles.normalScale },

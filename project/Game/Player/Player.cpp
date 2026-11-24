@@ -314,8 +314,14 @@ void Player::Initialize(const std::string &modelName) {
 	position_ = { 0.0f, 0.0f, 0.0f };
 	velocity_ = { 0.0f, 0.0f, 0.0f };
 	quaternion_ = { 0.0f, 0.0f, 0.0f, 1.0f };
+	cameraPitch_ = 0.0f;
+	lastCameraDirection_ = { 0.0f, 0.0f, 1.0f };
 	cameraFollowPosition_ = { 0.0f, 0.0f, 0.0f };
 	isCameraFollowInitialized_ = false;
+	wasCameraLockOnActive_ = false;
+	cameraLockReleaseProgress_ = 1.0f;
+	cameraLockReleaseDirection_ = { 0.0f, 0.0f, 1.0f };
+	cameraLockReleaseFocusOffset_ = { 0.0f, 0.0f, 0.0f };
 	hp_ = kMaxHP;
 	isDead_ = false;
 	isSpecialAttackActive_ = false;
@@ -325,6 +331,15 @@ void Player::Initialize(const std::string &modelName) {
 	isGuarding_ = false;
 	guardScale_ = 0.0f;
 	guardPoseWeight_ = 0.0f;
+	animationTime_ = 0.0f;
+	targetAnimationTime_ = 0.0f;
+	battroidWalkTime_ = 0.0f;
+	currentActionAnim_ = nullptr;
+	actionAnimTime_ = 0.0f;
+	isPlayingAction_ = false;
+	overrideAnimation_ = nullptr;
+	presentationController_.SetPresentationAlpha(1.0f);
+	presentationController_.SetPresentationThrustersVisible(true);
 
 	// アニメーションデータのロード
 	if (modelName.find("vf-15c") != std::string::npos) {
@@ -396,6 +411,9 @@ void Player::Initialize(const std::string &modelName) {
     boosterEffect_ = std::make_unique<BoosterEffect>();
     boosterEffect_->Initialize();
     boosterEffect_->SetPlayerModelScale(modelScale_.x);
+	// 初回 Draw の前に、初期姿勢・スキニング行列・Object3d 行列を同じ状態に揃える。
+	// これを行わないと、シーン切替直後の 1 フレームだけ初期ポーズが表示される。
+	UpdateModel(false, false);
 }
 
 void Player::ChangeMode(PlayerMode newMode) {
@@ -520,8 +538,14 @@ void Player::Update(const std::list<std::unique_ptr<Obstacle>> &obstacles, const
 		float speedVal = Length(velocity_);
 		float speedRatio = speedVal / (std::max)(0.0001f, p.maxMoveSpeed);
 		bool isAccelerating = input->PushAction(PlayerAction::MoveForward);
+		Vector3 thrusterMovementIntent = { 0.0f, 0.0f, 0.0f };
+		if (currentMode_ == PlayerMode::Gerwalk) {
+			if (input->PushAction(PlayerAction::MoveForward)) thrusterMovementIntent.z += 1.0f;
+			if (input->PushAction(PlayerAction::MoveBackward)) thrusterMovementIntent.z -= 1.0f;
+			if (input->PushAction(PlayerAction::MoveUp)) thrusterMovementIntent.y += 1.0f;
+		}
 		boosterEffect_->Update(position_, object_ ? object_->GetQuaternionRotate() : quaternion_,
-			static_cast<int>(currentMode_), speedRatio, isAccelerating);
+			static_cast<int>(currentMode_), speedRatio, isAccelerating, thrusterMovementIntent);
 	}
 }
 

@@ -22,6 +22,7 @@ class EnemyBulletManager;
 class EnemyEventManager;
 class EnemySpawnManager;
 class ExplosionManager;
+class GroundEnemy;
 class Obstacle;
 class ParticleManager;
 class Player;
@@ -40,6 +41,8 @@ struct EnemyBehaviorUpdateContext {
 	ExplosionManager* explosionManager = nullptr;
 	ParticleManager* particleManager = nullptr;
 	CombatAlertState* combatAlertState = nullptr;
+	std::function<void(GroundEnemy&)> onGroundEnemyNormalShotDefeat;
+	std::function<void(GroundEnemy&)> onGroundEnemyHomingMissileDefeat;
 };
 
 // 撃破処理（ボス撃破演出開始・タイトル背景再湧き・通常敵撃破イベントと削除）に必要な文脈。

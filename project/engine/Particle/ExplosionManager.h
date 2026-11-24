@@ -56,8 +56,12 @@ public:
     void CreateExplosions(const std::vector<Vector3> &hitPositions,
 		EffectTarget target = EffectTarget::StandardEnemy);
     void CreateHitEffects(const std::vector<Vector3> &hitPositions);
+	// 誘導弾が敵を撃破しきれなかった時の、小さな高熱収束ヒット演出。
+	void CreateHomingHitEffects(const std::vector<Vector3>& hitPositions);
     void CreateDestructionEffects(const std::vector<Vector3> &hitPositions,
 		EffectTarget target = EffectTarget::StandardEnemy);
+	// 爆炎を出さず、リングだけを中心へ収束させる消滅演出。
+	void CreateImplosionEffects(const std::vector<Vector3>& hitPositions);
 	// エディタ専用。粒子は同じ設定で再生し、3D衝撃波メッシュだけを任意に隠せる。
 	void CreateDestructionPreview(const std::vector<Vector3>& hitPositions, EffectTarget target,
 		bool includeShockwaveMeshes);
@@ -86,10 +90,14 @@ private:
     struct Explosion {
         std::array<std::unique_ptr<Object3d>, 3> rings;
         std::unique_ptr<Object3d> cylinder;
+		std::unique_ptr<Object3d> core;
         Vector3 position{};
         float age = 0.0f;
         float duration = 0.7f;
         bool active = false;
+		bool isImplosion = false;
+		bool isHomingHit = false;
+		int activeRingCount = 3;
     };
 
     void InitializeExplosionObjects(Explosion &explosion);

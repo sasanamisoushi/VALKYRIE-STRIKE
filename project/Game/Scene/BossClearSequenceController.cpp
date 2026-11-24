@@ -24,11 +24,13 @@ Vector3 SubtractVector3(const Vector3& lhs, const Vector3& rhs) {
 	return { lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z };
 }
 
-void EmitDebrisBlackSmoke(Boss* boss, ParticleManager* particles) {
+void EmitDebrisBlackSmoke(Boss* boss, ParticleManager* particles, bool groundedWreckageOnly = false) {
 	if (!boss || !particles) {
 		return;
 	}
-	const std::vector<Vector3> debrisPositions = boss->GetCinematicDebrisWorldPositions();
+	const std::vector<Vector3> debrisPositions = groundedWreckageOnly
+		? boss->GetCinematicWreckageWorldPositions()
+		: boss->GetCinematicDebrisWorldPositions();
 	for (size_t i = 0; i < debrisPositions.size(); ++i) {
 		particles->EmitSmoke(
 			"blackSmoke",
@@ -43,6 +45,18 @@ void EmitDebrisBlackSmoke(Boss* boss, ParticleManager* particles) {
 			1.15f,
 			0.35f);
 	}
+}
+
+Vector3 RandomPointInBossBody(const OBB& bossObb, std::mt19937& randomEngine) {
+	std::uniform_real_distribution<float> distBody(-0.78f, 0.78f);
+	const float rx = distBody(randomEngine) * bossObb.size.x;
+	const float ry = distBody(randomEngine) * bossObb.size.y;
+	const float rz = distBody(randomEngine) * bossObb.size.z;
+	return {
+		bossObb.center.x + bossObb.orientations[0].x * rx + bossObb.orientations[1].x * ry + bossObb.orientations[2].x * rz,
+		bossObb.center.y + bossObb.orientations[0].y * rx + bossObb.orientations[1].y * ry + bossObb.orientations[2].y * rz,
+		bossObb.center.z + bossObb.orientations[0].z * rx + bossObb.orientations[1].z * ry + bossObb.orientations[2].z * rz,
+	};
 }
 }
 
@@ -189,9 +203,30 @@ bool BossClearSequenceController::Update(
 			}
 		}
 
+		// 煙だけで落下させず、船体の内部から小さな誘爆を連続発生させる。
+		if (effectState_.ShouldEmitFallingExplosion(dt, 0.18f) && particles) {
+			const OBB bossObb = cinematicBoss->GetOBB();
+			const Vector3 burstPosition = RandomPointInBossBody(bossObb, crashRng);
+			const float burstScale = (std::max)(0.65f, focusState_.GetRadius() * 0.075f);
+			particles->EmitFireball(
+				"explosionCore", burstPosition, 5,
+				{ 1.0f, 0.34f, 0.035f, 0.94f },
+				burstScale * 0.45f, burstScale * 1.45f, 0.32f, burstScale * 0.20f);
+			particles->EmitDirectionalBurst(
+				"test", burstPosition, { 0.0f, 1.0f, 0.0f }, 32,
+				{ 1.0f, 0.42f, 0.08f, 0.90f }, 3.14159265f,
+				burstScale * 3.0f, burstScale, burstScale * 0.12f, burstScale * 0.06f,
+				0.24f, 0.42f, burstScale * 0.28f);
+			particles->EmitSmoke(
+				"blackSmoke", burstPosition, 3,
+				{ 0.06f, 0.06f, 0.07f, 0.48f },
+				burstScale * 0.65f, burstScale * 1.75f, 0.065f, 0.035f, 0.65f, 1.05f, burstScale * 0.45f);
+		}
+
 		// 地形への激突判定（地面にぶつかった瞬間に大爆破＆破片飛散へ移行）
 		bool hitTerrain = false;
 		const Sphere bossCrashSphere{ focusState_.GetPosition(), (std::max)(2.0f, focusState_.GetRadius() * 0.55f) };
+		float wreckageRestY = bossCrashSphere.center.y - bossCrashSphere.radius;
 		for (const auto& obstacle : obstacles) {
 			if (!obstacle || !obstacle->IsCollisionEnabled()) {
 				continue;
@@ -200,6 +235,7 @@ bool BossClearSequenceController::Update(
 				const float floorY = obstacle->GetPosition().y - obstacle->GetWorldHalfExtents().y;
 				if (focusState_.GetPosition().y - bossCrashSphere.radius <= floorY) {
 					hitTerrain = true;
+					wreckageRestY = floorY;
 					break;
 				}
 			} else if (obstacle->IsUseMeshCollider()) {
@@ -209,6 +245,7 @@ bool BossClearSequenceController::Update(
 				for (size_t triIdx : nearbyIndices) {
 					if (triIdx < tris.size() && MyMath::IsCollision(bossCrashSphere, tris[triIdx], pushOut)) {
 						hitTerrain = true;
+						wreckageRestY = (std::max)({ tris[triIdx].p[0].y, tris[triIdx].p[1].y, tris[triIdx].p[2].y });
 						break;
 					}
 				}
@@ -217,11 +254,13 @@ bool BossClearSequenceController::Update(
 				}
 			} else if (MyMath::IsCollision(bossCrashSphere, obstacle->GetOBB())) {
 				hitTerrain = true;
+				wreckageRestY = obstacle->GetOBB().center.y + obstacle->GetOBB().size.y;
 				break;
 			}
 		}
 
 		if (hitTerrain || timeline_.GetPhaseSeconds() >= 10.0f) {
+			cinematicBoss->SetCinematicDebrisRestPlane(wreckageRestY);
 			phaseState_.Set(BossClearPhase::FinalExplosion);
 			timeline_.ResetPhase();
 			effectState_.ResetSmokeTimer();
@@ -287,7 +326,7 @@ bool BossClearSequenceController::Update(
 		if (cinematicBoss) {
 			cinematicBoss->StepCinematicDebris(dt);
 			if (effectState_.ShouldEmitSmoke(dt, 0.04f)) {
-				EmitDebrisBlackSmoke(cinematicBoss, particles);
+				EmitDebrisBlackSmoke(cinematicBoss, particles, true);
 			}
 		}
 

@@ -957,6 +957,71 @@ void ParticleManager::EmitDirectionalBurst(const std::string name, const Vector3
 	}
 }
 
+void ParticleManager::EmitInwardBurst(const std::string name, const Vector3& position, uint32_t count,
+	const Vector4& color, float innerRadius, float outerRadius,
+	float speed, float speedVariance, float scale, float scaleVariance,
+	float lifeTimeMin, float lifeTimeMax) {
+	if (particleGroups_.find(name) == particleGroups_.end()) {
+		return;
+	}
+
+	ParticleGroup& group = particleGroups_[name];
+	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
+	if (emitCount == 0) {
+		return;
+	}
+
+	static std::random_device seedGenerator;
+	static std::mt19937_64 engine(seedGenerator());
+	constexpr float kPi = 3.14159265f;
+	const float minimumRadius = (std::max)(0.0f, (std::min)(innerRadius, outerRadius));
+	const float maximumRadius = (std::max)(minimumRadius, (std::max)(innerRadius, outerRadius));
+	std::uniform_real_distribution<float> distZ(-1.0f, 1.0f);
+	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
+	std::uniform_real_distribution<float> distRadius(minimumRadius, maximumRadius);
+	std::uniform_real_distribution<float> distSpeed((std::max)(0.0f, speed - speedVariance),
+		(std::max)(0.0f, speed + speedVariance));
+	std::uniform_real_distribution<float> distScale((std::max)(0.0f, scale - scaleVariance),
+		(std::max)(0.0f, scale + scaleVariance));
+	std::uniform_real_distribution<float> distLife((std::max)(0.01f, lifeTimeMin),
+		(std::max)((std::max)(0.01f, lifeTimeMin), lifeTimeMax));
+	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
+	std::uniform_real_distribution<float> distAngularSpeed(0.08f, 0.22f);
+	std::uniform_int_distribution<int> distSpinDirection(0, 1);
+
+	for (uint32_t i = 0; i < emitCount; ++i) {
+		const float z = distZ(engine);
+		const float angle = distAngle(engine);
+		const float xyLength = std::sqrt((std::max)(0.0f, 1.0f - z * z));
+		const Vector3 outwardDirection = {
+			xyLength * std::cos(angle), xyLength * std::sin(angle), z
+		};
+		const float spawnRadius = distRadius(engine);
+		const float particleScale = distScale(engine);
+		Particle particle{};
+		particle.initialScale = particleScale;
+		particle.finalScale = 0.0f;
+		particle.transform.scale = { particleScale, particleScale, 1.0f };
+		particle.transform.translate = {
+			position.x + outwardDirection.x * spawnRadius,
+			position.y + outwardDirection.y * spawnRadius,
+			position.z + outwardDirection.z * spawnRadius,
+		};
+		const float particleSpeed = distSpeed(engine);
+		particle.velocity = {
+			-outwardDirection.x * particleSpeed,
+			-outwardDirection.y * particleSpeed,
+			-outwardDirection.z * particleSpeed,
+		};
+		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
+		particle.angularVelocity = distAngularSpeed(engine) * (distSpinDirection(engine) == 0 ? -1.0f : 1.0f);
+		particle.color = color;
+		particle.lifeTime = distLife(engine);
+		particle.currentTime = 0.0f;
+		group.particle.push_back(particle);
+	}
+}
+
 void ParticleManager::EmitSmoke(const std::string& name, const Vector3& position, uint32_t count, const Vector4& color,
 	float initialScale, float finalScale,
 	float riseSpeed, float spreadSpeed,
@@ -1133,6 +1198,34 @@ void ParticleManager::EmitFlameToSmoke(const std::string& name, const Vector3& p
 		particle.currentTime = 0.0f;
 		group.particle.push_back(particle);
 	}
+}
+
+void ParticleManager::EmitCustom(const std::string& name, const CustomParticleParams& params) {
+	auto it = particleGroups_.find(name);
+	if (it == particleGroups_.end()) {
+		return;
+	}
+
+	ParticleGroup& group = it->second;
+	if (ClampEmitCountToCapacity(group, 1) == 0) {
+		return;
+	}
+
+	Particle particle{};
+	particle.transform.translate = params.position;
+	particle.transform.rotate = { 0.0f, 0.0f, params.initialRotation };
+	particle.initialScale = (std::max)(0.01f, params.initialScale);
+	particle.finalScale = (std::max)(0.0f, params.finalScale);
+	particle.transform.scale = { particle.initialScale, particle.initialScale, 1.0f };
+	particle.velocity = params.velocity;
+	particle.angularVelocity = params.angularVelocity;
+	particle.color = params.color;
+	particle.velocityDrag = (std::clamp)(params.velocityDrag, 0.0f, 0.95f);
+	particle.upwardAcceleration = params.upwardAcceleration;
+	particle.useColorTransition = false;
+	particle.lifeTime = (std::max)(0.01f, params.lifeTime);
+	particle.currentTime = 0.0f;
+	group.particle.push_back(particle);
 }
 
 void ParticleManager::CreateRootSignature() {

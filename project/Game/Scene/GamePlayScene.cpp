@@ -420,6 +420,13 @@ void GamePlayScene::Initialize() {
 	environmentRenderer_->GetParticleManager()->CreateParticleGroup(kSongParticleGroup, "resources/circle.png");
 	// 低空高速時にカメラ近傍を横切る、細い大気・ダストの流れ。
 	environmentRenderer_->GetParticleManager()->CreateParticleGroup(kSpeedRushParticleGroup, "resources/warp_speedline_particle.png");
+	// 地面すれすれの飛行時にだけ、機体真下から舞い上がる土埃（ジェット風圧・巨大砂煙トレイル・砂礫デブリ）。
+	environmentRenderer_->GetParticleManager()->CreateParticleGroup("lowAltitudeDownwash", "resources/low_altitude_dust_puff.png");
+	environmentRenderer_->GetParticleManager()->SetParticleGroupAlphaBlend("lowAltitudeDownwash", true);
+	environmentRenderer_->GetParticleManager()->CreateParticleGroup("lowAltitudeDustTrail", "resources/low_altitude_dust_puff.png");
+	environmentRenderer_->GetParticleManager()->SetParticleGroupAlphaBlend("lowAltitudeDustTrail", true);
+	environmentRenderer_->GetParticleManager()->CreateParticleGroup("lowAltitudeDustDebris", "resources/white1x1.png");
+	environmentRenderer_->GetParticleManager()->SetParticleGroupAlphaBlend("lowAltitudeDustDebris", true);
 
 
 	soundData1 = AudioManager::GetInstance()->LoadWave("resources/Alarm01.wav");
@@ -636,6 +643,12 @@ void GamePlayScene::ReloadSceneJson() {
 		titleBackgroundEnemyState_,
 		lockOnManager_.get(),
 		[this]() { ClearAllEnemyReferences(); });
+
+	// StageLoader はゲーム状態だけを更新する。描画モデルは古い座標・姿勢のまま
+	// 1 フレーム描かれ得るため、タイトル復帰・ゲーム開始を含めて即座に同期する。
+	if (player_) {
+		player_->UpdateModel(false, false);
+	}
 }
 
 void GamePlayScene::ResetEditorPreview() {
@@ -1226,6 +1239,8 @@ void GamePlayScene::Update() {
 			explosionManager_.get(),
 			particleManager,
 			&combatAlertState_,
+			[this](GroundEnemy& enemy) { SpawnNormalEnemyDebris(enemy); },
+			[this](GroundEnemy& enemy) { SpawnHomingEnemyImplosion(enemy); },
 		}, playerPos);
 		enemyUpdateCoordinator_.ProcessDefeatedEnemies({
 			IsAutoFlightMode(),
@@ -1378,6 +1393,7 @@ void GamePlayScene::Update() {
 		&songState_,
 		&songFlightTrailRenderer_,
 		&warpExitPresentation_,
+		&obstacles_,
 	});
 
 	for (Object3d *object3d : objects) {
@@ -1415,14 +1431,29 @@ void GamePlayScene::Update() {
 
 	// ==========================================
 	std::vector<Vector3> hitPositions;
+	std::vector<Vector3> homingHitPositions;
+	std::vector<MissileManager::ShieldImpact> shieldImpacts;
 	std::vector<MissileManager::DefeatedEnemy> destroyedEnemies;
 	if (updateSelectedMissiles) {
 		if (missileManager_) {
-			missileManager_->Update(activeCamera, enemies_, obstacles_, hitPositions, destroyedEnemies);
+			missileManager_->Update(activeCamera, enemies_, obstacles_, hitPositions, homingHitPositions, shieldImpacts, destroyedEnemies);
 		}
 
 		if (explosionManager_ && !hitPositions.empty()) {
 			explosionManager_->CreateHitEffects(hitPositions);
+		}
+		if (explosionManager_ && !homingHitPositions.empty()) {
+			explosionManager_->CreateHomingHitEffects(homingHitPositions);
+		}
+		if (ParticleManager* particleManager = environmentRenderer_ ? environmentRenderer_->GetParticleManager() : nullptr) {
+			for (const MissileManager::ShieldImpact& shieldImpact : shieldImpacts) {
+				// 側面シールドは本体の橙色爆発ではなく、法線方向へ青白い電気火花を散らす。
+				particleManager->EmitDirectionalBurst("test", shieldImpact.position, shieldImpact.normal, 22,
+					{ 0.42f, 0.82f, 1.0f, 0.84f }, 0.52f,
+					1.55f, 0.36f, 0.038f, 0.016f, 0.12f, 0.24f, 0.10f);
+				particleManager->EmitFireball("test", shieldImpact.position, 1,
+					{ 0.78f, 0.94f, 1.0f, 0.72f }, 0.12f, 0.44f, 0.09f, 0.0f);
+			}
 		}
 		for (const MissileManager::DefeatedEnemy& defeatedEnemy : destroyedEnemies) {
 			Enemy* destroyedEnemy = defeatedEnemy.enemy;
@@ -1437,9 +1468,7 @@ void GamePlayScene::Update() {
 			} else if (defeatedEnemy.projectileType == MissileType::MissileWithTrail && !destroyedEnemy->IsBoss()) {
 				SpawnHomingEnemyImplosion(*destroyedEnemy);
 				if (explosionManager_) {
-					explosionManager_->CreateDestructionEffects(
-						{ destroyedEnemy->GetAimPosition() },
-						ExplosionManager::ClassifyEnemy(*destroyedEnemy));
+					explosionManager_->CreateImplosionEffects({ destroyedEnemy->GetAimPosition() });
 				}
 			} else if (explosionManager_) {
 				// ボスは既存の演出を維持する。
@@ -1760,7 +1789,8 @@ void GamePlayScene::SpawnHomingEnemyImplosion(Enemy& enemy) {
 	implosion.object->SetModelPointer(model);
 	implosion.baseScale = enemy.GetScale();
 	implosion.rotation = enemy.GetRotation();
-	implosion.remainingFrames = 20;
+	// The ring animation uses the same 30-frame duration in ExplosionManager.
+	implosion.remainingFrames = 30;
 	implosion.object->SetTranslate(enemy.GetAimPosition());
 	implosion.object->SetScale(implosion.baseScale);
 	implosion.object->SetRotate(implosion.rotation);
@@ -1770,15 +1800,15 @@ void GamePlayScene::SpawnHomingEnemyImplosion(Enemy& enemy) {
 }
 
 void GamePlayScene::UpdateHomingEnemyImplosions() {
-	constexpr int kDurationFrames = 20;
+	constexpr int kDurationFrames = 30;
 	for (auto it = homingEnemyImplosions_.begin(); it != homingEnemyImplosions_.end();) {
 		HomingEnemyImplosion& implosion = *it;
 		if (!implosion.object || --implosion.remainingFrames <= 0) {
 			if (implosion.object && environmentRenderer_) {
 				if (ParticleManager* particleManager = environmentRenderer_->GetParticleManager()) {
-					// リングとモデルが一点へ収束した最後に、小さな白い閃光を残す。
-					particleManager->Emit("test", implosion.object->GetTranslate(), 2,
-						{ 1.0f, 1.0f, 1.0f, 1.0f }, 0.04f, 0.01f, 0.18f, 0.03f, 0.06f, 0.10f, 0.01f);
+					// 収束直後に白い高熱フラッシュを一度だけ広げて消す。
+					particleManager->EmitFireball("test", implosion.object->GetTranslate(), 1,
+						{ 1.0f, 1.0f, 1.0f, 0.90f }, 0.50f, 4.0f, 0.15f, 0.0f);
 				}
 			}
 			it = homingEnemyImplosions_.erase(it);

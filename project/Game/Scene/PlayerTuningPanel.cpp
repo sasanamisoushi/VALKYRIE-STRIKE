@@ -84,6 +84,19 @@ void PlayerTuningPanel::DrawGameplayBalanceTab(const PlayerBalancePanelContext& 
 		editFloat("線の寿命", &balance.speedRushParticleLifetime, 0.05f, 2.0f, "%.2f 秒");
 		ImGui::TreePop();
 	}
+	if (ImGui::TreeNode("低空砂煙")) {
+		const bool wasEnabled = balance.lowAltitudeDustEnabled;
+		changed |= ImGui::Checkbox("有効##lowAltitudeDust", &balance.lowAltitudeDustEnabled);
+		saveAfterEdit |= wasEnabled != balance.lowAltitudeDustEnabled;
+		ImGui::TextDisabled("機体の真下に地面があり、低空飛行している時の土埃・砂煙・砂礫です。");
+		editFloat("地面からの最大距離", &balance.lowAltitudeDustMaxGroundDistance, 0.1f, 100.0f, "%.1f m");
+		editFloat("発生最低強度", &balance.lowAltitudeDustMinIntensity, 0.01f, 1.0f, "%.2f");
+		editFloat("発生量", &balance.lowAltitudeDustEmissionMultiplier, 0.1f, 4.0f, "%.2f 倍");
+		editFloat("粒のサイズ", &balance.lowAltitudeDustScaleMultiplier, 0.1f, 4.0f, "%.2f 倍");
+		editFloat("残る時間", &balance.lowAltitudeDustLifetimeMultiplier, 0.1f, 4.0f, "%.2f 倍");
+		editFloat("濃さ", &balance.lowAltitudeDustOpacityMultiplier, 0.1f, 2.0f, "%.2f 倍");
+		ImGui::TreePop();
+	}
 	if (ImGui::TreeNode("必殺技・歌・ボス")) {
 		editFloat("必殺技SP消費", &balance.specialAttackCost, 0.0f, 100.0f, "%.1f");
 		editFloat("SP回復/秒", &balance.spGaugeRecoveryPerSecond, 0.0f, 60.0f, "%.1f");
@@ -208,15 +221,45 @@ void PlayerTuningPanel::DrawThrusterTuningTab(Player* player) {
 	booster->SetPlacementMarkersVisible(showThrusterPlacementMarkers_);
 	BoosterEffect::PlacementSettings placement = booster->GetPlacementSettings(placementMode);
 	bool placementChanged = false;
-	placementChanged |= ImGui::DragFloat3("位置補正 X・Y・Z", &placement.positionOffset.x,
+	ImGui::Text("左右共通の補正");
+	placementChanged |= ImGui::DragFloat3("位置補正 X・Y・Z##common", &placement.positionOffset.x,
 		0.01f, -3.0f, 3.0f, "%.3f m");
-	placementChanged |= ImGui::DragFloat3("ノズルサイズ X・Y・Z", &placement.scale.x,
+	placementChanged |= ImGui::DragFloat3("ノズルサイズ X・Y・Z##common", &placement.scale.x,
 		0.01f, 0.2f, 3.0f, "%.2f 倍");
-	placementChanged |= ImGui::DragFloat3("ノズル回転 X・Y・Z", &placement.rotationDegrees.x,
+	placementChanged |= ImGui::DragFloat3("ノズル回転 X・Y・Z##common", &placement.rotationDegrees.x,
 		1.0f, -180.0f, 180.0f, "%.1f 度");
 	if (placementChanged) {
 		booster->SetPlacementSettings(placementMode, placement);
 		booster->RefreshPlacement(player->GetPosition(), player->GetQuaternion(), placementMode);
+	}
+	if (ImGui::TreeNode("左右の基本スラスターを個別に調整")) {
+		const char* baseThrusterNames[] = { "左スラスター", "右スラスター" };
+		const bool isGerwalk = placementMode == static_cast<int>(PlayerMode::Gerwalk);
+		ImGui::TextDisabled(isGerwalk
+			? "基本2基は脚側です。上側は「追加スラスター」で作成したノズルを使用します。"
+			: "左右のスラスターを個別に調整できます。");
+		bool baseThrusterChanged = false;
+		const size_t baseThrusterCount = booster->GetBaseThrusterCount(placementMode);
+		for (size_t index = 0; index < baseThrusterCount; ++index) {
+			BoosterEffect::BaseThrusterSettings base = booster->GetBaseThrusterSettings(placementMode, index);
+			ImGui::PushID(static_cast<int>(index));
+			if (ImGui::TreeNode(baseThrusterNames[index])) {
+				bool changed = false;
+				changed |= ImGui::DragFloat3("位置補正 X・Y・Z", &base.positionOffset.x, 0.01f, -3.0f, 3.0f, "%.3f m");
+				changed |= ImGui::DragFloat3("ノズルサイズ X・Y・Z", &base.scale.x, 0.01f, 0.2f, 3.0f, "%.2f 倍");
+				changed |= ImGui::DragFloat3("ノズル回転 X・Y・Z", &base.rotationDegrees.x, 1.0f, -180.0f, 180.0f, "%.1f 度");
+				if (changed) {
+					booster->SetBaseThrusterSettings(placementMode, index, base);
+					baseThrusterChanged = true;
+				}
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+		if (baseThrusterChanged) {
+			booster->RefreshPlacement(player->GetPosition(), player->GetQuaternion(), placementMode);
+		}
+		ImGui::TreePop();
 	}
 	ImGui::TextDisabled("+X: 右 / +Y: 上 / +Z: 前方。Yをマイナスにすると下がります。");
 	ImGui::TextDisabled("回転は機体ローカル軸、サイズはノズルと噴射炎に反映されます。");
@@ -226,7 +269,7 @@ void PlayerTuningPanel::DrawThrusterTuningTab(Player* player) {
 	}
 	ImGui::Separator();
 	ImGui::Text("追加スラスター（現在の形態のみ）");
-	ImGui::TextDisabled("追加したノズルは、位置・サイズ・回転を1基ずつ編集して保存できます。最大8基です。");
+	ImGui::TextDisabled("追加したノズルは、位置・サイズ・回転を1基ずつ編集して保存できます。最大32基です。");
 	const auto& extraThrusters = booster->GetExtraThrusters(placementMode);
 	bool extraThrusterChanged = false;
 	bool removeExtraThruster = false;
@@ -263,7 +306,7 @@ void PlayerTuningPanel::DrawThrusterTuningTab(Player* player) {
 		if (booster->AddExtraThruster(placementMode)) {
 			extraThrusterChanged = true;
 		} else {
-			thrusterSettingsMessage_ = "追加できるスラスターは1形態につき8基までです。";
+		thrusterSettingsMessage_ = "追加できるスラスターは1形態につき32基までです。";
 		}
 	}
 	if (extraThrusterChanged) {

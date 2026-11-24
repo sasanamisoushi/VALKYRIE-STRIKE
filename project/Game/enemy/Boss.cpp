@@ -660,6 +660,18 @@ bool Boss::ApplySideShieldGeneratorDamage(size_t face, int damage) {
     return true;
 }
 
+bool Boss::GetActiveSideShieldImpact(const Vector3& hitPosition, float impactRadius, Vector3& outNormal) const {
+	size_t face = 0;
+	if (!TryGetSideShieldFaceAtWorldPosition(hitPosition, impactRadius, face) ||
+		!IsSideShieldProtectingFace(face)) {
+		return false;
+	}
+
+	const float outwardDirection = face == 0 ? 1.0f : -1.0f;
+	outNormal = MyMath::RotateVector({ outwardDirection, 0.0f, 0.0f }, MakeEulerQuaternion(rotation_));
+	return true;
+}
+
 bool Boss::TryGetSideShieldFaceAtWorldPosition(const Vector3& worldPosition, float radius, size_t& outFace) const {
     const Vector3 relative = SubtractVector(worldPosition, position_);
     const Quaternion hull = MakeEulerQuaternion(rotation_);
@@ -862,6 +874,7 @@ void Boss::BeginCinematicDebris() {
     cinematicDebrisParts_.fill(nullptr);
     cinematicDebrisVelocities_.fill({});
     cinematicDebrisAngularVelocities_.fill({});
+	cinematicSmallDebrisResting_.fill(false);
 
     // 大型の船体・砲塔ブロックは描画せず、爆発を覆わない細かいデブリだけを使う。
 
@@ -910,11 +923,13 @@ void Boss::BeginCinematicDebris() {
         }
 
         const float explosionPower = distPower(debrisRng);
+		// すべてを空の彼方へ飛ばさず、約 1/7 は地面に残る焼けた残骸にする。
+		const bool leavesWreckage = (i % 7) == 0;
         const float upwardDir = std::abs(direction.y) * 0.85f + 0.30f;
         cinematicSmallDebrisVelocities_[i] = {
-            direction.x * explosionPower,
-            upwardDir * explosionPower + 5.0f,
-            direction.z * explosionPower,
+			direction.x * explosionPower * (leavesWreckage ? 0.32f : 1.0f),
+			leavesWreckage ? 2.0f + std::abs(direction.y) * 3.5f : upwardDir * explosionPower + 5.0f,
+			direction.z * explosionPower * (leavesWreckage ? 0.32f : 1.0f),
         };
         cinematicSmallDebrisAngularVelocities_[i] = {
             distSigned(debrisRng) * kSpinPower,
@@ -930,6 +945,11 @@ void Boss::BeginCinematicDebris() {
         object_->SetScale({ 0.0f, 0.0f, 0.0f });
         object_->Update();
     }
+}
+
+void Boss::SetCinematicDebrisRestPlane(float worldY) {
+	cinematicDebrisRestPlaneY_ = worldY;
+	hasCinematicDebrisRestPlane_ = true;
 }
 
 void Boss::StepCinematicDebris(float deltaTime) {
@@ -957,6 +977,7 @@ void Boss::StepCinematicDebris(float deltaTime) {
     for (size_t index = 0; index < cinematicSmallDebris_.size(); ++index) {
         Object3d* part = cinematicSmallDebris_[index].get();
         if (!part) continue;
+		if (cinematicSmallDebrisResting_[index]) continue;
         Vector3 position = part->GetTranslate();
         cinematicSmallDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
         position.x += cinematicSmallDebrisVelocities_[index].x * deltaTime;
@@ -969,10 +990,29 @@ void Boss::StepCinematicDebris(float deltaTime) {
         };
         const Quaternion nextRot = MyMath::Normalize(
             MyMath::Multiply(MakeEulerQuaternion(deltaEuler), part->GetQuaternionRotate()));
+		if (hasCinematicDebrisRestPlane_ && (index % 7) == 0 &&
+			cinematicSmallDebrisVelocities_[index].y < 0.0f && position.y <= cinematicDebrisRestPlaneY_) {
+			position.y = cinematicDebrisRestPlaneY_;
+			cinematicSmallDebrisVelocities_[index] = {};
+			cinematicSmallDebrisAngularVelocities_[index] = {};
+			cinematicSmallDebrisResting_[index] = true;
+		}
         part->SetTranslate(position);
         part->SetQuaternionRotate(nextRot);
         part->Update();
     }
+}
+
+std::vector<Vector3> Boss::GetCinematicWreckageWorldPositions() const {
+	std::vector<Vector3> positions;
+	if (!cinematicDebrisActive_) return positions;
+	positions.reserve(cinematicSmallDebris_.size() / 7 + 1);
+	for (size_t i = 0; i < cinematicSmallDebris_.size(); ++i) {
+		if (cinematicSmallDebrisResting_[i] && cinematicSmallDebris_[i]) {
+			positions.push_back(cinematicSmallDebris_[i]->GetTranslate());
+		}
+	}
+	return positions;
 }
 
 void Boss::UpdateCinematicDebris() {

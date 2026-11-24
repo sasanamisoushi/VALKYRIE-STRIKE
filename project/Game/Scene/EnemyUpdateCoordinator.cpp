@@ -86,7 +86,8 @@ void EnemyUpdateCoordinator::UpdateEnemies(const EnemyBehaviorUpdateContext& con
 
 		enemy->Update(playerPos, context.enemyBulletManager, obstacles);
 		if (GroundEnemy* groundEnemy = dynamic_cast<GroundEnemy*>(enemy.get())) {
-			groundEnemyEffectProcessor_.Process(*groundEnemy, context.explosionManager, context.particleManager);
+			groundEnemyEffectProcessor_.Process(*groundEnemy, context.explosionManager, context.particleManager,
+				context.onGroundEnemyNormalShotDefeat, context.onGroundEnemyHomingMissileDefeat);
 		}
 		if (Boss* boss = dynamic_cast<Boss*>(enemy.get())) {
 			bossMinionSpawner_.SpawnRequestedMinions(*boss, context.bossMaxActiveMinions, enemies);

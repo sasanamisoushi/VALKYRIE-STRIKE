@@ -1,5 +1,8 @@
 #pragma once
 
+#include <list>
+#include <memory>
+
 class Camera;
 class DamageFeedbackState;
 class ParticleManager;
@@ -7,6 +10,7 @@ class Player;
 class SongFlightTrailRenderer;
 class SongState;
 class WarpExitPresentationState;
+class Obstacle;
 struct GameplayBalanceSettings;
 
 // プレイヤー移動後の飛行・視覚エフェクト更新に必要な文脈。
@@ -22,6 +26,7 @@ struct PlayerFlightEffectContext {
 	const SongState* songState = nullptr;
 	SongFlightTrailRenderer* songFlightTrailRenderer = nullptr;
 	WarpExitPresentationState* warpExitPresentation = nullptr;
+	const std::list<std::unique_ptr<Obstacle>>* obstacles = nullptr;
 };
 
 // 低空高速飛行時のスピードライン、歌発動中の飛行トレイル更新、
@@ -33,4 +38,5 @@ public:
 
 private:
 	void EmitLowAltitudeSpeedRush(const PlayerFlightEffectContext& context) const;
+	void EmitLowAltitudeDownwash(const PlayerFlightEffectContext& context) const;
 };

@@ -1,16 +1,220 @@
 {
+  "baseThrustersByMode": [
+    [
+      {
+        "positionOffset": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "positionOffset": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    ],
+    [
+      {
+        "positionOffset": [
+          -0.09000000357627869,
+          0.09000000357627869,
+          0.18000000715255737
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "positionOffset": [
+          0.10999999940395355,
+          0.10000000149011612,
+          0.17000000178813934
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    ],
+    [
+      {
+        "positionOffset": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "positionOffset": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotationDegrees": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    ]
+  ],
   "effect": {
     "boostLengthMultiplier": 1.1799999475479126,
     "boostWidthMultiplier": 1.25,
     "brightness": 3.0,
     "coreLengthRatio": 0.5199999809265137,
-    "glowScale": 3.0,
-    "lengthScale": 1.2599999904632568,
-    "widthScale": 1.090000033378601
+    "glowScale": 2.180000066757202,
+    "lengthScale": 1.149999976158142,
+    "widthScale": 1.1699999570846558
   },
+  "extraThrustersByMode": [
+    [],
+    [
+      {
+        "position": [
+          -0.20999999344348907,
+          0.25,
+          -0.4099999964237213
+        ],
+        "rotationDegrees": [
+          17.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "position": [
+          0.23999999463558197,
+          0.25999999046325684,
+          -0.44999998807907104
+        ],
+        "rotationDegrees": [
+          17.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    ],
+    []
+  ],
+  "placementByMode": [
+    {
+      "positionOffset": [
+        0.0,
+        -0.28999999165534973,
+        0.0
+      ],
+      "rotationDegrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "positionOffset": [
+        0.0,
+        -0.28999999165534973,
+        0.0
+      ],
+      "rotationDegrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "positionOffset": [
+        0.0,
+        -0.28999999165534973,
+        0.0
+      ],
+      "rotationDegrees": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
   "positionOffset": [
     0.0,
     -0.28999999165534973,
     0.0
-  ]
+  ],
+  "thrusterPlumeEnabled": true
 }
