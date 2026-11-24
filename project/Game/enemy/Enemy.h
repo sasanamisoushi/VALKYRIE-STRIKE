@@ -29,6 +29,9 @@ public:
     // 初期化（発生位置を渡す）
     virtual void Initialize(const Vector3 &position);
 
+    // スポーン直後に必要な種類固有の配置補正。通常敵は何もしない。
+    virtual void OnSpawned(const std::list<std::unique_ptr<Obstacle>>& obstacles) { (void)obstacles; }
+
     // 毎フレームの更新
     virtual void Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles);
 
@@ -50,6 +53,9 @@ public:
     Vector3 GetRotation() const { return rotation_; }
     Vector3 GetScale() const { return scale_; }
     Vector3 GetVelocity() const { return velocity_; }
+	// 撃破演出で元の敵モデルを一時的に使うための描画情報。
+	Model* GetPresentationModel() const { return object_ ? object_->GetModel() : nullptr; }
+	void SetPresentationVisible(bool visible) { presentationVisible_ = visible; }
 
     virtual Vector3 GetWorldHalfExtents() const;
     virtual float GetCollisionRadius() const;
@@ -107,6 +113,20 @@ public:
     bool IsBossMinion() const { return isBossMinion_; }
     void SetIsBossMinion(bool isBossMinion) { isBossMinion_ = isBossMinion; }
 
+    // ロックオン部位（多部位を持つ敵のみオーバーライド）
+    virtual Vector3 GetBodyLockOnPosition() const { return GetPosition(); }
+    virtual size_t GetLockOnPartCount() const { return 0; }
+    virtual bool IsLockOnPartAvailable(size_t partIndex) const { (void)partIndex; return false; }
+    virtual Vector3 GetLockOnPartPosition(size_t partIndex) const { (void)partIndex; return GetAimPosition(); }
+    virtual float GetLockOnPartRadius(size_t partIndex) const { (void)partIndex; return GetCollisionRadius(); }
+    virtual int GetLockOnPartHP(size_t partIndex) const { (void)partIndex; return GetHP(); }
+    virtual int GetLockOnPartMaxHP(size_t partIndex) const { (void)partIndex; return GetMaxHP(); }
+
+    // 妨害フィールド・近接攻撃（該当する敵のみオーバーライド）
+    virtual float GetJammingRadius() const { return 0.0f; }
+    virtual bool IsMeleeActive() const { return false; }
+    virtual OBB GetMeleeBoxOBB() const { return {}; }
+
 protected:
 	friend class EnemyActionController;
     void UpdateFlightPathAI(const Vector3 &playerPos, EnemyBulletManager *bulletManager);
@@ -140,6 +160,7 @@ protected:
 
     // 死んだかどうかのフラグ
     bool isDead_ = false;
+	bool presentationVisible_ = true;
     bool isBoss_ = false; // ボスフラグ
     bool isBossMinion_ = false;
     size_t spawnPointIndex_ = kNoSpawnPoint;

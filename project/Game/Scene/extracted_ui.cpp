@@ -76,8 +76,7 @@ bool GamePlayScene::ApplySimulationAction(const std::string &filePath, const std
 	aimAssistEnemy_ = nullptr;
 	CancelMultiLock();
 	isCinematicLockOnCameraInitialized_ = false;
-	isGameOver_ = false;
-	gameOverTimer_ = 0;
+	gameOverSequence_.Reset();
 
 	if (player_ && action->contains("player") && (*action)["player"].is_object()) {
 		const json &playerData = (*action)["player"];

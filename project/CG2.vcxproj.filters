@@ -61,6 +61,15 @@
     <Filter Include="ヘッダー ファイル\Game\obstacle">
       <UniqueIdentifier>{93995380-89bd-4b04-88eb-625fbe52ebfe}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Game">
+      <UniqueIdentifier>{6a5f8c10-4b2e-4f1a-9c3d-8e7b1a2c3d4e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Scene">
+      <UniqueIdentifier>{7b6e9d21-5c3f-4a2b-8d4e-9f8c2b3d4e5f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Player">
+      <UniqueIdentifier>{8c7fae32-6d40-4b3c-9e5f-a09d3c4e5f60}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="engine\base\main.cpp">
@@ -129,6 +138,225 @@
     <ClCompile Include="Game\Scene\GamePlayScene.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+	<ClCompile Include="Game\Scene\BoundaryShieldSettingsManager.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EnemySpawnManager.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EnemyFactory.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EnemySeparationResolver.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\PlayerEnemyContactResolver.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GroundEnemyEffectProcessor.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossMinionSpawner.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EnemyDefeatProcessor.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TutorialRequirementsManager.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TutorialProgressTracker.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TutorialPhaseController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TutorialState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\ReturnToTitleTransition.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TutorialGoalMarker.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\CombatAlertState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TutorialOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\AttractDemoOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\CombatHudOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\CombatHudSpriteRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\DebugColliderRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BoundaryShieldRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\ReticleOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossEditorPanel.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\PlayerTuningPanel.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SimulationControlPanel.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EnemyUpdateCoordinator.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\PlayerWeaponController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameplayModeController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\PlayerFlightEffectController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\RadarRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossSpawnController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossEncounterState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossIntroOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\StageObjectiveOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\MissionStartOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameOverOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\PauseMenuOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\ReturnToTitleOverlayRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameCameraManager.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\CinematicCameraCoordinator.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SceneDebugEditorController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\StageReloadController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GamePlayUIManager.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EnvironmentRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\ClearScene.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\DamageFeedbackState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\IntroBoostState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameplayBalanceSettingsManager.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameOverSequence.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\PauseMenuState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SpecialAttackState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SongState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SongFlightTrailRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\AttractDemoState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\AttractDemoController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TitleLaunchState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TitleBackgroundEnemyState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TitleBackgroundEnemyController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TitleBackgroundEnemyFlightController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TitleBackgroundEnemyWeaponController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\WarpExitTimelineState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\WarpExitPresentationState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearPhaseState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearTimelineState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearEffectState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossCrashSmokeTrailManager.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearPlayerExitState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearCrashState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearFocusState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearCameraState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\BossClearSequenceController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\MultiLockChargeState.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
 	<ClCompile Include="Game\Scene\AmmoManager.cpp">
 	  <Filter>ソース ファイル</Filter>
 	</ClCompile>
@@ -204,6 +432,9 @@
     <ClCompile Include="Game\Player\Player.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
+    <ClCompile Include="Game\Player\PlayerPresentationController.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
     <ClCompile Include="Game\Player\PlayerActionController.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
@@ -229,6 +460,9 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="Game\enemy\GroundEnemy.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\enemy\JammerEnemy.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="engine\Particle\ExplosionManager.cpp">
@@ -329,6 +563,228 @@
     <ClInclude Include="Game\Scene\GamePlayScene.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+	<ClInclude Include="Game\Scene\EnemySpawnManager.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\EnemyFactory.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\EnemySeparationResolver.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\PlayerEnemyContactResolver.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GroundEnemyEffectProcessor.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossMinionSpawner.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\EnemyDefeatProcessor.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BoundaryShieldSettingsManager.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TutorialRequirementsManager.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TutorialProgressTracker.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TutorialPhaseController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TutorialState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\ReturnToTitleTransition.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TutorialGoalMarker.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\CombatAlertState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TutorialOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\AttractDemoOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\CombatHudOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\CombatHudSpriteRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\DebugColliderRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BoundaryShieldRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\ReticleOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossEditorPanel.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\PlayerTuningPanel.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SimulationControlPanel.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TargetSelectionState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\EnemyUpdateCoordinator.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\PlayerWeaponController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameplayModeController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\PlayerFlightEffectController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\RadarRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossSpawnController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossEncounterState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossIntroOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\StageObjectiveOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\MissionStartOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameOverOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\PauseMenuOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\ReturnToTitleOverlayRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameCameraManager.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\CinematicCameraCoordinator.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SceneDebugEditorController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\StageReloadController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GamePlayUIManager.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\EnvironmentRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\ClearScene.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\DamageFeedbackState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\IntroBoostState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameplayBalanceSettingsManager.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameOverSequence.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\PauseMenuState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SpecialAttackState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SongState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SongFlightTrailRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\AttractDemoState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\AttractDemoController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TitleLaunchState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TitleBackgroundEnemyState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TitleBackgroundEnemyController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TitleBackgroundEnemyFlightController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TitleBackgroundEnemyWeaponController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\WarpExitTimelineState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\WarpExitPresentationState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearPhaseState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearTimelineState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearEffectState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossCrashSmokeTrailManager.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearPlayerExitState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearCrashState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearFocusState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearCameraState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\BossClearSequenceController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\MultiLockChargeState.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
 	<ClInclude Include="Game\Scene\AmmoManager.h">
 	  <Filter>ヘッダー ファイル</Filter>
 	</ClInclude>
@@ -407,6 +863,9 @@
     <ClInclude Include="Game\Player\Player.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
+    <ClInclude Include="Game\Player\PlayerPresentationController.h">
+      <Filter>Game\Player</Filter>
+    </ClInclude>
     <ClInclude Include="Game\Player\PlayerMovementController.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
@@ -432,6 +891,9 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Game\enemy\GroundEnemy.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\enemy\JammerEnemy.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="engine\Particle\ExplosionManager.h">

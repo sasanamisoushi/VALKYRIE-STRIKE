@@ -30,7 +30,7 @@ float CameraPitchFromForward(const Vector3& forward) {
 void PlayerActionController::Destroy(Player& player) const {
     player.isDead_ = true;
     player.isGuarding_ = false;
-    player.presentationThrustersVisible_ = false;
+    player.SetPresentationThrustersVisible(false);
     // ゲームオーバーのシネマティック中は、爆発に包まれる機体を描画し続ける。
     // シーン遷移または再初期化でモデルは通常どおり破棄される。
 }

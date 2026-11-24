@@ -51,6 +51,7 @@ public:
     // 自分の座標を外に教えるゲッター
     Vector3 GetPosition() const { return position_; }
     Vector3 GetVelocity() const { return velocity_; }
+    MissileType GetType() const { return type_; }
     Enemy* GetTarget() const { return target_; }
     float GetCollisionRadius() const { return collisionRadius_; }
     bool HasTargetPoint() const { return hasTargetPoint_; }

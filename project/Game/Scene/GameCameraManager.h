@@ -15,7 +15,7 @@ public:
 	void Initialize();
 
 	// 毎フレームの更新処理
-	void Update(bool isSimulationMode, Enemy* lockedEnemy, const Vector3& playerPosition);
+	void Update(Enemy* lockedEnemy, const Vector3& playerPosition);
 
 	// デバッグカメラの有効・無効を切り替える
 	void SetDebugCameraActive(bool isActive) { isDebugCameraActive_ = isActive; }
@@ -30,19 +30,22 @@ public:
 	// 現在アクティブなカメラ（ゲームカメラ or デバッグカメラ）を取得
 	Camera* GetActiveCamera() const;
 
-	// シネマティックロックオンカメラの有効化設定
-	void SetCinematicLockOnEnabled(bool enabled) { isCinematicLockOnCameraEnabled_ = enabled; }
+	// シネマティックロックオンカメラの有効化設定（切替時は補間状態も自動でリセット）
+	void SetCinematicLockOnEnabled(bool enabled) {
+		isCinematicLockOnCameraEnabled_ = enabled;
+		isCinematicLockOnCameraInitialized_ = false;
+	}
 	bool IsCinematicLockOnEnabled() const { return isCinematicLockOnCameraEnabled_; }
 
 	// シネマティックカメラの状態リセット
 	void ResetCinematicCamera() { isCinematicLockOnCameraInitialized_ = false; }
 
+	// 指定カメラへロックオン中のシネマティックカメラ演出を適用する
+	void UpdateCinematicLockOnCamera(Camera* targetCamera, Enemy* lockedEnemy, const Vector3& playerPosition);
+
 private:
 	// 通常ゲームプレイ時のカメラ更新
 	void UpdateGameplayCamera(const Vector3& playerPosition);
-	
-	// ロックオン中のシネマティックカメラ更新
-	void UpdateCinematicLockOnCamera(Enemy* lockedEnemy, const Vector3& playerPosition);
 
 	std::unique_ptr<Camera> camera_;
 	std::unique_ptr<FlyCamera> debugFlyCamera_;

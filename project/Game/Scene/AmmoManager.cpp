@@ -1,5 +1,7 @@
 #include "AmmoManager.h"
 
+#include "engine/base/Logger.h"
+
 #include <externals/json.hpp>
 
 #include <algorithm>
@@ -92,7 +94,8 @@ bool AmmoManager::LoadSettings(const std::string& filePath) {
     nlohmann::json root;
     try {
         ifs >> root;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        logger.Log("[AmmoManager] Failed to load " + filePath + ": " + e.what());
         return false;
     }
     if (!root.is_object()) {

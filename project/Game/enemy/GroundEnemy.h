@@ -14,6 +14,7 @@ public:
     ~GroundEnemy() override = default;
 
     void Initialize(const Vector3 &position) override;
+    void OnSpawned(const std::list<std::unique_ptr<Obstacle>>& obstacles) override;
     void Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles) override;
     void Draw() override;
     void UpdateModel() override;
@@ -40,8 +41,8 @@ public:
     std::vector<EffectEvent> ConsumeEffectEvents();
 
     // 近接攻撃判定ブロックのOBBを取得（当たりのチェック用）
-    OBB GetMeleeBoxOBB() const;
-    bool IsMeleeActive() const { return isMeleeActive_; }
+    OBB GetMeleeBoxOBB() const override;
+    bool IsMeleeActive() const override { return isMeleeActive_; }
 
 private:
     void UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *bulletManager);

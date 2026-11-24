@@ -10,13 +10,19 @@ class Enemy;
 class Obstacle; // 追加
 class MissileManager {
 public:
+    // 敵を撃破した弾種をシーン側へ渡し、武器ごとの撃破演出を選べるようにする。
+    struct DefeatedEnemy {
+        Enemy* enemy = nullptr;
+        MissileType projectileType = MissileType::Normal;
+    };
+
     // 初期化（リストを空にするなど）
     void Initialize(ParticleManager* particleManager);
 
     // 全ミサイルの更新と、死んだミサイルの削除
     void Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies,
         const std::list<std::unique_ptr<Obstacle>> &obstacles,
-        std::vector<Vector3> &hitPositions, std::vector<Enemy *> &destroyedEnemies);
+        std::vector<Vector3> &hitPositions, std::vector<DefeatedEnemy> &destroyedEnemies);
 
     void UpdateModels(Camera *camera = nullptr);
 

@@ -287,6 +287,10 @@ void GroundEnemy::Initialize(const Vector3 &position) {
     object_->Update();
 }
 
+void GroundEnemy::OnSpawned(const std::list<std::unique_ptr<Obstacle>>& obstacles) {
+    SnapToGround(obstacles);
+}
+
 void GroundEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles) {
     if (isDead_) return;
 

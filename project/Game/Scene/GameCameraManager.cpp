@@ -86,8 +86,8 @@ Camera* GameCameraManager::GetActiveCamera() const {
 	return camera_.get();
 }
 
-void GameCameraManager::Update(bool isSimulationMode, Enemy* lockedEnemy, const Vector3& playerPosition) {
-	if (isDebugCameraActive_ && !isSimulationMode) {
+void GameCameraManager::Update(Enemy* lockedEnemy, const Vector3& playerPosition) {
+	if (isDebugCameraActive_) {
 		// FlyCameraが自分で入力を消化して自分を更新する
 		debugFlyCamera_->Update();
 	}
@@ -98,7 +98,7 @@ void GameCameraManager::Update(bool isSimulationMode, Enemy* lockedEnemy, const 
 			!lockedEnemy->IsDead();
 
 		if (canUseCinematicCamera) {
-			UpdateCinematicLockOnCamera(lockedEnemy, playerPosition);
+			UpdateCinematicLockOnCamera(camera_.get(), lockedEnemy, playerPosition);
 		}
 		else {
 			UpdateGameplayCamera(playerPosition);
@@ -120,8 +120,8 @@ void GameCameraManager::UpdateGameplayCamera(const Vector3& playerPosition) {
 	// 呼び出し元(PlayerのUpdate等)でCameraの位置を更新する必要があります。
 }
 
-void GameCameraManager::UpdateCinematicLockOnCamera(Enemy* lockedEnemy, const Vector3& playerPosition) {
-	if (!camera_ || !lockedEnemy) {
+void GameCameraManager::UpdateCinematicLockOnCamera(Camera* targetCamera, Enemy* lockedEnemy, const Vector3& playerPosition) {
+	if (!targetCamera || !lockedEnemy) {
 		return;
 	}
 
@@ -155,13 +155,13 @@ void GameCameraManager::UpdateCinematicLockOnCamera(Enemy* lockedEnemy, const Ve
 	rawSideDirection = NormalizeOrVector3(rawSideDirection, { 1.0f, 0.0f, 0.0f });
 
 	if (!isCinematicLockOnCameraInitialized_) {
-		cinematicLockOnCameraPosition_ = camera_->GetTranslate();
+		cinematicLockOnCameraPosition_ = targetCamera->GetTranslate();
 		cinematicLockOnCameraRotation_ = MakeLookQuaternion(playerForward);
 		cinematicLockOnCameraFocus_ = rawFocus;
 		cinematicLockOnCameraBackDirection_ = rawCameraBackDirection;
 		cinematicLockOnCameraSeparation_ = separation;
 		cinematicLockOnCameraSideSign_ =
-			(MyMath::Dot(SubtractVector3(camera_->GetTranslate(), rawFocus), rawSideDirection) < 0.0f) ? -1.0f : 1.0f;
+			(MyMath::Dot(SubtractVector3(targetCamera->GetTranslate(), rawFocus), rawSideDirection) < 0.0f) ? -1.0f : 1.0f;
 		isCinematicLockOnCameraInitialized_ = true;
 	} else {
 		cinematicLockOnCameraFocus_ = LerpVector3(cinematicLockOnCameraFocus_, rawFocus, kCinematicCameraFocusBlend);
@@ -205,9 +205,9 @@ void GameCameraManager::UpdateCinematicLockOnCamera(Enemy* lockedEnemy, const Ve
 	cinematicLockOnCameraPosition_ = LerpVector3(cinematicLockOnCameraPosition_, desiredPosition, kCinematicCameraPositionBlend);
 	cinematicLockOnCameraRotation_ = MyMath::Slerp(cinematicLockOnCameraRotation_, desiredRotation, kCinematicCameraRotationBlend);
 
-	camera_->SetFovY(kCinematicCameraFovY);
-	camera_->SetFarClip(kCinematicCameraFarClip);
-	camera_->SetTranslate(cinematicLockOnCameraPosition_);
-	camera_->SetQuaternion(cinematicLockOnCameraRotation_);
+	targetCamera->SetFovY(kCinematicCameraFovY);
+	targetCamera->SetFarClip(kCinematicCameraFarClip);
+	targetCamera->SetTranslate(cinematicLockOnCameraPosition_);
+	targetCamera->SetQuaternion(cinematicLockOnCameraRotation_);
 }
 

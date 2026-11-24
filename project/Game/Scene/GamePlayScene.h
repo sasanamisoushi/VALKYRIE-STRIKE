@@ -23,11 +23,59 @@
 #include "Game/enemy/EnemyEventManager.h"
 #include "Game/obstacle/Obstacle.h"
 #include "GameCameraManager.h"
-#include "LevelManager.h"
+#include "CinematicCameraCoordinator.h"
+#include "SceneDebugEditorController.h"
+#include "StageReloadController.h"
 #include "GamePlayUIManager.h"
 #include "EnvironmentRenderer.h"
+#include "EnemySpawnManager.h"
+#include "EnemyUpdateCoordinator.h"
+#include "PlayerWeaponController.h"
+#include "GameplayModeController.h"
+#include "PlayerFlightEffectController.h"
+#include "BossEncounterState.h"
+#include "BossIntroOverlayRenderer.h"
+#include "StageObjectiveOverlayRenderer.h"
+#include "MissionStartOverlayRenderer.h"
+#include "GameOverOverlayRenderer.h"
+#include "PauseMenuOverlayRenderer.h"
+#include "ReturnToTitleOverlayRenderer.h"
+#include "TutorialOverlayRenderer.h"
+#include "BossClearOverlayRenderer.h"
+#include "AttractDemoOverlayRenderer.h"
+#include "CombatHudOverlayRenderer.h"
+#include "CombatHudSpriteRenderer.h"
+#include "DebugColliderRenderer.h"
+#include "BoundaryShieldRenderer.h"
+#include "ReticleOverlayRenderer.h"
+#include "RadarRenderer.h"
+#include "TutorialRequirementsManager.h"
+#include "TutorialProgressTracker.h"
+#include "TutorialPhaseController.h"
+#include "ReturnToTitleTransition.h"
+#include "TutorialGoalMarker.h"
+#include "CombatAlertState.h"
+#include "DamageFeedbackState.h"
+#include "IntroBoostState.h"
+#include "GameOverSequence.h"
+#include "PauseMenuState.h"
+#include "SpecialAttackState.h"
+#include "SongState.h"
+#include "SongFlightTrailRenderer.h"
+#include "AttractDemoController.h"
+#include "TitleLaunchState.h"
+#include "TitleBackgroundEnemyState.h"
+#include "TitleBackgroundEnemyController.h"
+#include "TitleBackgroundEnemyFlightController.h"
+#include "TitleBackgroundEnemyWeaponController.h"
+#include "WarpExitPresentationState.h"
+#include "BossClearSequenceController.h"
 #include "AmmoManager.h"
+#include "BoundaryShieldSettingsManager.h"
+#include "GameplayBalanceSettingsManager.h"
 #include "MultiLockTarget.h"
+#include "MultiLockChargeState.h"
+#include "TargetSelectionState.h"
 #include "Game/base/GameStartTransition.h"
 #include <memory>
 #include <vector>
@@ -73,79 +121,52 @@ public:
 	// ワープ画面で選択を確定した後、タイトル背景用に先読みした本編を操作可能な本編へ切り替える。
 	// すでに生成済みのモデル・テクスチャを使うため、Initialize() は呼び直さない。
 	void ActivateFromWarp();
-	Vector3 GetTitleLaunchForward() const { return titleLaunchForward_; }
+	Vector3 GetTitleLaunchForward() const { return titleLaunchState_.GetForward(); }
 	Player* GetPlayer() const { return player_.get(); }
+	BoundaryShieldSettingsManager& GetBoundaryShieldSettings() { return boundaryShieldSettings_; }
+	GameplayBalanceSettingsManager& GetGameplayBalanceSettings() { return gameplayBalanceSettings_; }
+	TutorialRequirementsManager& GetTutorialRequirements() { return tutorialRequirements_; }
 
 	// UIの更新
 
 private:
 	friend class SimulationManager;
-	friend class MissilePresetManager;
-	friend class LockOnManager;
 
 
-	// 旧シミュレーション専用モードは廃止済み。内部の編集補助との互換用に残す。
-	bool IsSimulationMode() const { return false; }
 	bool IsTitleBackgroundMode() const { return mode_ == Mode::TitleBackground; }
 	bool IsAttractDemoMode() const { return mode_ == Mode::AttractDemo; }
 	// タイトル背景だけが周回飛行を使う。
 	bool IsAutoFlightMode() const { return IsTitleBackgroundMode(); }
+	// ポーズ入力と選択を完結させる。タイトル帰還へ遷移した場合は true を返す。
+	bool UpdatePauseMenu(bool canUseKeyboardInput);
 	void DrawOverlay();
-	void DrawRadar();
 	// 初回プレイ時に、飛行・変形・武装・標的撃破・離脱地点までを案内する。
 	void UpdateTutorial();
-	void DrawTutorialOverlay(float screenWidth, float screenHeight);
 	void BeginTutorialCombat();
 	void ActivateTutorialGoal();
 	void DrawPauseOverlay(float screenWidth, float screenHeight);
 	void SetDebugCameraActive(bool isActive);
 	void ResetDebugCameraToPlayer();
 	void ResetDebugCameraToStageOverview();
-	void TryPlaceEnemyAtGameViewMouse();
 	void ReloadSceneJson();
 	void ResetEditorPreview();
 	MissileTuning MakeMissileTuning(MissileType type) const;
-	void SpawnEnemyFromSpawnPoint(size_t spawnPointIndex);
-	void SpawnDefaultGroundEnemies();
-	bool IsEnemySpawnPointActive(size_t spawnPointIndex) const;
-	void ScheduleEnemySpawn(size_t spawnPointIndex, int delayFrames);
-	void TriggerEnemyReinforcements(const std::string &deadEnemyName);
-	void UpdateEnemyRespawns();
-	bool HasPendingEnemySpawns() const;
 	bool TryConsumeAmmo(MissileType type);
 	void UpdateAutoReload();
-	// 境界シールド用の数値はゲーム側 ImGui で調整し、JSON へ永続化する。
-	void ApplyBoundaryShieldSettings();
-	bool LoadBoundaryShieldSettings();
-	bool SaveBoundaryShieldSettings() const;
+	GameplayBalanceMissileSettings CollectGameplayBalanceMissileSettings() const;
+	void ApplyGameplayBalanceMissileSettings(const GameplayBalanceMissileSettings& missileSettings);
 	void CaptureGameplayBalanceDefaults();
 	void ApplyGameplayBalanceSettings();
 	bool LoadGameplayBalanceSettings();
 	bool SaveGameplayBalanceSettings() const;
-	void ApplyTutorialRequirements();
-	bool LoadTutorialRequirements();
-	bool SaveTutorialRequirements() const;
-	void UpdateCinematicLockOnCamera();
-	void UpdateGameOverCinematicCamera(Camera* renderCamera);
-	void UpdateBossClearCinematicCamera(Camera* renderCamera);
-	void UpdateWarpExitCamera(Camera* renderCamera);
-	void UpdateWarpExitGate(Camera* renderCamera);
-	void DrawWarpExitGate();
-	void DrawMissionStartOverlay();
+	void SetCinematicLockOnCameraEnabled(bool enabled);
+	bool IsCinematicLockOnCameraEnabled() const;
+	void ResetCinematicLockOnCamera();
 	// ステージの現在の攻略目標と、ボス出現時の警告カットを HUD 上へ表示する。
-	void DrawStageObjectiveOverlay(float screenWidth, float screenHeight);
-	void DrawBossIntroOverlay(float screenWidth, float screenHeight);
-	void DrawBossClearOverlay(float screenWidth, float screenHeight);
-	void DrawGameOverOverlay(float screenWidth, float screenHeight);
-	void DrawAttractDemoOverlay(float screenWidth, float screenHeight);
-	void UpdateAttractDemoSequence();
-	void UpdateAttractDemoPilot();
 	void ClearEnemyReferences(Enemy* enemy);
 	void ClearAllEnemyReferences();
 	Mode mode_ = Mode::Gameplay;
-	bool attractDemoClearCinematic_ = false;
-	bool attractDemoBossCreated_ = false;
-	static constexpr int kAttractDemoLeadFrames = 45;
+	AttractDemoController attractDemoController_;
 
 	// シーンリソース
 	std::unique_ptr<Camera> camera;
@@ -153,60 +174,15 @@ private:
 	std::unique_ptr<Object3d> groundModel;
 	std::unique_ptr<Primitive> myShere;
 
-	std::unique_ptr<Sprite> aimCursorSprite_;
-	std::unique_ptr<Sprite> lockOnReticleSprite_;
-	std::unique_ptr<Sprite> missileLockOnReticleSprite_;
-	static constexpr size_t kMaxMultiLockMarkers = 12;
-	std::array<std::unique_ptr<Sprite>, kMaxMultiLockMarkers> multiLockMarkerSprites_;
-	std::unique_ptr<Sprite> spGaugeBackgroundSprite_;
-	std::unique_ptr<Sprite> spGaugeFillSprite_;
-	std::unique_ptr<Sprite> spGaugeCostMarkerSprite_;
-	std::unique_ptr<Sprite> songGaugeBackgroundSprite_;
-	std::unique_ptr<Sprite> songGaugeFillSprite_;
-	std::unique_ptr<Sprite> songGaugeStateSprite_;
-	std::unique_ptr<Sprite> hudPanelSprite_;
-	std::unique_ptr<Sprite> hudNormalAmmoPanelSprite_;
-	std::unique_ptr<Sprite> hudHomingAmmoPanelSprite_;
-	std::unique_ptr<Sprite> hpGaugeBackgroundSprite_;
-	std::unique_ptr<Sprite> hpGaugeFillSprite_;
-	std::unique_ptr<Sprite> bossHpGaugeBackgroundSprite_;
-	std::unique_ptr<Sprite> bossHpGaugeFillSprite_;
+	ReticleOverlayRenderer reticleOverlayRenderer_;
 	std::unique_ptr<Sprite> pauseOverlaySprite_;
 	std::unique_ptr<Sprite> pausePanelSprite_;
 	std::unique_ptr<Sprite> controlsGuideSprite_;
 	std::unique_ptr<Sprite> pauseMenuLabelsSprite_;
-	std::unique_ptr<Sprite> hudHpLabelSprite_;
-	std::unique_ptr<Sprite> hudAmmoLabelSprite_;
-	std::unique_ptr<Sprite> hudSpLabelSprite_;
-	std::unique_ptr<Sprite> hudNormalAmmoIconSprite_;
-	std::unique_ptr<Sprite> hudHomingAmmoIconSprite_;
-	std::unique_ptr<Sprite> hudNormalReloadGaugeSprite_;
-	std::unique_ptr<Sprite> hudHomingReloadGaugeSprite_;
-	std::unique_ptr<Sprite> radarFrameSprite_;
-	std::unique_ptr<Sprite> radarSweepSprite_;
-	static constexpr size_t kMaxRadarBlips = 32;
-	std::array<std::unique_ptr<Sprite>, kMaxRadarBlips> radarBlipSprites_;
-	float radarSweepAngle_ = 0.0f;
-	std::array<std::unique_ptr<Sprite>, 3> hudHpDigitSprites_;
-	std::array<std::unique_ptr<Sprite>, 7> lockedTargetHpDigitSprites_;
-	std::array<std::unique_ptr<Sprite>, 7> hudNormalAmmoDigitSprites_;
-	std::array<std::unique_ptr<Sprite>, 7> hudHomingAmmoDigitSprites_;
-	std::unique_ptr<Object3d> boundaryAlertObject_;
-	std::unique_ptr<Object3d> ceilingBoundaryAlertObject_;
-	struct BoundaryShieldSettings {
-		float warningDistance = 50.0f;
-		float wallWidth = 18.0f;
-		float wallHeight = 12.0f;
-		float ceilingWidth = 22.0f;
-		float ceilingHeight = 18.0f;
-		float maxOpacity = 0.68f;
-		float pulseSpeed = 0.05f;
-		float pulseStrength = 0.14f;
-		float surfaceOffset = 0.5f;
-		Vector3 color = { 1.0f, 0.30f, 0.24f };
-	};
-	BoundaryShieldSettings boundaryShieldSettings_;
-	std::string boundaryShieldSettingsMessage_;
+	CombatHudSpriteRenderer combatHudSpriteRenderer_;
+	RadarRenderer radarRenderer_;
+	BoundaryShieldRenderer boundaryShieldRenderer_;
+	BoundaryShieldSettingsManager boundaryShieldSettings_;
 	static constexpr const char* kBoundaryShieldSettingsPath = "resources/boundary_shield_settings.json";
 	std::unique_ptr<Sprite> warpFadeInSprite_;
 	std::unique_ptr<Sprite> missionStartOverlaySprite_;
@@ -215,39 +191,7 @@ private:
 	std::unique_ptr<Sprite> bossCinematicTopBarSprite_;
 	std::unique_ptr<Sprite> bossCinematicBottomBarSprite_;
 	float warpFadeInAlpha_ = 0.0f;
-	// ロード後、ステージ空間に残るワープ出口。自機はこの輪を通って出現する。
-	std::unique_ptr<Object3d> warpExitRingObject_;
-	// 外周だけでなく、出口の内部も発光面で満たして空間の穴に見せる。
-	std::unique_ptr<Object3d> warpExitFillObject_;
-	std::unique_ptr<Object3d> warpExitCoreObject_;
-	// 中心部を逆方向に回す二層の雲。外周だけの回転に見えない出口を作る。
-	std::unique_ptr<Object3d> warpExitSpiralOuterObject_;
-	std::unique_ptr<Object3d> warpExitSpiralInnerObject_;
-	bool warpExitActive_ = false;
-	bool warpExitImpactTriggered_ = false;
-	int warpExitFrame_ = 0;
-	int warpExitGateFrames_ = 0;
-	// ワープ出口から操作開始までを約 3.5 秒に保ち、出現直後の高速から巡航へ減速させる。
-	static constexpr int kWarpExitDurationFrames = 210;
-	static constexpr int kWarpExitGateLifetimeFrames = kWarpExitDurationFrames;
-	// ゲート通過前から短い実体化を始め、勢いよく飛び出す見せ場で不透明へ到達させる。
-	static constexpr int kWarpExitPlayerFadeStartFrame = 44;
-	static constexpr int kWarpExitPlayerFadeFrames = 20;
-	// 自機が出口面を通過する瞬間。出口を消す・後方カメラへ渡す処理は、
-	// 自機全体が抜けるまで待ち、エフェクト内から姿が現れるようにする。
-	static constexpr int kWarpExitGatePassageFrame = 60;
-	static constexpr int kWarpExitGateFadeStartFrame = 76;
-	static constexpr int kWarpExitCameraHandoffStartFrame = 96;
-	static constexpr int kWarpExitCameraHandoffFrames = 52;
-	// 戦闘 HUD の直前にだけ、出撃完了を知らせる中央演出を重ねる。
-	static constexpr int kWarpExitMissionStartFrame = 120;
-	Vector3 warpExitGatePosition_ = { 0.0f, 0.0f, 0.0f };
-	Vector3 warpExitStartPosition_ = { 0.0f, 0.0f, 0.0f };
-	Vector3 warpExitEndPosition_ = { 0.0f, 0.0f, 0.0f };
-	Vector3 warpExitForward_ = { 0.0f, 0.0f, 1.0f };
-	Vector3 warpExitRight_ = { 1.0f, 0.0f, 0.0f };
-	Vector3 warpExitCinematicCameraPosition_ = { 0.0f, 0.0f, 0.0f };
-	float warpExitYaw_ = 0.0f;
+	WarpExitPresentationState warpExitPresentation_;
 
 
 	// パーティクル
@@ -293,7 +237,7 @@ private:
 	std::unique_ptr<Object3d> skeletonLinesObject;
 
 	// デバッグ用のコライダー描画
-	std::unique_ptr<Object3d> debugColliderLinesObject;
+	DebugColliderRenderer debugColliderRenderer_;
 	bool showDebugColliders = false;
 
 	// =====================================================
@@ -303,21 +247,10 @@ private:
 	std::unique_ptr<FlyCamera> debugFlyCamera_;
 	bool isDebugCameraActive_ = false;
 	
-	// ボックス選択用
-	bool isBoxSelecting_ = false;
-	Vector2 boxSelectStartPos_ = {0.0f, 0.0f};
-	Vector2 boxSelectEndPos_ = {0.0f, 0.0f};
+	SceneDebugEditorController debugEditorController_;
 
 	// 起動直後は編集モードで停止し、ツールバーの「再生」からゲームを開始する。
 	bool isEditorPreviewPlaying_ = false;
-	bool isCinematicLockOnCameraEnabled_ = false;
-	bool isCinematicLockOnCameraInitialized_ = false;
-	Vector3 cinematicLockOnCameraPosition_ = { 0.0f, 0.0f, 0.0f };
-	Quaternion cinematicLockOnCameraRotation_ = { 0.0f, 0.0f, 0.0f, 1.0f };
-	Vector3 cinematicLockOnCameraFocus_ = { 0.0f, 0.0f, 0.0f };
-	Vector3 cinematicLockOnCameraBackDirection_ = { 0.0f, 0.0f, 1.0f };
-	float cinematicLockOnCameraSideSign_ = 1.0f;
-	float cinematicLockOnCameraSeparation_ = 0.0f;
 
 	// UIと状態管理
 	bool showModel = false;
@@ -347,28 +280,7 @@ private:
 	int missileLifeTime = 240;
 	float missileMuzzleOffset = 0.8f;
 
-	struct GameplayBalanceSettings {
-		std::array<PlayerModeParams, 3> playerModes{};
-		float specialAttackCost = 50.0f;
-		float spGaugeRecoveryPerSecond = 3.0f;
-		int specialAttackDurationFrames = 180;
-		int specialAttackFireIntervalFrames = 6;
-		int songDurationFrames = 900;
-		int bossMaxActiveMinions = 6;
-		// ファイターの低空高速飛行時に、カメラ近傍を後方へ流すスピード線。
-		bool speedRushEnabled = true;
-		float speedRushMaxAltitude = 24.0f;
-		float speedRushMinSpeedRatio = 0.65f;
-		int speedRushMaxParticlesPerFrame = 4;
-		float speedRushSpawnDistance = 8.0f;
-		float speedRushSpawnHalfWidth = 5.5f;
-		float speedRushSpawnHalfHeight = 2.8f;
-		float speedRushParticleSpeed = 0.62f;
-		float speedRushParticleScale = 0.18f;
-		float speedRushParticleLifetime = 0.34f;
-	};
-	GameplayBalanceSettings gameplayBalanceSettings_;
-	std::string gameplayBalanceSettingsMessage_;
+	GameplayBalanceSettingsManager gameplayBalanceSettings_;
 	static constexpr const char* kGameplayBalanceSettingsPath = "resources/gameplay_balance_settings.json";
 	static constexpr const char* kTutorialRequirementsPath = "resources/tutorial_requirements.json";
 
@@ -377,76 +289,55 @@ private:
 	// 画面上に存在するミサイルを管理するマネージャ
 	std::unique_ptr<MissileManager> missileManager_;
 
+	// 通常弾で撃破した通常敵の、短時間だけ飛び散る機体パーツ。
+	struct NormalEnemyDebrisPiece {
+		std::unique_ptr<Object3d> object;
+		Vector3 velocity{};
+		Vector3 rotation{};
+		Vector3 angularVelocity{};
+		Vector3 baseScale{};
+		int remainingFrames = 0;
+	};
+	struct HomingEnemyImplosion {
+		std::unique_ptr<Object3d> object;
+		Vector3 baseScale{};
+		Vector3 rotation{};
+		int remainingFrames = 0;
+	};
+	void SpawnNormalEnemyDebris(Enemy& enemy);
+	void UpdateNormalEnemyDebris();
+	void SpawnHomingEnemyImplosion(Enemy& enemy);
+	void UpdateHomingEnemyImplosions();
+	void ClearNormalEnemyDebris();
+	std::vector<NormalEnemyDebrisPiece> normalEnemyDebris_;
+	std::vector<HomingEnemyImplosion> homingEnemyImplosions_;
+
 
 	// 敵
 	std::list<std::unique_ptr<Enemy>> enemies_;
 	std::unique_ptr<EnemyBulletManager> enemyBulletManager_;
 	std::vector<EnemySpawnData> enemySpawns_;
-	std::vector<int> enemyRespawnTimers_;
 	EnemyEventManager enemyEventManager_;
-	Enemy *lockedEnemy_ = nullptr;
-	// -1 は敵本体。0 以上は Boss の砲台または側面シールド発生装置をロックしている。
-	int lockedBossTurretIndex_ = -1;
-	bool bossSpawned_ = false;
-	// ボスを配置してから戦闘を始めるまでの短い警告カット。0 なら通常戦闘。
-	int bossIntroFrames_ = 0;
-	static constexpr int kBossIntroDurationFrames = 120;
-	// ボス撃破後は、誘爆墜落 -> 大爆発と爆散 -> 破片の余韻 -> クリア表示へ遷移する。
-	enum class BossClearPhase {
-		None,
-		DefeatCinematic,
-		FinalExplosion,
-		Wreck,
-		DebrisAftermath,
-		MissionClear,
-	};
-	void ResetBossClearSequence();
-	BossClearPhase bossClearPhase_ = BossClearPhase::None;
-	int bossClearCinematicFrames_ = 0;
-	Vector3 bossClearFocusPosition_{};
-	float bossClearFocusRadius_ = 1.0f;
-	Vector3 bossClearInitialPosition_{};
-	Vector3 bossClearInitialRotation_{};
-	std::chrono::steady_clock::time_point bossClearLastTickTime_{};
-	bool bossClearTimerInitialized_ = false;
-	float bossClearSequenceTimer_ = 0.0f;
-	float bossClearPhaseTimer_ = 0.0f;
-	float bossClearSubExplosionTimer_ = 0.0f;
-	float bossClearSmokeTimer_ = 0.0f;
-	Vector3 bossClearCrashVelocity_{};
-	Vector3 bossClearCrashRotation_{};
-	Vector3 bossClearExplosionCenter_{};
-	Vector3 bossClearCameraAnchorPos_{};
-	Vector3 bossClearCameraSlideDir_{};
-	Vector3 bossClearPlayerPos_{};
-	Vector3 bossClearPlayerDir_{};
-	float bossClearPlayerSpeed_ = 0.0f;
-	float bossClearPlayerRoll_ = 0.0f;
-	bool bossClearPhase3Initialized_ = false;
-	bool bossClearMissionUiStarted_ = false;
-	float bossClearMissionUiTimer_ = 0.0f;
-	static constexpr float kBossPhase1DurationSec = 3.0f;
-	static constexpr float kBossPhase2FlashDurationSec = 0.5f;
-	static constexpr float kBossPhase3PlayerEscapeSec = 1.25f;
-	static constexpr float kBossDebrisAftermathDurationSec = 1.6f;
-	static constexpr float kBossMissionClearDurationSec = 2.6f;
-	static constexpr size_t kBossSmokeTrailCount = 3;
-	std::array<std::unique_ptr<Trail>, kBossSmokeTrailCount> bossCrashSmokeTrails_;
-	std::array<std::unique_ptr<Object3d>, kBossSmokeTrailCount> bossCrashSmokeTrailObjects_;
-	static constexpr int kBossDefeatCinematicFrames = 180;
-	static constexpr int kBossFinalExplosionFrames = 30;
-	static constexpr int kBossWreckFrames = 150;
-	static constexpr int kBossMissionClearFrames = 150;
-	bool isPaused_ = false;
-	// false: ゲームに戻る / true: タイトルに戻る
-	bool isPauseTitleSelected_ = false;
+	EnemySpawnManager enemySpawnManager_;
+	EnemyUpdateCoordinator enemyUpdateCoordinator_;
+	TargetSelectionState targetSelection_;
+	BossEncounterState bossEncounterState_;
+	BossIntroOverlayRenderer bossIntroOverlayRenderer_;
+	StageObjectiveOverlayRenderer stageObjectiveOverlayRenderer_;
+	MissionStartOverlayRenderer missionStartOverlayRenderer_;
+	GameOverOverlayRenderer gameOverOverlayRenderer_;
+	PauseMenuOverlayRenderer pauseMenuOverlayRenderer_;
+	BossClearSequenceController bossClearSequence_;
+	PauseMenuState pauseMenuState_;
 	// ポーズメニューからの通信切断・システムシャットダウン遷移演出
 	void StartReturnToTitleTransition();
 	void UpdateReturnToTitleTransition();
-	void DrawReturnToTitleOverlay(float screenWidth, float screenHeight);
-	bool isAbortingToTitle_ = false;
-	int abortToTitleTimer_ = 0;
-	static constexpr int kAbortToTitleDurationFrames = 38;
+	ReturnToTitleTransition returnToTitleTransition_;
+	ReturnToTitleOverlayRenderer returnToTitleOverlayRenderer_;
+	TutorialOverlayRenderer tutorialOverlayRenderer_;
+	BossClearOverlayRenderer bossClearOverlayRenderer_;
+	AttractDemoOverlayRenderer attractDemoOverlayRenderer_;
+	CombatHudOverlayRenderer combatHudOverlayRenderer_;
 
 
 	// 障害物
@@ -458,15 +349,10 @@ private:
 	// 爆発エフェクト
 	std::unique_ptr<ExplosionManager> explosionManager_;
 
-	// ゲームオーバー演出用
-	bool isGameOver_ = false;
-	int gameOverTimer_ = 0;
-	Vector3 gameOverFocusPosition_ = { 0.0f, 0.0f, 0.0f };
-	static constexpr int kGameOverCinematicFrames = 180;
+	GameOverSequence gameOverSequence_;
 	int defeatedEnemyCount_ = 0;
 	int gameplayElapsedFrames_ = 0;
-	int previousPlayerHP_ = -1;
-	int damageEffectTimer_ = 0;
+	DamageFeedbackState damageFeedbackState_;
 
 	// シミュレーションツールUI用
 
@@ -478,115 +364,35 @@ private:
 	std::unique_ptr<MissilePresetManager> missilePresetManager_;
 	std::unique_ptr<LockOnManager> lockOnManager_;
 	std::unique_ptr<GameCameraManager> cameraManager_;
-	std::unique_ptr<LevelManager> levelManager_;
+	CinematicCameraCoordinator cinematicCameraCoordinator_;
 	std::unique_ptr<EnvironmentRenderer> environmentRenderer_;
 	std::unique_ptr<GamePlayUIManager> uiManager_;
 	std::unique_ptr<AmmoManager> ammoManager_;
-	int introBoostFrames_ = 0;
-	int introBoostInitialFrames_ = 0;
-	float introBoostYaw_ = 0.0f;
-	Vector3 introBoostVelocity_ = { 0.0f, 0.0f, 0.0f };
-	int titleBackgroundFrame_ = 0;
-	bool titleLaunchActive_ = false;
-	int titleLaunchFrame_ = 0;
-	Vector3 titleLaunchStartPosition_ = { 0.0f, 0.0f, 0.0f };
-	Vector3 titleLaunchStartForward_ = { 0.0f, 0.0f, 1.0f };
-	Vector3 titleLaunchForward_ = { 0.0f, 0.0f, 1.0f };
+	IntroBoostState introBoostState_;
+	GameplayModeController gameplayModeController_;
+	TitleLaunchState titleLaunchState_;
 
-	// タイトル背景での敵の再出現・画面外進入演出
-	int titleEnemyRespawnTimer_ = 0;
-	bool titleEnemyEntering_ = false;
-	int titleEnemyEnterFrame_ = 0;
-	int titleEnemySpawnSide_ = 1;
-	int titleEnemyCombatTimer_ = 0;
-	// アトラクトデモは通常入力を使わず、ゲームプレイの開始方向へ直進する。
-	int attractDemoFrame_ = 0;
-	Vector3 attractDemoForward_ = { 0.0f, 0.0f, 1.0f };
-	float attractDemoYaw_ = 0.0f;
+	TitleBackgroundEnemyState titleBackgroundEnemyState_;
+	TitleBackgroundEnemyController titleBackgroundEnemyController_;
+	TitleBackgroundEnemyFlightController titleBackgroundEnemyFlightController_;
+	TitleBackgroundEnemyWeaponController titleBackgroundEnemyWeaponController_;
 
-	// JSONファイルが最後に更新された日時を記録する変数
-	std::filesystem::file_time_type lastJsonWriteTime_;
-	Enemy* aimAssistEnemy_ = nullptr;
-	std::vector<MultiLockTarget> multiLockTargets_;
-	bool isMultiLockCharging_ = false;
-	int multiLockChargeFrames_ = 0;
-	// シーンを開く操作に使ったクリックを、初弾として扱わない。
-	bool isMissileInputArmed_ = false;
+	StageReloadController stageReloadController_;
+	MultiLockChargeState multiLockChargeState_;
 
-	// 必殺技（SPを50%消費して一定時間、通常攻撃を連射）
-	float spGauge_ = 100.0f;
-	bool isSpecialAttackActive_ = false;
-	int specialAttackFrame_ = 0;
+	SpecialAttackState specialAttackState_;
 
-	// 歌システム（ルンピカゲージ）
-	float songGauge_ = 100.0f;
-	bool isSongActive_ = false;
-	int songFrame_ = 0;
+	SongState songState_;
 
-	// チュートリアルは通常の Gameplay でだけ動作する。各フェーズは実際の
-	// 入力／ゲーム状態で完了するため、時間経過だけでは次へ進まない。
-	enum class TutorialPhase {
-		Disabled,
-		Flight,
-		Gerwalk,
-		LockOn,
-		NormalFire,
-		MultiLock,
-		Combat,
-		Navigation,
-		Complete,
-	};
-	TutorialPhase tutorialPhase_ = TutorialPhase::Disabled;
-	bool tutorialEnabled_ = false;
-	int tutorialPhaseFrames_ = 0;
-	// チュートリアルで必要な操作回数。F1 の開発UIから個別に調整できる。
-	struct TutorialActionRequirements {
-		int forward = 3;
-		int altitude = 3;
-		int turn = 3;
-		int gerwalkHover = 3;
-		int gerwalkStrafe = 3;
-		int lockOn = 3;
-		int normalShots = 3;
-		int fighterTransform = 1;
-		int homingLaunches = 1;
-	} tutorialRequirements_;
-	std::string tutorialRequirementsMessage_;
-	int tutorialForwardCount_ = 0;
-	int tutorialAltitudeCount_ = 0;
-	int tutorialTurnCount_ = 0;
-	int tutorialGerwalkHoverCount_ = 0;
-	int tutorialGerwalkStrafeCount_ = 0;
-	int tutorialLockCount_ = 0;
-	int tutorialFighterCount_ = 0;
-	bool tutorialAltitudeInputActive_ = false;
-	bool tutorialLockWasActive_ = false;
-	bool tutorialFighterWasActive_ = false;
-	bool tutorialAltitudeObserved_ = false;
-	bool tutorialTurnObserved_ = false;
-	bool tutorialGerwalkHoverObserved_ = false;
-	bool tutorialGerwalkStrafeObserved_ = false;
-	bool tutorialLockObserved_ = false;
-	bool tutorialFighterReengaged_ = false;
-	int tutorialNormalShotsFired_ = 0;
-	int tutorialHomingLaunches_ = 0;
-	bool tutorialCombatTargetsSpawned_ = false;
-	bool tutorialGoalActive_ = false;
-	Vector3 tutorialGoalPosition_{};
-	std::unique_ptr<Primitive> tutorialGoalRing_;
+	TutorialPhaseController tutorialController_;
+	TutorialRequirementsManager tutorialRequirements_;
+	TutorialProgressTracker tutorialProgress_;
+	TutorialGoalMarker tutorialGoalMarker_;
 	// スラスターとは独立した、歌発動中だけの機体移動履歴リボン。
-	std::array<std::unique_ptr<Trail>, 3> songFlightTrails_;
-	std::array<std::unique_ptr<Object3d>, 3> songFlightTrailObjects_;
-	std::array<Vector3, 3> songFlightTrailHeads_{};
-	bool songFlightTrailsInitialized_ = false;
+	SongFlightTrailRenderer songFlightTrailRenderer_;
+	PlayerFlightEffectController playerFlightEffectController_;
 
-	// 通常弾の長押し連射用
-	int normalFireCooldownTimer_ = 0;
-	uint64_t observedEnemyAttackSerial_ = 0;
-	int enemyAttackAlertFrames_ = 0;
-	Vector3 enemyAttackAlertSource_{};
-	// リロード中に発射を試みた時だけ、中央へ短時間表示する警告。
-	int reloadWarningFrames_ = 0;
-	bool isHomingReloadWarning_ = false;
+	PlayerWeaponController playerWeaponController_;
+	CombatAlertState combatAlertState_;
 
 };

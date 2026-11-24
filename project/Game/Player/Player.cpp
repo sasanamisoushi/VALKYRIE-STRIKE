@@ -291,7 +291,7 @@ void Player::Initialize(const std::string &modelName) {
 	}
 
 	if (isTransformPlayer) {
-		InitializeTransformPlayerModel();
+		object_ = presentationController_.InitializeTransformMechModel();
 	} else {
 		// モデルマネージャに読み込みを指示
 		ModelManager::GetInstance()->LoadModel(modelName);
@@ -309,29 +309,7 @@ void Player::Initialize(const std::string &modelName) {
 	targetDrawScale_ = modelScale_;
 	object_->SetScale(currentDrawScale_);
 
-	// プレイヤーの前方に展開する高視認性3Dエナジーシールドモデル
-	ModelManager::GetInstance()->CreateSphereModel("PlayerGuardShieldDome", 32);
-	if (Model *m = ModelManager::GetInstance()->FindModel("PlayerGuardShieldDome")) {
-		m->SetTextureFilePath("resources/white1x1.png");
-		m->SetEnableLighting(false);
-		m->SetAlphaReference(0.0f);
-		m->SetColor({ 0.2f, 0.85f, 1.0f, 0.85f });
-	}
-	guardBarrier_ = std::make_unique<Object3d>();
-	guardBarrier_->Initialize(Object3dCommon::GetInstance());
-	guardBarrier_->SetModel("PlayerGuardShieldDome");
-
-	// リングは球ではなく、前方（ローカルZ方向）を向く平面リングとして生成する。
-	ModelManager::GetInstance()->CreateRingModel("PlayerGuardShieldRing", 48, 1.0f, 0.82f);
-	if (Model *m = ModelManager::GetInstance()->FindModel("PlayerGuardShieldRing")) {
-		m->SetTextureFilePath("resources/white1x1.png");
-		m->SetEnableLighting(false);
-		m->SetAlphaReference(0.0f);
-		m->SetColor({ 0.7f, 1.0f, 1.0f, 0.95f });
-	}
-	guardBarrierRing_ = std::make_unique<Object3d>();
-	guardBarrierRing_->Initialize(Object3dCommon::GetInstance());
-	guardBarrierRing_->SetModel("PlayerGuardShieldRing");
+	presentationController_.InitializeGuardBarrier();
 
 	position_ = { 0.0f, 0.0f, 0.0f };
 	velocity_ = { 0.0f, 0.0f, 0.0f };
@@ -345,7 +323,6 @@ void Player::Initialize(const std::string &modelName) {
 	dodgeCooldownTimer_ = 0;
 	dodgeDirection_ = 0.0f;
 	isGuarding_ = false;
-	guardBarrierPulse_ = 0.0f;
 	guardScale_ = 0.0f;
 	guardPoseWeight_ = 0.0f;
 
@@ -444,8 +421,7 @@ void Player::ChangeMode(PlayerMode newMode) {
 
     currentMode_ = newMode;
     if (IsTransformPlayerModel() && previousMode != newMode) {
-        transformFromMode_ = previousMode;
-        transformModeBlend_ = 0.0f;
+        presentationController_.BeginModeTransition(static_cast<int>(previousMode));
     }
     const bool usesNaturalScale = UsesNaturalPlayerModelScale(modelName_);
     
@@ -481,165 +457,6 @@ void Player::SetModeParams(PlayerMode mode, const PlayerModeParams& params) {
 
 bool Player::IsTransformPlayerModel() const {
 	return IsTransformPlayerModelName(modelName_);
-}
-
-void Player::InitializeTransformPlayerModel() {
-	ModelManager* modelManager = ModelManager::GetInstance();
-	const auto prepareBox = [&](const char* name, const Vector4& color) {
-		modelManager->CreateBoxModel(name);
-		if (Model* model = modelManager->FindModel(name)) {
-			model->SetTextureFilePath("resources/white1x1.png");
-			model->SetEnableLighting(true);
-			model->SetColor(color);
-		}
-	};
-	const auto prepareCylinder = [&](const char* name, const Vector4& color) {
-		modelManager->CreateCylinderModel(name, 12, 0.65f, 0.85f, 2.0f);
-		if (Model* model = modelManager->FindModel(name)) {
-			model->SetTextureFilePath("resources/white1x1.png");
-			model->SetEnableLighting(true);
-			model->SetColor(color);
-		}
-	};
-	prepareBox("TransformMechArmor", { 0.82f, 0.86f, 0.91f, 1.0f });
-	prepareBox("TransformMechFrame", { 0.06f, 0.08f, 0.12f, 1.0f });
-	prepareBox("TransformMechAccent", { 0.86f, 0.04f, 0.06f, 1.0f });
-	prepareBox("TransformMechVisor", { 0.03f, 0.90f, 0.72f, 1.0f });
-	prepareCylinder("TransformMechEngine", { 0.10f, 0.12f, 0.16f, 1.0f });
-
-	const auto pose = [](float x, float y, float z, float sx, float sy, float sz,
-		float rx = 0.0f, float ry = 0.0f, float rz = 0.0f) {
-		// 細身のヒロイックなシルエット。肩幅・胴の奥行きを絞り、脚と頭部までの高さを伸ばす。
-		return TransformPlayerPose{
-			{ x * 0.74f, y * 1.32f, z * 0.88f },
-			{ sx * 0.70f, sy * 1.12f, sz * 0.78f },
-			MakeLocalRotation(rx, ry, rz)
-		};
-	};
-	const auto makeObject = [](const char* modelName) {
-		auto object = std::make_unique<Object3d>();
-		object->Initialize(Object3dCommon::GetInstance());
-		object->SetModel(modelName);
-		return object;
-	};
-	const auto addPart = [&](const char* name, const char* modelName,
-		const TransformPlayerPose& fighter, const TransformPlayerPose& gerwalk, const TransformPlayerPose& battroid) {
-		TransformPlayerPart part;
-		part.name = name;
-		part.object = makeObject(modelName);
-		part.poses = { fighter, gerwalk, battroid };
-		transformParts_.push_back(std::move(part));
-	};
-
-	transformParts_.clear();
-	transformCore_.name = "Core";
-	transformCore_.object = makeObject("TransformMechFrame");
-	transformCore_.poses = {
-		pose(0.0f, 0.0f, 0.0f, 5.0f, 1.6f, 8.0f),
-		pose(0.0f, 3.8f, 0.0f, 3.8f, 1.6f, 4.8f),
-		pose(0.0f, 5.2f, 0.0f, 2.6f, 2.0f, 1.6f)
-	};
-	object_ = std::move(transformCore_.object);
-
-	// 胴体・頭部。画像の細身の白装甲、赤いセンターライン、緑色のバイザーを抽象化した意匠。
-	addPart("Chest", "TransformMechArmor", pose(0, 0.8f, 1.2f, 4.6f, 1.4f, 3.2f), pose(0, 5.0f, 0.6f, 4.2f, 1.8f, 3.0f), pose(0, 7.2f, 0.0f, 4.2f, 2.1f, 2.2f));
-	addPart("ChestAccent", "TransformMechAccent", pose(0, 1.0f, 3.4f, 0.65f, 0.65f, 2.0f), pose(0, 5.1f, 2.5f, 0.65f, 0.8f, 1.3f), pose(0, 7.4f, 1.9f, 0.65f, 1.0f, 0.25f));
-	addPart("Head", "TransformMechArmor", pose(0, 0.8f, 4.0f, 1.35f, 1.05f, 1.5f), pose(0, 6.9f, 1.6f, 1.35f, 1.15f, 1.4f), pose(0, 10.0f, 0.0f, 1.35f, 1.35f, 1.35f));
-	addPart("Visor", "TransformMechVisor", pose(0, 0.8f, 5.3f, 0.9f, 0.35f, 0.24f), pose(0, 6.9f, 2.95f, 0.9f, 0.35f, 0.24f), pose(0, 10.0f, 1.25f, 0.9f, 0.35f, 0.24f));
-	addPart("Crest", "TransformMechAccent", pose(0, 1.8f, 4.0f, 0.3f, 1.5f, 0.6f), pose(0, 8.2f, 1.6f, 0.3f, 1.5f, 0.6f), pose(0, 11.7f, 0.0f, 0.3f, 1.5f, 0.6f));
-
-	// 左右の腕。ファイターでは翼、ガウォークでは支持腕、人型では腕として展開する。
-	addPart("LeftShoulder", "TransformMechArmor", pose(-5.0f, 0.0f, 0.4f, 2.3f, 0.75f, 4.8f, 0, 0, -0.18f), pose(-4.6f, 5.4f, 0.2f, 2.1f, 1.4f, 2.8f, 0, 0, -0.4f), pose(-5.0f, 7.5f, 0.0f, 2.0f, 1.7f, 1.8f));
-	addPart("RightShoulder", "TransformMechArmor", pose(5.0f, 0.0f, 0.4f, 2.3f, 0.75f, 4.8f, 0, 0, 0.18f), pose(4.6f, 5.4f, 0.2f, 2.1f, 1.4f, 2.8f, 0, 0, 0.4f), pose(5.0f, 7.5f, 0.0f, 2.0f, 1.7f, 1.8f));
-	addPart("LeftForearm", "TransformMechFrame", pose(-7.2f, -0.3f, 0.4f, 1.1f, 0.75f, 5.5f, 0, 0, -0.18f), pose(-5.9f, 3.2f, 1.2f, 1.25f, 1.1f, 3.0f, -0.45f, 0, -0.22f), pose(-6.0f, 4.4f, 0.8f, 1.25f, 2.8f, 1.25f, 0, 0, -0.08f));
-	addPart("RightForearm", "TransformMechFrame", pose(7.2f, -0.3f, 0.4f, 1.1f, 0.75f, 5.5f, 0, 0, 0.18f), pose(5.9f, 3.2f, 1.2f, 1.25f, 1.1f, 3.0f, -0.45f, 0, 0.22f), pose(6.0f, 4.4f, 0.8f, 1.25f, 2.8f, 1.25f, 0, 0, 0.08f));
-	addPart("LeftHand", "TransformMechArmor", pose(-8.0f, -0.4f, 2.6f, 1.2f, 0.7f, 1.8f), pose(-6.4f, 2.2f, 2.5f, 1.2f, 0.8f, 1.3f), pose(-6.0f, 1.2f, 1.0f, 1.15f, 1.0f, 1.0f));
-	addPart("RightHand", "TransformMechArmor", pose(8.0f, -0.4f, 2.6f, 1.2f, 0.7f, 1.8f), pose(6.4f, 2.2f, 2.5f, 1.2f, 0.8f, 1.3f), pose(6.0f, 1.2f, 1.0f, 1.15f, 1.0f, 1.0f));
-
-	// 脚部はファイターでは機体後部へ収納、ガウォークを経由して人型の脚へ展開する。
-	addPart("LeftHip", "TransformMechArmor", pose(-2.5f, -0.5f, -3.0f, 2.0f, 1.1f, 4.0f, -0.35f), pose(-2.2f, 1.8f, -1.8f, 1.9f, 1.8f, 2.7f, -0.3f), pose(-2.4f, 3.8f, 0.0f, 1.8f, 1.8f, 1.8f));
-	addPart("RightHip", "TransformMechArmor", pose(2.5f, -0.5f, -3.0f, 2.0f, 1.1f, 4.0f, -0.35f), pose(2.2f, 1.8f, -1.8f, 1.9f, 1.8f, 2.7f, -0.3f), pose(2.4f, 3.8f, 0.0f, 1.8f, 1.8f, 1.8f));
-	addPart("LeftShin", "TransformMechArmor", pose(-2.5f, -0.6f, -6.2f, 1.6f, 0.9f, 3.6f, -0.25f), pose(-2.2f, -1.1f, -2.4f, 1.45f, 3.4f, 1.5f, -0.12f), pose(-2.4f, -1.2f, 0.3f, 1.5f, 4.0f, 1.65f));
-	addPart("RightShin", "TransformMechArmor", pose(2.5f, -0.6f, -6.2f, 1.6f, 0.9f, 3.6f, -0.25f), pose(2.2f, -1.1f, -2.4f, 1.45f, 3.4f, 1.5f, -0.12f), pose(2.4f, -1.2f, 0.3f, 1.5f, 4.0f, 1.65f));
-	addPart("LeftFoot", "TransformMechFrame", pose(-2.5f, -0.8f, -9.0f, 1.7f, 0.65f, 2.7f), pose(-2.2f, -4.4f, -0.8f, 1.8f, 0.7f, 2.7f), pose(-2.4f, -5.5f, 1.5f, 1.9f, 0.75f, 2.8f));
-	addPart("RightFoot", "TransformMechFrame", pose(2.5f, -0.8f, -9.0f, 1.7f, 0.65f, 2.7f), pose(2.2f, -4.4f, -0.8f, 1.8f, 0.7f, 2.7f), pose(2.4f, -5.5f, 1.5f, 1.9f, 0.75f, 2.8f));
-
-	// 背面ユニット、主翼、推進器で可変戦闘機らしいシルエットを作る。
-	addPart("LeftWing", "TransformMechArmor", pose(-7.0f, 0.0f, -1.5f, 4.8f, 0.35f, 5.0f, 0, 0, -0.15f), pose(-5.5f, 4.4f, -1.8f, 3.8f, 0.5f, 3.8f, 0, 0, -0.45f), pose(-4.1f, 6.0f, -2.6f, 1.2f, 2.0f, 3.6f, 0, 0, -0.24f));
-	addPart("RightWing", "TransformMechArmor", pose(7.0f, 0.0f, -1.5f, 4.8f, 0.35f, 5.0f, 0, 0, 0.15f), pose(5.5f, 4.4f, -1.8f, 3.8f, 0.5f, 3.8f, 0, 0, 0.45f), pose(4.1f, 6.0f, -2.6f, 1.2f, 2.0f, 3.6f, 0, 0, 0.24f));
-	addPart("LeftEngine", "TransformMechEngine", pose(-2.6f, 0.1f, -6.5f, 1.4f, 2.8f, 1.4f, 1.57f), pose(-2.7f, 3.4f, -4.0f, 1.4f, 2.8f, 1.4f, 0.55f), pose(-2.8f, 6.0f, -3.5f, 1.4f, 2.8f, 1.4f, 0.18f));
-	addPart("RightEngine", "TransformMechEngine", pose(2.6f, 0.1f, -6.5f, 1.4f, 2.8f, 1.4f, 1.57f), pose(2.7f, 3.4f, -4.0f, 1.4f, 2.8f, 1.4f, 0.55f), pose(2.8f, 6.0f, -3.5f, 1.4f, 2.8f, 1.4f, 0.18f));
-
-	// 可変戦闘機らしいディテール。大きな箱形の胴体を、コクピット、吸気口、装甲板、推進バックパックへ分割する。
-	addPart("CockpitCanopy", "TransformMechVisor", pose(0, 0.9f, 5.8f, 1.8f, 0.75f, 2.4f), pose(0, 6.8f, 3.5f, 1.6f, 0.8f, 1.8f), pose(0, 8.0f, 2.05f, 1.65f, 1.25f, 0.35f));
-	addPart("LeftIntake", "TransformMechFrame", pose(-2.5f, 0.4f, 2.4f, 1.15f, 0.8f, 2.6f), pose(-2.4f, 5.0f, 1.5f, 1.05f, 1.1f, 1.6f), pose(-2.55f, 7.0f, 1.45f, 1.0f, 1.1f, 0.45f));
-	addPart("RightIntake", "TransformMechFrame", pose(2.5f, 0.4f, 2.4f, 1.15f, 0.8f, 2.6f), pose(2.4f, 5.0f, 1.5f, 1.05f, 1.1f, 1.6f), pose(2.55f, 7.0f, 1.45f, 1.0f, 1.1f, 0.45f));
-	addPart("LeftShoulderPod", "TransformMechArmor", pose(-5.5f, 0.4f, -3.6f, 2.0f, 1.1f, 3.2f, 0, 0, -0.24f), pose(-5.0f, 6.4f, -1.5f, 2.0f, 1.6f, 2.0f, 0, 0, -0.32f), pose(-5.25f, 8.7f, -1.4f, 2.15f, 1.7f, 1.55f, 0, 0, -0.16f));
-	addPart("RightShoulderPod", "TransformMechArmor", pose(5.5f, 0.4f, -3.6f, 2.0f, 1.1f, 3.2f, 0, 0, 0.24f), pose(5.0f, 6.4f, -1.5f, 2.0f, 1.6f, 2.0f, 0, 0, 0.32f), pose(5.25f, 8.7f, -1.4f, 2.15f, 1.7f, 1.55f, 0, 0, 0.16f));
-	addPart("LeftBicep", "TransformMechAccent", pose(-6.2f, -0.2f, 1.3f, 0.55f, 0.6f, 3.0f), pose(-5.2f, 4.2f, 0.7f, 0.65f, 1.7f, 0.7f, -0.3f), pose(-5.75f, 5.9f, 0.45f, 0.65f, 1.65f, 0.7f));
-	addPart("RightBicep", "TransformMechAccent", pose(6.2f, -0.2f, 1.3f, 0.55f, 0.6f, 3.0f), pose(5.2f, 4.2f, 0.7f, 0.65f, 1.7f, 0.7f, -0.3f), pose(5.75f, 5.9f, 0.45f, 0.65f, 1.65f, 0.7f));
-	addPart("Waist", "TransformMechFrame", pose(0, -0.2f, -1.8f, 2.8f, 0.85f, 2.5f), pose(0, 3.0f, -0.8f, 2.7f, 1.15f, 1.9f), pose(0, 4.8f, 0, 2.35f, 0.85f, 1.55f));
-	addPart("FrontSkirt", "TransformMechArmor", pose(0, -0.7f, -3.9f, 2.6f, 0.7f, 1.3f), pose(0, 1.7f, 0.2f, 2.5f, 1.65f, 0.65f), pose(0, 3.9f, 1.5f, 2.7f, 1.55f, 0.5f));
-	addPart("LeftSideSkirt", "TransformMechArmor", pose(-3.6f, -0.6f, -3.4f, 0.8f, 0.8f, 2.5f), pose(-3.1f, 1.8f, -0.2f, 0.8f, 1.55f, 1.35f), pose(-3.45f, 3.8f, 0.4f, 0.8f, 1.75f, 1.0f));
-	addPart("RightSideSkirt", "TransformMechArmor", pose(3.6f, -0.6f, -3.4f, 0.8f, 0.8f, 2.5f), pose(3.1f, 1.8f, -0.2f, 0.8f, 1.55f, 1.35f), pose(3.45f, 3.8f, 0.4f, 0.8f, 1.75f, 1.0f));
-	addPart("LeftKneeArmor", "TransformMechAccent", pose(-2.5f, -0.7f, -7.0f, 1.2f, 0.55f, 1.5f), pose(-2.2f, 0.3f, -1.2f, 1.15f, 0.9f, 0.65f), pose(-2.4f, 0.4f, 1.7f, 1.25f, 1.2f, 0.5f));
-	addPart("RightKneeArmor", "TransformMechAccent", pose(2.5f, -0.7f, -7.0f, 1.2f, 0.55f, 1.5f), pose(2.2f, 0.3f, -1.2f, 1.15f, 0.9f, 0.65f), pose(2.4f, 0.4f, 1.7f, 1.25f, 1.2f, 0.5f));
-	addPart("LeftCalfFin", "TransformMechArmor", pose(-3.7f, -0.6f, -7.5f, 0.55f, 0.55f, 3.0f, 0, 0, -0.25f), pose(-3.4f, -1.5f, -2.7f, 0.5f, 2.2f, 1.2f, 0, 0, -0.18f), pose(-3.75f, -1.5f, -0.8f, 0.45f, 2.45f, 1.4f, 0, 0, -0.16f));
-	addPart("RightCalfFin", "TransformMechArmor", pose(3.7f, -0.6f, -7.5f, 0.55f, 0.55f, 3.0f, 0, 0, 0.25f), pose(3.4f, -1.5f, -2.7f, 0.5f, 2.2f, 1.2f, 0, 0, 0.18f), pose(3.75f, -1.5f, -0.8f, 0.45f, 2.45f, 1.4f, 0, 0, 0.16f));
-	addPart("LeftWingStripe", "TransformMechAccent", pose(-7.0f, 0.45f, 0.8f, 3.7f, 0.18f, 0.4f, 0, 0, -0.15f), pose(-5.6f, 4.8f, -0.2f, 2.6f, 0.2f, 0.35f, 0, 0, -0.45f), pose(-4.2f, 6.3f, -0.2f, 0.65f, 1.55f, 0.32f, 0, 0, -0.24f));
-	addPart("RightWingStripe", "TransformMechAccent", pose(7.0f, 0.45f, 0.8f, 3.7f, 0.18f, 0.4f, 0, 0, 0.15f), pose(5.6f, 4.8f, -0.2f, 2.6f, 0.2f, 0.35f, 0, 0, 0.45f), pose(4.2f, 6.3f, -0.2f, 0.65f, 1.55f, 0.32f, 0, 0, 0.24f));
-	addPart("LeftAntenna", "TransformMechAccent", pose(-0.8f, 2.2f, 3.7f, 0.18f, 2.0f, 0.18f, 0, 0, -0.12f), pose(-0.8f, 9.0f, 1.5f, 0.18f, 2.1f, 0.18f, 0, 0, -0.12f), pose(-0.8f, 12.4f, -0.1f, 0.18f, 2.3f, 0.18f, 0, 0, -0.12f));
-	addPart("RightAntenna", "TransformMechAccent", pose(0.8f, 2.2f, 3.7f, 0.18f, 2.0f, 0.18f, 0, 0, 0.12f), pose(0.8f, 9.0f, 1.5f, 0.18f, 2.1f, 0.18f, 0, 0, 0.12f), pose(0.8f, 12.4f, -0.1f, 0.18f, 2.3f, 0.18f, 0, 0, 0.12f));
-	addPart("LeftChestPlate", "TransformMechArmor", pose(-1.9f, 1.1f, 4.1f, 1.35f, 0.9f, 1.1f, 0, 0, -0.30f), pose(-1.7f, 6.0f, 2.8f, 1.3f, 1.1f, 0.55f, 0, 0, -0.30f), pose(-1.6f, 7.5f, 2.2f, 1.3f, 1.35f, 0.32f, 0, 0, -0.30f));
-	addPart("RightChestPlate", "TransformMechArmor", pose(1.9f, 1.1f, 4.1f, 1.35f, 0.9f, 1.1f, 0, 0, 0.30f), pose(1.7f, 6.0f, 2.8f, 1.3f, 1.1f, 0.55f, 0, 0, 0.30f), pose(1.6f, 7.5f, 2.2f, 1.3f, 1.35f, 0.32f, 0, 0, 0.30f));
-	addPart("LeftHelmetCheek", "TransformMechArmor", pose(-1.15f, 1.0f, 5.0f, 0.25f, 0.6f, 0.55f), pose(-1.15f, 7.0f, 2.7f, 0.25f, 0.65f, 0.5f), pose(-1.15f, 10.0f, 0.95f, 0.25f, 0.85f, 0.42f));
-	addPart("RightHelmetCheek", "TransformMechArmor", pose(1.15f, 1.0f, 5.0f, 0.25f, 0.6f, 0.55f), pose(1.15f, 7.0f, 2.7f, 0.25f, 0.65f, 0.5f), pose(1.15f, 10.0f, 0.95f, 0.25f, 0.85f, 0.42f));
-	addPart("LeftToeArmor", "TransformMechArmor", pose(-2.5f, -0.9f, -10.7f, 1.5f, 0.4f, 1.4f), pose(-2.2f, -4.5f, 1.1f, 1.55f, 0.45f, 1.25f), pose(-2.4f, -5.5f, 3.5f, 1.7f, 0.45f, 1.3f));
-	addPart("RightToeArmor", "TransformMechArmor", pose(2.5f, -0.9f, -10.7f, 1.5f, 0.4f, 1.4f), pose(2.2f, -4.5f, 1.1f, 1.55f, 0.45f, 1.25f), pose(2.4f, -5.5f, 3.5f, 1.7f, 0.45f, 1.3f));
-	addPart("RifleBody", "TransformMechFrame", pose(0.0f, -0.8f, 8.0f, 0.7f, 0.7f, 6.8f), pose(-6.5f, 1.0f, 3.4f, 0.7f, 3.8f, 0.7f, 0, 0, -0.22f), pose(-7.2f, -0.4f, 2.2f, 0.7f, 4.8f, 0.7f, 0, 0, -0.18f));
-	addPart("RifleBarrel", "TransformMechAccent", pose(0.0f, -0.8f, 13.6f, 0.26f, 0.26f, 1.6f), pose(-7.6f, -2.6f, 3.4f, 0.26f, 1.5f, 0.26f, 0, 0, -0.22f), pose(-8.6f, -5.0f, 2.2f, 0.26f, 1.7f, 0.26f, 0, 0, -0.18f));
-
-	transformFromMode_ = PlayerMode::Fighter;
-	transformModeBlend_ = 1.0f;
-}
-
-void Player::UpdateTransformPlayerModel() {
-	transformModeBlend_ = (std::min)(1.0f, transformModeBlend_ + 0.10f);
-	const int from = static_cast<int>(transformFromMode_);
-	const int to = static_cast<int>(currentMode_);
-	// 可変機モデルも通常モデルと同じく、回避中は機体全体をロールさせる。
-	Quaternion bodyQuaternion = quaternion_;
-	if (dodgeTimer_ > 0) {
-		const float progress = 1.0f - static_cast<float>(dodgeTimer_) / static_cast<float>(kDodgeDurationFrames);
-		const float rollAngle = progress * 6.2831853f * dodgeDirection_;
-		bodyQuaternion = MyMath::Normalize(MyMath::Multiply(
-			quaternion_, MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, rollAngle)));
-	}
-	const auto updateObject = [&](Object3d* object, const std::string& name,
-		const std::array<TransformPlayerPose, 3>& poses) {
-		if (!object) return;
-		const TransformPlayerPose& fromPose = poses[from];
-		const TransformPlayerPose& toPose = poses[to];
-		Vector3 localPosition = Lerp(fromPose.translate, toPose.translate, transformModeBlend_);
-		const Vector3 localScale = Lerp(fromPose.scale, toPose.scale, transformModeBlend_);
-		const Quaternion localRotation = MyMath::Slerp(fromPose.rotate, toPose.rotate, transformModeBlend_);
-
-		// 前回追加したガード姿勢も、この新しいリグなしモデルで維持する。
-		if (name == "LeftForearm" || name == "LeftHand") {
-			localPosition.z += 2.8f * guardPoseWeight_;
-		}
-
-		const Vector3 worldPosition = Add(position_, MyMath::RotateVector(Scale(localPosition, modelScale_.x), bodyQuaternion));
-		object->SetTranslate(worldPosition);
-		object->SetScale(Scale(localScale, modelScale_.x));
-		object->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(localRotation, bodyQuaternion)));
-		object->Update();
-	};
-
-	updateObject(object_.get(), transformCore_.name, transformCore_.poses);
-	for (TransformPlayerPart& part : transformParts_) {
-		updateObject(part.object.get(), part.name, part.poses);
-	}
 }
 
 void Player::Update(const std::list<std::unique_ptr<Obstacle>> &obstacles, const Vector3 *lockOnTarget) {
@@ -697,7 +514,7 @@ void Player::Update(const std::list<std::unique_ptr<Obstacle>> &obstacles, const
 
 	// 変形・回避ロールを含む描画姿勢を先に確定する。
 	UpdateModel();
-	if (boosterEffect_ && presentationThrustersVisible_) {
+	if (boosterEffect_ && presentationController_.ArePresentationThrustersVisible()) {
 		auto input = Input::GetInstance();
 		PlayerModeParams& p = modeParams_[static_cast<int>(currentMode_)];
 		float speedVal = Length(velocity_);
@@ -715,7 +532,7 @@ void Player::UpdatePresentation(const Vector3& position, const Vector3& eulerRot
 	// タイトルなどの自動飛行も、機体の最終姿勢と噴射姿勢を揃える。
 	UpdateModel(false);
 
-	if (boosterEffect_ && presentationThrustersVisible_) {
+	if (boosterEffect_ && presentationController_.ArePresentationThrustersVisible()) {
 		const PlayerModeParams& params = modeParams_[static_cast<int>(currentMode_)];
 		const float speedRatio = speed / (std::max)(0.0001f, params.maxMoveSpeed);
 		boosterEffect_->Update(position_, object_ ? object_->GetQuaternionRotate() : quaternion_,
@@ -724,25 +541,11 @@ void Player::UpdatePresentation(const Vector3& position, const Vector3& eulerRot
 }
 
 void Player::SetPresentationClipPlane(const Vector3& normal, float distance) {
-	if (object_) {
-		object_->SetWorldClipPlane(normal, distance);
-	}
-	for (TransformPlayerPart& part : transformParts_) {
-		if (part.object) {
-			part.object->SetWorldClipPlane(normal, distance);
-		}
-	}
+	presentationController_.SetClipPlane(object_.get(), normal, distance);
 }
 
 void Player::ClearPresentationClipPlane() {
-	if (object_) {
-		object_->ClearWorldClipPlane();
-	}
-	for (TransformPlayerPart& part : transformParts_) {
-		if (part.object) {
-			part.object->ClearWorldClipPlane();
-		}
-	}
+	presentationController_.ClearClipPlane(object_.get());
 }
 
 void Player::UpdateModel(bool allowInput, bool advanceState) {
@@ -770,7 +573,7 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
                 animationTime_ = kBattroidIdleAnimationTime;
             }
             currentDrawScale_ = targetDrawScale_;
-            transformModeBlend_ = 1.0f;
+            presentationController_.SnapModeTransition();
         }
     }
 
@@ -873,7 +676,9 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
 			quaternion_, MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, rollAngle)));
 	}
 	if (IsTransformPlayerModel() && (advanceState || modeChanged)) {
-		UpdateTransformPlayerModel();
+		presentationController_.UpdateTransformMech(
+			object_.get(), static_cast<int>(currentMode_), position_, quaternion_, modelScale_,
+			dodgeTimer_, kDodgeDurationFrames, dodgeDirection_, guardPoseWeight_);
 	} else if (object_) {
 	    object_->SetScale(currentDrawScale_);
 	    object_->SetTranslate(position_);
@@ -889,84 +694,19 @@ void Player::UpdateModel(bool allowInput, bool advanceState) {
 
 	// シールドが背景に溶けても状態を認識できるよう、ガード中は機体を青く発光させる。
 	if (object_ && object_->GetModel() && !IsTransformPlayerModel()) {
+		const float presentationAlpha = presentationController_.GetPresentationAlpha();
 		Vector4 normalColor = UsesNaturalPlayerModelScale(modelName_)
 			? Vector4{ 1.0f, 1.0f, 1.0f, 1.0f }
 			: Vector4{ 0.2f, 0.5f, 1.0f, 1.0f };
-		normalColor.w = presentationAlpha_;
+		normalColor.w = presentationAlpha;
 		object_->GetModel()->SetEnableLighting(!isGuarding_);
 		object_->GetModel()->SetColor(isGuarding_
-			? Vector4{ 0.15f, 0.75f, 1.0f, presentationAlpha_ }
+			? Vector4{ 0.15f, 0.75f, 1.0f, presentationAlpha }
 			: normalColor);
 	}
 
-	if (guardScale_ > 0.01f) {
-		if (advanceState) {
-			guardBarrierPulse_ += 0.15f;
-		}
-		const float pulse = 0.5f + 0.5f * std::sin(guardBarrierPulse_);
-
-		Vector3 forward = GetForwardVector();
-		Vector3 up = MyMath::RotateVector({ 0.0f, 1.0f, 0.0f }, quaternion_);
-
-		// 形態ごとの胸部・視点高さ（目前の高さ）
-		float eyeHeight = 0.1f;
-		if (currentMode_ == PlayerMode::Battroid) {
-			eyeHeight = 0.8f;
-		} else if (currentMode_ == PlayerMode::Gerwalk) {
-			eyeHeight = 0.35f;
-		}
-
-		Vector3 origin = {
-			position_.x + up.x * eyeHeight,
-			position_.y + up.y * eyeHeight,
-			position_.z + up.z * eyeHeight
-		};
-
-		// 自機の表面のすぐ前に配置する。ハードコードした距離だと、
-		// 小さいファイター形態では機体から離れすぎて見失いやすい。
-		// カメラから見切れず、かつ機体と重ならない前方距離に固定する。
-		const float forwardDistance = 0.80f;
-		Vector3 shieldPos = {
-			origin.x + forward.x * forwardDistance,
-			origin.y + forward.y * forwardDistance,
-			origin.z + forward.z * forwardDistance
-		};
-
-		const float pulseScale = 1.0f + pulse * 0.06f;
-
-		// メインの3D曲面エナジーシールドドーム
-		if (guardBarrier_) {
-			const float shieldRadius = 1.10f * guardScale_ * pulseScale;
-			const float shieldDepth = 0.30f * guardScale_;
-			guardBarrier_->SetTranslate(shieldPos);
-			guardBarrier_->SetScale({ shieldRadius, shieldRadius, shieldDepth });
-			guardBarrier_->SetQuaternionRotate(quaternion_); // プレイヤーの前方をカバー
-			if (guardBarrier_->GetModel()) {
-				guardBarrier_->GetModel()->SetEnableLighting(false);
-				guardBarrier_->GetModel()->SetTextureFilePath("resources/white1x1.png");
-				guardBarrier_->GetModel()->SetColor({ 0.20f, 0.85f, 1.0f, (0.80f + pulse * 0.15f) * guardScale_ });
-			}
-			guardBarrier_->Update();
-		}
-
-		// 外周の鮮烈な3Dエナジーフレームリング
-		if (guardBarrierRing_) {
-			const float ringRadius = 1.20f * guardScale_ * pulseScale;
-			const float ringDepth = 1.0f;
-			guardBarrierRing_->SetTranslate(shieldPos);
-			guardBarrierRing_->SetScale({ ringRadius, ringRadius, ringDepth });
-			
-			// 外周リングを回転させてバリアのエネルギー展開感を強調
-			Quaternion ringRot = MyMath::Multiply(quaternion_, MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, guardBarrierPulse_ * 0.6f));
-			guardBarrierRing_->SetQuaternionRotate(ringRot);
-			if (guardBarrierRing_->GetModel()) {
-				guardBarrierRing_->GetModel()->SetEnableLighting(false);
-				guardBarrierRing_->GetModel()->SetTextureFilePath("resources/white1x1.png");
-				guardBarrierRing_->GetModel()->SetColor({ 0.80f, 1.0f, 1.0f, (0.95f + pulse * 0.05f) * guardScale_ });
-			}
-			guardBarrierRing_->Update();
-		}
-	}
+	presentationController_.UpdateGuardBarrier(
+		advanceState, guardScale_, static_cast<int>(currentMode_), position_, quaternion_, GetForwardVector());
 
 }
 
@@ -1053,7 +793,7 @@ void Player::ApplyGuardPose(float blendWeight) {
 }
 
 void Player::Draw(Camera* camera, bool drawEffects) {
-	const bool isFadingIn = presentationAlpha_ < 0.999f;
+	const bool isFadingIn = presentationController_.GetPresentationAlpha() < 0.999f;
 	if (isFadingIn) {
 		Object3dCommon::GetInstance()->SetAlphaBlendDrawSettings();
 	}
@@ -1062,16 +802,11 @@ void Player::Draw(Camera* camera, bool drawEffects) {
 		object_->Update(camera);
 		object_->Draw();
 	}
-	for (const TransformPlayerPart& part : transformParts_) {
-		if (part.object) {
-			part.object->Update(camera);
-			part.object->Draw();
-		}
-	}
+	presentationController_.DrawTransformParts(camera);
 	if (isFadingIn) {
 		Object3dCommon::GetInstance()->SetCommonDrawSettings();
 	}
-	if (boosterEffect_ && presentationThrustersVisible_) {
+	if (boosterEffect_ && presentationController_.ArePresentationThrustersVisible()) {
 		boosterEffect_->RefreshPlacement(object_ ? object_->GetTranslate() : position_,
 			object_ ? object_->GetQuaternionRotate() : quaternion_, static_cast<int>(currentMode_));
 		boosterEffect_->DrawNozzles(camera);
@@ -1082,20 +817,8 @@ void Player::Draw(Camera* camera, bool drawEffects) {
 }
 
 void Player::DrawEffects(Camera* camera) {
-	if (guardScale_ > 0.01f) {
-		Object3dCommon::GetInstance()->SetAlphaBlendDrawSettings();
-		if (guardBarrier_) {
-			guardBarrier_->Update(camera);
-			guardBarrier_->Draw();
-		}
-		Object3dCommon::GetInstance()->SetEffectDrawSettings();
-		if (guardBarrierRing_) {
-			guardBarrierRing_->Update(camera);
-			guardBarrierRing_->Draw();
-		}
-		Object3dCommon::GetInstance()->SetCommonDrawSettings();
-	}
-	if (boosterEffect_ && presentationThrustersVisible_) {
+	presentationController_.DrawGuardBarrier(camera, guardScale_);
+	if (boosterEffect_ && presentationController_.ArePresentationThrustersVisible()) {
 		// 不透明パスで実際に描いた機体の位置・姿勢を、そのまま炎の親変換に使う。
 		boosterEffect_->RefreshPlacement(object_ ? object_->GetTranslate() : position_,
 			object_ ? object_->GetQuaternionRotate() : quaternion_, static_cast<int>(currentMode_));

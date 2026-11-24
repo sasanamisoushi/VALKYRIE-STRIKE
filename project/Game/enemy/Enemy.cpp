@@ -200,6 +200,7 @@ void Enemy::Initialize(const Vector3 &position) {
     bankAngle_ = 0.0f;
     flightTimer_ = 0;
     isDead_ = false;
+	presentationVisible_ = true;
     state_ = EnemyState::Approach;
     attackTimer_ = kAttackInterval;
     flightPathPoints_.clear();
@@ -263,7 +264,7 @@ void Enemy::Draw() {
         }
     }
 
-    if (object_) {
+    if (presentationVisible_ && object_) {
         object_->Draw();
     }
 }

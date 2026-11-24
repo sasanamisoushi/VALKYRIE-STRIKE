@@ -27,6 +27,14 @@ Quaternion MakeEulerQuaternion(const Vector3& euler) {
     return MyMath::Normalize(MyMath::Multiply(MyMath::Multiply(qx, qy), qz));
 }
 
+// 行ベクトル規約 (v * R(a * b) = v * R(b) * R(a)) に合わせ、
+// 砲身ローカルのピッチ回転を先に適用し、その後にヨー回転を適用する。
+Quaternion MakePitchYawQuaternion(float pitch, float yaw) {
+    const Quaternion qx = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, pitch);
+    const Quaternion qy = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, yaw);
+    return MyMath::Normalize(MyMath::Multiply(qy, qx));
+}
+
 // 砲身が砲台の旋回支点側を向いているときは、弾の向きを勝手に曲げず発射そのものを止める。
 // 艦体中心では判定しないので、艦首・艦尾に正しく配置された砲身は発射できる。
 bool IsMuzzleFacingAwayFromPivot(const Vector3& pivotPosition, const Vector3& muzzlePosition,
@@ -367,9 +375,11 @@ void Boss::Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, c
     // 以前の4秒周期では同時弾数が多過ぎたため、5秒周期へ広げて各砲の間隔も空ける。
     const int cycle = actionTimer_ % 300;
     if (cycle >= 25 && cycle < 85 && cycle % 10 == 0) FireMachineGun(playerPos, bulletManager);
-    if (cycle == 110) FireForwardTurret(playerPos, bulletManager, 0);
-    if (cycle == 125) FireForwardTurret(playerPos, bulletManager, 1);
-    if (cycle == 140) FireForwardTurret(playerPos, bulletManager, 2);
+    if (cycle == 110 || cycle == 126) FireForwardTurret(playerPos, bulletManager, 0);
+    if (cycle == 116 || cycle == 132 || cycle == 148) {
+        FireForwardTurret(playerPos, bulletManager, 1);
+        FireForwardTurret(playerPos, bulletManager, 2);
+    }
     if (cycle == 170 && mainTurretEngaged_[0]) FireMainBeam(playerPos, bulletManager, 0);
     if (cycle == 200 && mainTurretEngaged_[1]) FireMainBeam(playerPos, bulletManager, 1);
     if (cycle == 230 && mainTurretEngaged_[2]) FireMainBeam(playerPos, bulletManager, 2);
@@ -994,8 +1004,9 @@ void Boss::UpdateTurretModels() {
         float modelPitchOffset = 0.0f) {
         if (!turret) return;
         turret->SetTranslate(LocalPointToWorld(pivot));
-        const Quaternion localQuat = MakeEulerQuaternion({ pitch + modelPitchOffset, yaw, 0.0f });
-        turret->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(localQuat, hullQuat)));
+        const Quaternion localQuat = MakePitchYawQuaternion(pitch + modelPitchOffset, yaw);
+        // 行ベクトル規約では右辺が先に適用されるため、砲台ローカル回転の後に船体回転を掛ける。
+        turret->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(hullQuat, localQuat)));
         turret->SetScale(kBossScale);
         turret->Update();
     };
@@ -1025,8 +1036,8 @@ void Boss::UpdateTurretModels() {
         const Vector3 rotatedBarrelPivot = AddVector(basePivot,
             RotatePitchYaw(SubtractVector(barrelPivot, basePivot), 0.0f, yaw));
         barrel->SetTranslate(LocalPointToWorld(rotatedBarrelPivot));
-        const Quaternion localQuat = MakeEulerQuaternion({ miniTurretPitches_[index], yaw, 0.0f });
-        barrel->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(localQuat, hullQuat)));
+        const Quaternion localQuat = MakePitchYawQuaternion(miniTurretPitches_[index], yaw);
+        barrel->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(hullQuat, localQuat)));
         barrel->SetScale(kBossScale);
         barrel->Update();
     }

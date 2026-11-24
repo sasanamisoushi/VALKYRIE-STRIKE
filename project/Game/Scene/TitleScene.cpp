@@ -44,7 +44,8 @@ namespace {
 				options.value("allowAttractDemo", false),
 				options.value("playClearCinematicDemo", false),
 			};
-		} catch (...) {
+		} catch (const std::exception& e) {
+			OutputDebugStringA((std::string("[TitleScene] Failed to load runtime_options.json: ") + e.what() + "\n").c_str());
 			return { false, false };
 		}
 	}

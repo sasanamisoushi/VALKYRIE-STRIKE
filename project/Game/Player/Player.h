@@ -6,6 +6,7 @@
 #include "3D/Animation.h"
 #include <memory>
 #include "BoosterEffect.h"
+#include "PlayerPresentationController.h"
 #include <string>
 #include <list>
 #include <map>
@@ -69,13 +70,13 @@ public:
     const Object3d* GetObject3d() const { return object_.get(); }
     BoosterEffect* GetBoosterEffect() const { return boosterEffect_.get(); }
     // ワープなどの演出で使う、機体全体の表示アルファ。
-    void SetPresentationAlpha(float alpha) { presentationAlpha_ = alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha); }
-    float GetPresentationAlpha() const { return presentationAlpha_; }
+    void SetPresentationAlpha(float alpha) { presentationController_.SetPresentationAlpha(alpha); }
+    float GetPresentationAlpha() const { return presentationController_.GetPresentationAlpha(); }
 	// ワープ面の向こう側を描かないための、演出中だけ使うワールド空間クリップ面。
 	void SetPresentationClipPlane(const Vector3& normal, float distance);
 	void ClearPresentationClipPlane();
 	// ワープ中は、機体後端が出口面を通過するまでノズル・噴射を描画しない。
-	void SetPresentationThrustersVisible(bool visible) { presentationThrustersVisible_ = visible; }
+	void SetPresentationThrustersVisible(bool visible) { presentationController_.SetPresentationThrustersVisible(visible); }
     void SetBoosterPlumeEnabled(bool enabled) {
         if (boosterEffect_) {
             boosterEffect_->SetThrusterPlumeEnabled(enabled);
@@ -180,35 +181,14 @@ private:
 
     void ApplyBattroidProceduralWalk();
     void ApplyGuardPose(float blendWeight);
-    void InitializeTransformPlayerModel();
-    void UpdateTransformPlayerModel();
     bool IsTransformPlayerModel() const;
 
-    struct TransformPlayerPose {
-        Vector3 translate;
-        Vector3 scale;
-        Quaternion rotate;
-    };
-
-    struct TransformPlayerPart {
-        std::string name;
-        std::unique_ptr<Object3d> object;
-        std::array<TransformPlayerPose, 3> poses;
-    };
-
 	std::unique_ptr<Object3d> object_;
-	TransformPlayerPart transformCore_;
-	std::vector<TransformPlayerPart> transformParts_;
-	PlayerMode transformFromMode_ = PlayerMode::Fighter;
-	float transformModeBlend_ = 1.0f;
-	std::unique_ptr<Object3d> guardBarrier_;
-	std::unique_ptr<Object3d> guardBarrierRing_;
+	PlayerPresentationController presentationController_;
 	std::string modelName_;
 	Vector3 modelScale_ = { 1.0f, 1.0f, 1.0f };
     Vector3 currentDrawScale_ = { 1.0f, 1.0f, 1.0f };
     Vector3 targetDrawScale_ = { 1.0f, 1.0f, 1.0f };
-    float presentationAlpha_ = 1.0f;
-	bool presentationThrustersVisible_ = true;
 
     PlayerMode currentMode_ = PlayerMode::Fighter;
     PlayerModeParams modeParams_[3];
@@ -239,7 +219,6 @@ private:
     int dodgeCooldownTimer_ = 0;
     float dodgeDirection_ = 0.0f;
     bool isGuarding_ = false;
-    float guardBarrierPulse_ = 0.0f;
     float guardScale_ = 0.0f;
     float guardPoseWeight_ = 0.0f;
     

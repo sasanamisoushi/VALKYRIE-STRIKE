@@ -13,7 +13,7 @@ public:
     void UpdateModel() override;
 
     // ジャミングフィールドの半径を取得
-    float GetJammingRadius() const { return jammingRadius_; }
+    float GetJammingRadius() const override { return jammingRadius_; }
 
 private:
     float jammingRadius_ = 80.0f; // プレイヤーへの妨害が届く距離

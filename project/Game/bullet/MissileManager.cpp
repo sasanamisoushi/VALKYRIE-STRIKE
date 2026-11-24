@@ -29,7 +29,7 @@ void MissileManager::Initialize(ParticleManager* particleManager) {
 
 void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &enemies,
     const std::list<std::unique_ptr<Obstacle>> &obstacles,
-    std::vector<Vector3> &hitPositions, std::vector<Enemy *> &destroyedEnemies) {
+    std::vector<Vector3> &hitPositions, std::vector<DefeatedEnemy> &destroyedEnemies) {
     for (auto it = missiles_.begin(); it != missiles_.end(); ) {
         Missile *missile = it->get();
 
@@ -198,8 +198,8 @@ void MissileManager::Update(Camera *camera, std::list<std::unique_ptr<Enemy>> &e
 
                         if (enemy->IsDead()) {
                             // 削除はシーン側が後で行うため、このフレーム中は実型を保持できる。
-                            // これにより敵種別ごとの撃破パーティクルを選択できる。
-                            destroyedEnemies.push_back(enemy.get());
+                            // これにより敵種別と撃破した弾種ごとの演出を選択できる。
+                            destroyedEnemies.push_back({ enemy.get(), missile->GetType() });
                         } else {
                             hitPositions.push_back(impactSphere.center);
                         }

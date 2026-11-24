@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <list>
+#include <memory>
 #include <string>
 #include <vector>
 #include "engine/Camera/Camera.h"
@@ -9,11 +12,27 @@
 #include "Game/Scene/MultiLockTarget.h"
 #include "externals/json.hpp"
 
-class GamePlayScene;
+class TargetSelectionState;
+class MultiLockChargeState;
+class MissilePresetManager;
+class TutorialPhaseController;
+class TutorialProgressTracker;
+
+struct LockOnSceneContext {
+	Player* player = nullptr;
+	const std::list<std::unique_ptr<Enemy>>* enemies = nullptr;
+	TargetSelectionState* targetSelection = nullptr;
+	MultiLockChargeState* multiLockChargeState = nullptr;
+	MissilePresetManager* missilePresetManager = nullptr;
+	const TutorialPhaseController* tutorialController = nullptr;
+	TutorialProgressTracker* tutorialProgress = nullptr;
+	std::function<bool()> isTitleBackgroundMode;
+	std::function<void()> resetCinematicLockOnCamera;
+};
 
 class LockOnManager {
 public:
-	LockOnManager(GamePlayScene* scene);
+	explicit LockOnManager(LockOnSceneContext context);
 	void UpdateLockOn(Camera *activeCamera, bool shouldUpdateGame);
 	void SwitchLockOnTarget(Camera *activeCamera);
 	Enemy *FindLockOnTarget(Camera *activeCamera);
@@ -38,7 +57,7 @@ private:
 	bool IsFighterReacquireBlocked(const Enemy *enemy) const;
 	void ReleaseCurrentLock(bool preventImmediateReacquire);
 
-	GamePlayScene* scene_;
+	LockOnSceneContext context_;
 	Enemy *fighterRecentlyReleasedEnemy_ = nullptr;
 	int fighterReacquireCooldownFrames_ = 0;
 	bool isFighterLockDanger_ = false;

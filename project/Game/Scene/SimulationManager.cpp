@@ -1,4 +1,6 @@
 #include "SimulationManager.h"
+#include "BossSpawnController.h"
+#include "EnemyFactory.h"
 #include "MissilePresetManager.h"
 #include "LockOnManager.h"
 #include "GamePlayScene.h"
@@ -231,10 +233,7 @@ bool SimulationManager::SaveCurrentSimulationLayoutToSceneJson(const std::string
 	ofs << root.dump(4);
 	ofs.close();
 
-	try {
-		scene_->lastJsonWriteTime_ = std::filesystem::last_write_time(filePath);
-	} catch (...) {
-	}
+	scene_->stageReloadController_.SyncWriteTime(filePath);
 
 	scene_->uiManager_->simulationSaveMessage_ = "現在の配置を scene.json に保存しました。実ゲームにも反映されます";
 	OutputDebugStringA(("[SimulationSave] Saved " + std::to_string(savedCount) + " transforms.\n").c_str());
@@ -291,10 +290,7 @@ bool SimulationManager::AddEnemySpawnToSceneJson(
 	ofs << root.dump(4);
 	ofs.close();
 
-	try {
-		scene_->lastJsonWriteTime_ = std::filesystem::last_write_time(filePath);
-	} catch (...) {
-	}
+	scene_->stageReloadController_.SyncWriteTime(filePath);
 
 	// ファイル保存だけでなく、ゲーム中のプレビューにも即時反映する。
 	scene_->ReloadSceneJson();
@@ -345,10 +341,7 @@ bool SimulationManager::MoveEnemySpawnInSceneJson(const std::string &filePath, s
 	ofs << root.dump(4);
 	ofs.close();
 
-	try {
-		scene_->lastJsonWriteTime_ = std::filesystem::last_write_time(filePath);
-	} catch (...) {
-	}
+	scene_->stageReloadController_.SyncWriteTime(filePath);
 
 	scene_->ReloadSceneJson();
 	scene_->uiManager_->simulationSaveMessage_ = "敵の初期スポーン順を変更し、プレビューへ反映しました";
@@ -367,7 +360,8 @@ void SimulationManager::RefreshSimulationActionNames() {
 	json root;
 	try {
 		ifs >> root;
-	} catch (...) {
+	} catch (const std::exception& e) {
+		OutputDebugStringA((std::string("[SimulationManager] Failed to read actions JSON: ") + e.what() + "\n").c_str());
 		scene_->uiManager_->selectedSimulationActionIndex_ = 0;
 		return;
 	}
@@ -403,7 +397,8 @@ bool SimulationManager::SaveNamedSimulationAction(const std::string &filePath, c
 		if (ifs.is_open()) {
 			try {
 				ifs >> root;
-			} catch (...) {
+			} catch (const std::exception& e) {
+				OutputDebugStringA((std::string("[SimulationManager] Resetting unreadable actions JSON: ") + e.what() + "\n").c_str());
 				root = json::object();
 			}
 		}
@@ -566,7 +561,8 @@ bool SimulationManager::ApplySimulationAction(const std::string &filePath, const
 	json root;
 	try {
 		ifs >> root;
-	} catch (...) {
+	} catch (const std::exception& e) {
+		OutputDebugStringA((std::string("[SimulationManager] Failed to apply action JSON: ") + e.what() + "\n").c_str());
 		scene_->uiManager_->simulationActionMessage_ = "名前付き行動ファイルを読み込めませんでした。";
 		return false;
 	}
@@ -589,12 +585,10 @@ bool SimulationManager::ApplySimulationAction(const std::string &filePath, const
 		return false;
 	}
 
-	scene_->lockedEnemy_ = nullptr;
-	scene_->aimAssistEnemy_ = nullptr;
+	scene_->targetSelection_.ClearAll();
 	scene_->lockOnManager_->CancelMultiLock();
-	scene_->isCinematicLockOnCameraInitialized_ = false;
-	scene_->isGameOver_ = false;
-	scene_->gameOverTimer_ = 0;
+	scene_->ResetCinematicLockOnCamera();
+	scene_->gameOverSequence_.Reset();
 
 	if (scene_->player_ && action->contains("player") && (*action)["player"].is_object()) {
 		const json &playerData = (*action)["player"];
@@ -701,15 +695,14 @@ bool SimulationManager::ApplySimulationAction(const std::string &filePath, const
 			scene_->enemySpawns_.push_back(spawnData);
 
 			if (spawnData.isInitialSpawn) {
-				auto enemy = std::make_unique<Enemy>();
-				enemy->Initialize(spawnData.position);
-				enemy->SetRotation(spawnData.rotation);
-				enemy->SetScale(ReadVector3Json(enemyData.value("scale", json::array()), enemy->GetScale()));
-				enemy->SetSpawnPointIndex(scene_->enemySpawns_.size() - 1);
-				scene_->enemies_.push_back(std::move(enemy));
+				EnemyFactory factory;
+				if (auto enemy = factory.Create(spawnData, scene_->enemySpawns_.size() - 1, scene_->obstacles_)) {
+					enemy->SetScale(ReadVector3Json(enemyData.value("scale", json::array()), enemy->GetScale()));
+					scene_->enemies_.push_back(std::move(enemy));
+				}
 			}
 		}
-		scene_->enemyRespawnTimers_.assign(scene_->enemySpawns_.size(), kNoRespawnTimer);
+		scene_->enemySpawnManager_.Reset(scene_->enemySpawns_);
 	}
 
 	if (scene_->missileManager_) {
@@ -722,8 +715,8 @@ bool SimulationManager::ApplySimulationAction(const std::string &filePath, const
 	if (!scene_->isDebugCameraActive_ && scene_->camera && scene_->player_) {
 		Vector3 *targetPos = nullptr;
 		Vector3 enemyPos;
-		if (scene_->lockedEnemy_) {
-			enemyPos = scene_->lockedEnemy_->GetPosition();
+		if (Enemy* lockedEnemy = scene_->targetSelection_.GetLockedEnemy()) {
+			enemyPos = lockedEnemy->GetPosition();
 			targetPos = &enemyPos;
 		}
 		scene_->player_->UpdateCamera(scene_->camera.get(), targetPos);
@@ -847,7 +840,8 @@ bool SimulationManager::LoadBossThrusterSettings(const std::string& filePath, bo
 	json root;
 	try {
 		ifs >> root;
-	} catch (...) {
+	} catch (const std::exception& e) {
+		OutputDebugStringA((std::string("[SimulationManager] Failed to load boss settings JSON: ") + e.what() + "\n").c_str());
 		if (verbose) {
 			scene_->uiManager_->bossTuningMessage_ = "ボス設定の読み込みに失敗しました。";
 		}
@@ -931,13 +925,14 @@ void SimulationManager::DrawBossBattleControls() {
 	if (ImGui::Button("この位置でボス戦を開始##boss")) {
 		scene_->ClearAllEnemyReferences();
 		scene_->enemies_.clear();
-		auto boss = std::make_unique<Boss>();
-		boss->Initialize({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
-		boss->SetTuning(scene_->uiManager_->bossTuning_);
-		boss->UpdateModel();
-		scene_->enemies_.push_back(std::move(boss));
-		scene_->bossSpawned_ = true;
-		scene_->isGameOver_ = false;
+		BossSpawnController bossSpawner;
+		bossSpawner.Spawn(
+			{ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] },
+			&scene_->uiManager_->bossTuning_,
+			scene_->obstacles_,
+			scene_->enemies_);
+		scene_->bossEncounterState_.MarkBossSpawned();
+		scene_->gameOverSequence_.Reset();
 		scene_->isEditorPreviewPlaying_ = true;
 		scene_->uiManager_->bossTuningMessage_ = "ボス戦を開始しました。再生中のまま砲台とスラスターを調整できます。";
 		activeBoss = findActiveBoss();
@@ -1147,7 +1142,7 @@ void SimulationManager::DrawSimulationScreenUI() {
 		scene_->missilePresetManager_->DrawMissileSettingsUI();
 	} else if (scene_->uiManager_->currentSimulationTarget_ == 2) {
 		ImGui::Text("=== 敵の出現とルート ===");
-		ImGui::Text("Lock-on: %s", scene_->lockedEnemy_ ? "LOCKED" : "NONE");
+		ImGui::Text("Lock-on: %s", scene_->targetSelection_.HasLockedEnemy() ? "LOCKED" : "NONE");
 		ImGui::Text("Tab: ターゲットロック / X: ロック解除 / F2: シミュレーションを閉じる");
 		ImGui::Separator();
 		ImGui::Text("=== ボス戦テスト / ボス調整 ===");
@@ -1168,13 +1163,14 @@ void SimulationManager::DrawSimulationScreenUI() {
 		if (ImGui::Button("この位置でボス戦を開始")) {
 			scene_->ClearAllEnemyReferences();
 			scene_->enemies_.clear();
-			auto boss = std::make_unique<Boss>();
-			boss->Initialize({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
-			boss->SetTuning(scene_->uiManager_->bossTuning_);
-			boss->UpdateModel();
-			scene_->enemies_.push_back(std::move(boss));
-			scene_->bossSpawned_ = true;
-			scene_->isGameOver_ = false;
+			BossSpawnController bossSpawner;
+			bossSpawner.Spawn(
+				{ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] },
+				&scene_->uiManager_->bossTuning_,
+				scene_->obstacles_,
+				scene_->enemies_);
+			scene_->bossEncounterState_.MarkBossSpawned();
+			scene_->gameOverSequence_.Reset();
 			scene_->isEditorPreviewPlaying_ = true;
 			scene_->uiManager_->bossTuningMessage_ = "ボス戦を開始しました。再生中のまま砲台とスラスターを調整できます。";
 			activeBoss = findActiveBoss();
@@ -1250,9 +1246,12 @@ void SimulationManager::DrawSimulationScreenUI() {
 		ImGui::DragFloat3("出現座標 (X,Y,Z)", scene_->newEnemyPos, 1.0f);
 
 		if (ImGui::Button("敵を生成する！")) {
-			auto newEnemy = std::make_unique<Enemy>();
-			newEnemy->Initialize({ scene_->newEnemyPos[0], scene_->newEnemyPos[1], scene_->newEnemyPos[2] });
-			scene_->enemies_.push_back(std::move(newEnemy));
+			EnemySpawnData spawnData{};
+			spawnData.position = { scene_->newEnemyPos[0], scene_->newEnemyPos[1], scene_->newEnemyPos[2] };
+			EnemyFactory factory;
+			if (auto newEnemy = factory.Create(spawnData, (std::numeric_limits<size_t>::max)(), scene_->obstacles_)) {
+				scene_->enemies_.push_back(std::move(newEnemy));
+			}
 		}
 
 		ImGui::Separator();
@@ -1387,10 +1386,11 @@ void SimulationManager::DrawSimulationScreenUI() {
 			if (ImGui::Button("フリーカメラに切り替え")) {
 				scene_->SetDebugCameraActive(true);
 			}
-			if (ImGui::Checkbox("Cinematic lock-on scene_->camera", &scene_->isCinematicLockOnCameraEnabled_)) {
-				scene_->isCinematicLockOnCameraInitialized_ = false;
+			bool cinematicLockOnEnabled = scene_->IsCinematicLockOnCameraEnabled();
+			if (ImGui::Checkbox("Cinematic lock-on scene_->camera", &cinematicLockOnEnabled)) {
+				scene_->SetCinematicLockOnCameraEnabled(cinematicLockOnEnabled);
 			}
-			ImGui::Text("Cinematic: %s", (scene_->isCinematicLockOnCameraEnabled_ && scene_->lockedEnemy_) ? "ACTIVE" : "OFF");
+			ImGui::Text("Cinematic: %s", (scene_->IsCinematicLockOnCameraEnabled() && scene_->targetSelection_.HasLockedEnemy()) ? "ACTIVE" : "OFF");
 		}
 	} else if (scene_->uiManager_->currentSimulationTarget_ == 5) {
 		DrawAnimationEditorUI();

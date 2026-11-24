@@ -1,9 +1,10 @@
 #include "LockOnManager.h"
 #include "MissilePresetManager.h"
-#include "GamePlayScene.h"
+#include "MultiLockChargeState.h"
+#include "TargetSelectionState.h"
+#include "TutorialPhaseController.h"
+#include "TutorialProgressTracker.h"
 #include "GamePlaySceneHelpers.h"
-#include "Game/enemy/JammerEnemy.h"
-#include "Game/enemy/Boss.h"
 #include <externals/imgui/imgui.h>
 #include <fstream>
 #include <algorithm>
@@ -20,34 +21,32 @@ constexpr int kFighterReacquireCooldownFrames = 45;
 constexpr int kMultiLockTargetAcquireIntervalFrames = 30;
 }
 
-LockOnManager::LockOnManager(GamePlayScene* scene) : scene_(scene) {}
+LockOnManager::LockOnManager(LockOnSceneContext context) : context_(std::move(context)) {}
 
 bool LockOnManager::IsFighterReacquireBlocked(const Enemy *enemy) const {
 	return fighterReacquireCooldownFrames_ > 0 && enemy == fighterRecentlyReleasedEnemy_;
 }
 
 void LockOnManager::ReleaseCurrentLock(bool preventImmediateReacquire) {
-	if (preventImmediateReacquire && scene_->lockedEnemy_) {
-		fighterRecentlyReleasedEnemy_ = scene_->lockedEnemy_;
+	if (preventImmediateReacquire && context_.targetSelection->HasLockedEnemy()) {
+		fighterRecentlyReleasedEnemy_ = context_.targetSelection->GetLockedEnemy();
 		fighterReacquireCooldownFrames_ = kFighterReacquireCooldownFrames;
 	}
-	scene_->lockedEnemy_ = nullptr;
-	scene_->lockedBossTurretIndex_ = -1;
-	scene_->aimAssistEnemy_ = nullptr;
-	scene_->isCinematicLockOnCameraInitialized_ = false;
+	context_.targetSelection->ClearAll();
+	if (context_.resetCinematicLockOnCamera) { context_.resetCinematicLockOnCamera(); }
 	isFighterLockDanger_ = false;
 }
 
 bool LockOnManager::ShouldKeepCurrentLock(Camera *activeCamera, bool &outTooClose) {
 	outTooClose = false;
 	isFighterLockDanger_ = false;
-	if (!scene_->player_ || !activeCamera || !scene_->lockedEnemy_ || scene_->player_->IsDead()) {
+	if (!context_.player || !activeCamera || !context_.targetSelection->HasLockedEnemy() || context_.player->IsDead()) {
 		return false;
 	}
 
-	const PlayerMode mode = scene_->player_->GetCurrentMode();
-	const PlayerModeParams params = scene_->player_->GetModeParams(mode);
-	const Vector3 toEnemy = SubtractVector3(GetLockedTargetPosition(), scene_->player_->GetPosition());
+	const PlayerMode mode = context_.player->GetCurrentMode();
+	const PlayerModeParams params = context_.player->GetModeParams(mode);
+	const Vector3 toEnemy = SubtractVector3(GetLockedTargetPosition(), context_.player->GetPosition());
 	const float distanceSq = LengthSqVector3(toEnemy);
 	if (distanceSq <= 0.0001f) {
 		outTooClose = (mode == PlayerMode::Fighter);
@@ -62,7 +61,7 @@ bool LockOnManager::ShouldKeepCurrentLock(Camera *activeCamera, bool &outTooClos
 		return false;
 	}
 
-	const Vector3 playerForward = MyMath::Normalize(scene_->player_->GetForwardVector());
+	const Vector3 playerForward = MyMath::Normalize(context_.player->GetForwardVector());
 	const float forwardDot = MyMath::Dot(playerForward, MyMath::Normalize(toEnemy));
 	if (forwardDot < kLockOnReleaseRearDot) {
 		return false;
@@ -72,7 +71,7 @@ bool LockOnManager::ShouldKeepCurrentLock(Camera *activeCamera, bool &outTooClos
 		return true;
 	}
 
-	const float releaseDistance = scene_->player_->GetCollisionRadius()
+	const float releaseDistance = context_.player->GetCollisionRadius()
 		+ GetLockedTargetRadius()
 		+ kFighterLockSafetyMargin;
 	const float warningDistance = (std::max)(kFighterLockWarningDistance, releaseDistance + 12.0f);
@@ -85,10 +84,10 @@ void LockOnManager::UpdateLockOn(Camera *activeCamera, bool shouldUpdateGame) {
 	Input *input = Input::GetInstance();
 	if (!input) return;
 
-	const bool isFighterMode = scene_->player_ && scene_->player_->GetCurrentMode() == PlayerMode::Fighter;
+	const bool isFighterMode = context_.player && context_.player->GetCurrentMode() == PlayerMode::Fighter;
 
 	// タイトル画面のキー・マウス操作はメニュー専用。本編背景のロックオンへ渡さない。
-	const bool canUsePlayerInput = !scene_->IsTitleBackgroundMode() &&
+	const bool canUsePlayerInput = !(context_.isTitleBackgroundMode && context_.isTitleBackgroundMode()) &&
 		!IsImGuiKeyboardCaptureActive() && !IsImGuiMouseCaptureActive();
 	if (shouldUpdateGame && fighterReacquireCooldownFrames_ > 0) {
 		--fighterReacquireCooldownFrames_;
@@ -99,21 +98,21 @@ void LockOnManager::UpdateLockOn(Camera *activeCamera, bool shouldUpdateGame) {
 
 	if (isFighterMode) {
 		// ファイターモードでは手動固定ロックオン(lockedEnemy_)は行わない
-		if (scene_->lockedEnemy_) {
+		if (context_.targetSelection->HasLockedEnemy()) {
 			ReleaseCurrentLock(false);
 		}
 		// 機体前方の敵に対するエイムアシストおよびマルチロックは全モード共通で動作させる
-		scene_->aimAssistEnemy_ = nullptr;
+		context_.targetSelection->ClearAimAssist();
 		if (shouldUpdateGame) {
-			scene_->aimAssistEnemy_ = FindAimAssistTarget(activeCamera);
+			context_.targetSelection->SetAimAssistEnemy(FindAimAssistTarget(activeCamera));
 		}
 		return;
 	}
 
 	if (!IsLockedEnemyAlive()) {
-		if (scene_->lockedBossTurretIndex_ >= 0) {
-			Boss* boss = dynamic_cast<Boss*>(scene_->lockedEnemy_);
-			if (boss && !boss->IsDead()) {
+		if (context_.targetSelection->HasLockedBossTurret()) {
+			Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy();
+			if (lockedEnemy && lockedEnemy->GetLockOnPartCount() > 0 && !lockedEnemy->IsDead()) {
 				SelectBossTurretForLock(activeCamera);
 			} else {
 				ReleaseCurrentLock(false);
@@ -130,19 +129,19 @@ void LockOnManager::UpdateLockOn(Camera *activeCamera, bool shouldUpdateGame) {
 
 	if (canUsePlayerInput && input->TriggerAction(PlayerAction::LockToggle)) {
 		// ロック中なら対象（別の敵や別の砲台・部位）へ切り替え。未ロックなら対象を探してロック。
-		if (scene_->lockedEnemy_ && IsLockedEnemyAlive()) {
+		if (context_.targetSelection->HasLockedEnemy() && IsLockedEnemyAlive()) {
 			SwitchLockOnTarget(activeCamera);
 		} else {
-			scene_->lockedEnemy_ = FindLockOnTarget(activeCamera);
+			context_.targetSelection->SetLockedTarget(FindLockOnTarget(activeCamera), -1);
 			SelectBossTurretForLock(activeCamera);
 		}
-		scene_->aimAssistEnemy_ = nullptr;
-		scene_->isCinematicLockOnCameraInitialized_ = false;
+		context_.targetSelection->ClearAimAssist();
+		if (context_.resetCinematicLockOnCamera) { context_.resetCinematicLockOnCamera(); }
 	}
 
-	scene_->aimAssistEnemy_ = nullptr;
-	if (!scene_->lockedEnemy_ && shouldUpdateGame) {
-		scene_->aimAssistEnemy_ = FindAimAssistTarget(activeCamera);
+	context_.targetSelection->ClearAimAssist();
+	if (!context_.targetSelection->HasLockedEnemy() && shouldUpdateGame) {
+		context_.targetSelection->SetAimAssistEnemy(FindAimAssistTarget(activeCamera));
 	}
 
 	if (!shouldUpdateGame) {
@@ -154,20 +153,20 @@ void LockOnManager::UpdateLockOn(Camera *activeCamera, bool shouldUpdateGame) {
 		return;
 	}
 
-	if (scene_->lockedEnemy_) {
-		scene_->lockedEnemy_->StartChasingPlayer();
+	if (Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy()) {
+		lockedEnemy->StartChasingPlayer();
 	}
 }
 
 void LockOnManager::SwitchLockOnTarget(Camera *activeCamera) {
-	if (!scene_->player_ || !activeCamera || scene_->player_->IsDead()) {
+	if (!context_.player || !activeCamera || context_.player->IsDead()) {
 		ReleaseCurrentLock(false);
 		return;
 	}
 
-	PlayerModeParams p = scene_->player_->GetModeParams(scene_->player_->GetCurrentMode());
-	const Vector3 playerPosition = scene_->player_->GetPosition();
-	const Vector3 playerForward = MyMath::Normalize(scene_->player_->GetForwardVector());
+	PlayerModeParams p = context_.player->GetModeParams(context_.player->GetCurrentMode());
+	const Vector3 playerPosition = context_.player->GetPosition();
+	const Vector3 playerForward = MyMath::Normalize(context_.player->GetForwardVector());
 
 	float maxDistSq = p.maxLockOnDistance * p.maxLockOnDistance;
 	const bool isJammed = IsPlayerJammed(activeCamera);
@@ -206,8 +205,8 @@ void LockOnManager::SwitchLockOnTarget(Camera *activeCamera) {
 			return;
 		}
 
-		if (scene_->player_->GetCurrentMode() == PlayerMode::Fighter) {
-			const float minimumDistance = scene_->player_->GetCollisionRadius()
+		if (context_.player->GetCurrentMode() == PlayerMode::Fighter) {
+			const float minimumDistance = context_.player->GetCollisionRadius()
 				+ enemy->GetCollisionRadius() + kFighterLockSafetyMargin;
 			if (distSq <= minimumDistance * minimumDistance) return;
 		}
@@ -236,20 +235,18 @@ void LockOnManager::SwitchLockOnTarget(Camera *activeCamera) {
 		candidates.push_back({ enemy, turretIndex, worldPos, screenPos });
 	};
 
-	for (const auto &enemy : scene_->enemies_) {
-		if (!enemy.get()) continue;
-		try {
-			if (enemy->IsDead()) continue;
-		} catch (...) { continue; }
+	for (const auto &enemy : (*context_.enemies)) {
+		if (!enemy || enemy->IsDead()) continue;
 		if (IsFighterReacquireBlocked(enemy.get())) continue;
 
-		if (Boss *boss = dynamic_cast<Boss*>(enemy.get())) {
-			for (size_t i = 0; i < boss->GetLockOnPartCount(); ++i) {
-				if (boss->IsLockOnPartAvailable(i)) {
-					addCandidateIfValid(boss, static_cast<int>(i), boss->GetLockOnPartPosition(i));
+		const size_t partCount = enemy->GetLockOnPartCount();
+		if (partCount > 0) {
+			for (size_t i = 0; i < partCount; ++i) {
+				if (enemy->IsLockOnPartAvailable(i)) {
+					addCandidateIfValid(enemy.get(), static_cast<int>(i), enemy->GetLockOnPartPosition(i));
 				}
 			}
-			addCandidateIfValid(boss, -1, boss->GetBodyLockOnPosition());
+			addCandidateIfValid(enemy.get(), -1, enemy->GetBodyLockOnPosition());
 		} else {
 			addCandidateIfValid(enemy.get(), -1, enemy->GetAimPosition());
 		}
@@ -268,8 +265,8 @@ void LockOnManager::SwitchLockOnTarget(Camera *activeCamera) {
 	// 現在のロック対象のインデックスを特定
 	int currentIndex = -1;
 	for (int i = 0; i < static_cast<int>(candidates.size()); ++i) {
-		if (candidates[i].enemy == scene_->lockedEnemy_ &&
-			candidates[i].turretIndex == scene_->lockedBossTurretIndex_) {
+		if (candidates[i].enemy == context_.targetSelection->GetLockedEnemy() &&
+			candidates[i].turretIndex == context_.targetSelection->GetLockedBossTurretIndex()) {
 			currentIndex = i;
 			break;
 		}
@@ -283,8 +280,7 @@ void LockOnManager::SwitchLockOnTarget(Camera *activeCamera) {
 		}
 		// 次の対象へ切り替え
 		int nextIndex = (currentIndex + 1) % static_cast<int>(candidates.size());
-		scene_->lockedEnemy_ = candidates[nextIndex].enemy;
-		scene_->lockedBossTurretIndex_ = candidates[nextIndex].turretIndex;
+		context_.targetSelection->SetLockedTarget(candidates[nextIndex].enemy, candidates[nextIndex].turretIndex);
 	} else {
 		// 画面中央に最も近い対象を選択
 		const float centerX = screenWidth * 0.5f;
@@ -300,27 +296,26 @@ void LockOnManager::SwitchLockOnTarget(Camera *activeCamera) {
 				bestIdx = i;
 			}
 		}
-		scene_->lockedEnemy_ = candidates[bestIdx].enemy;
-		scene_->lockedBossTurretIndex_ = candidates[bestIdx].turretIndex;
+		context_.targetSelection->SetLockedTarget(candidates[bestIdx].enemy, candidates[bestIdx].turretIndex);
 	}
 
-	if (scene_->lockedEnemy_) {
-		scene_->lockedEnemy_->StartChasingPlayer();
+	if (Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy()) {
+		lockedEnemy->StartChasingPlayer();
 	}
-	scene_->aimAssistEnemy_ = nullptr;
-	scene_->isCinematicLockOnCameraInitialized_ = false;
+	context_.targetSelection->ClearAimAssist();
+	if (context_.resetCinematicLockOnCamera) { context_.resetCinematicLockOnCamera(); }
 }
 
 Enemy *LockOnManager::FindLockOnTarget(Camera *activeCamera) {
-	if (!scene_->player_ || !activeCamera || scene_->player_->IsDead()) {
+	if (!context_.player || !activeCamera || context_.player->IsDead()) {
 		return nullptr;
 	}
-	if (scene_->player_->GetCurrentMode() == PlayerMode::Fighter) {
+	if (context_.player->GetCurrentMode() == PlayerMode::Fighter) {
 		return nullptr;
 	}
 
-	const Vector3 playerPosition = scene_->player_->GetPosition();
-	const Vector3 playerForward = MyMath::Normalize(scene_->player_->GetForwardVector());
+	const Vector3 playerPosition = context_.player->GetPosition();
+	const Vector3 playerForward = MyMath::Normalize(context_.player->GetForwardVector());
 	Enemy *nearestAliveEnemy = nullptr;
 	float nearestAliveDistSq = (std::numeric_limits<float>::max)();
 	Enemy *bestFrontEnemy = nullptr;
@@ -328,7 +323,7 @@ Enemy *LockOnManager::FindLockOnTarget(Camera *activeCamera) {
 	Enemy *bestScreenEnemy = nullptr;
 	float bestScreenScore = (std::numeric_limits<float>::max)();
 
-	PlayerModeParams p = scene_->player_->GetModeParams(scene_->player_->GetCurrentMode());
+	PlayerModeParams p = context_.player->GetModeParams(context_.player->GetCurrentMode());
 	float maxDistSq = p.maxLockOnDistance * p.maxLockOnDistance;
 	
 	const bool isJammed = IsPlayerJammed(activeCamera);
@@ -343,11 +338,8 @@ Enemy *LockOnManager::FindLockOnTarget(Camera *activeCamera) {
 	const float screenWidth = maxX - minX;
 	const float screenHeight = maxY - minY;
 
-	for (const auto &enemy : scene_->enemies_) {
-		if (!enemy.get()) continue;
-		try {
-			if (enemy->IsDead()) continue;
-		} catch (...) { continue; }
+	for (const auto &enemy : (*context_.enemies)) {
+		if (!enemy || enemy->IsDead()) continue;
 		if (IsFighterReacquireBlocked(enemy.get())) continue;
 
 		const Vector3 toEnemy = SubtractVector3(enemy->GetPosition(), playerPosition);
@@ -355,8 +347,8 @@ Enemy *LockOnManager::FindLockOnTarget(Camera *activeCamera) {
 		if (distSq > effectiveMaxDistSq) {
 			continue;
 		}
-		if (scene_->player_->GetCurrentMode() == PlayerMode::Fighter) {
-			const float minimumDistance = scene_->player_->GetCollisionRadius()
+		if (context_.player->GetCurrentMode() == PlayerMode::Fighter) {
+			const float minimumDistance = context_.player->GetCollisionRadius()
 				+ enemy->GetCollisionRadius() + kFighterLockSafetyMargin;
 			if (distSq <= minimumDistance * minimumDistance) continue;
 		}
@@ -378,10 +370,7 @@ Enemy *LockOnManager::FindLockOnTarget(Camera *activeCamera) {
 
 		if (hasOverlayBounds && screenWidth > 0.0f && screenHeight > 0.0f && forwardDot >= p.lockOnAngleDot - 0.2f) {
 			Vector3 targetPosition = enemy->GetAimPosition();
-			float collisionRadius = 1.0f;
-			try {
-				collisionRadius = enemy->GetCollisionRadius();
-			} catch (...) {}
+			const float collisionRadius = enemy->GetCollisionRadius();
 			if (!enemy->IsBoss()) targetPosition.y += collisionRadius * 0.3f;
 			Vector3 screenPosition = MyMath::WorldToScreen(
 				targetPosition,
@@ -414,24 +403,19 @@ Enemy *LockOnManager::FindLockOnTarget(Camera *activeCamera) {
 }
 
 bool LockOnManager::IsLockedEnemyAlive() const {
-	if (!scene_->lockedEnemy_) {
+	Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy();
+	if (!lockedEnemy) {
 		return false;
 	}
 
-	if (scene_->lockedBossTurretIndex_ >= 0) {
-		const Boss* boss = dynamic_cast<const Boss*>(scene_->lockedEnemy_);
-		return boss && boss->IsLockOnPartAvailable(static_cast<size_t>(scene_->lockedBossTurretIndex_));
+	const int turretIndex = context_.targetSelection->GetLockedBossTurretIndex();
+	if (turretIndex >= 0) {
+		return lockedEnemy->IsLockOnPartAvailable(static_cast<size_t>(turretIndex));
 	}
 
-	for (const auto &enemy : scene_->enemies_) {
-		if (enemy.get() == scene_->lockedEnemy_) {
-			try {
-				if (!enemy->IsDead()) {
-					return true;
-				}
-			} catch (...) {
-				return false;
-			}
+	for (const auto &enemy : (*context_.enemies)) {
+		if (enemy.get() == lockedEnemy) {
+			return !enemy->IsDead();
 		}
 	}
 
@@ -439,9 +423,9 @@ bool LockOnManager::IsLockedEnemyAlive() const {
 }
 
 void LockOnManager::SelectBossTurretForLock(Camera *activeCamera) {
-	scene_->lockedBossTurretIndex_ = -1;
-	Boss* boss = dynamic_cast<Boss*>(scene_->lockedEnemy_);
-	if (!boss || !activeCamera) return;
+	context_.targetSelection->SetLockedBossTurretIndex(-1);
+	Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy();
+	if (!lockedEnemy || lockedEnemy->GetLockOnPartCount() == 0 || !activeCamera) return;
 
 	float minX = 0.0f;
 	float minY = 0.0f;
@@ -453,9 +437,9 @@ void LockOnManager::SelectBossTurretForLock(Camera *activeCamera) {
 	if (width <= 0.0f || height <= 0.0f) return;
 
 	float bestScore = (std::numeric_limits<float>::max)();
-	for (size_t index = 0; index < boss->GetLockOnPartCount(); ++index) {
-		if (!boss->IsLockOnPartAvailable(index)) continue;
-		const Vector3 screenPosition = MyMath::WorldToScreen(boss->GetLockOnPartPosition(index),
+	for (size_t index = 0; index < lockedEnemy->GetLockOnPartCount(); ++index) {
+		if (!lockedEnemy->IsLockOnPartAvailable(index)) continue;
+		const Vector3 screenPosition = MyMath::WorldToScreen(lockedEnemy->GetLockOnPartPosition(index),
 			activeCamera->GetViewProjectionMatrix(), width, height);
 		if (screenPosition.z < 0.0f || screenPosition.z > 1.0f ||
 			screenPosition.x < 0.0f || screenPosition.x > width ||
@@ -465,46 +449,49 @@ void LockOnManager::SelectBossTurretForLock(Camera *activeCamera) {
 		const float score = dx * dx + dy * dy;
 		if (score < bestScore) {
 			bestScore = score;
-			scene_->lockedBossTurretIndex_ = static_cast<int>(index);
+			context_.targetSelection->SetLockedBossTurretIndex(static_cast<int>(index));
 		}
 	}
 }
 
 bool LockOnManager::HasLockedBossTurret() const {
-	return scene_->lockedBossTurretIndex_ >= 0 && IsLockedEnemyAlive();
+	return context_.targetSelection->HasLockedBossTurret() && IsLockedEnemyAlive();
 }
 
 Vector3 LockOnManager::GetLockedTargetPosition() const {
+	const Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy();
+	if (!lockedEnemy) {
+		return Vector3{};
+	}
 	if (HasLockedBossTurret()) {
-		const Boss* boss = static_cast<const Boss*>(scene_->lockedEnemy_);
-		return boss->GetLockOnPartPosition(static_cast<size_t>(scene_->lockedBossTurretIndex_));
+		return lockedEnemy->GetLockOnPartPosition(static_cast<size_t>(context_.targetSelection->GetLockedBossTurretIndex()));
 	}
-	if (const Boss* boss = dynamic_cast<const Boss*>(scene_->lockedEnemy_)) {
-		return boss->GetBodyLockOnPosition();
-	}
-	return scene_->lockedEnemy_ ? scene_->lockedEnemy_->GetPosition() : Vector3{};
+	return lockedEnemy->GetBodyLockOnPosition();
 }
 
 float LockOnManager::GetLockedTargetRadius() const {
-	if (HasLockedBossTurret()) {
-		const Boss* boss = static_cast<const Boss*>(scene_->lockedEnemy_);
-		return boss->GetLockOnPartRadius(static_cast<size_t>(scene_->lockedBossTurretIndex_));
+	const Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy();
+	if (!lockedEnemy) {
+		return 1.0f;
 	}
-	return scene_->lockedEnemy_ ? scene_->lockedEnemy_->GetCollisionRadius() : 1.0f;
+	if (HasLockedBossTurret()) {
+		return lockedEnemy->GetLockOnPartRadius(static_cast<size_t>(context_.targetSelection->GetLockedBossTurretIndex()));
+	}
+	return lockedEnemy->GetCollisionRadius();
 }
 
 int LockOnManager::GetLockedBossTurretIndex() const {
-	return HasLockedBossTurret() ? scene_->lockedBossTurretIndex_ : -1;
+	return HasLockedBossTurret() ? context_.targetSelection->GetLockedBossTurretIndex() : -1;
 }
 
 bool LockOnManager::IsPlayerJammed(Camera* activeCamera) const {
-	if (!scene_->player_ || scene_->player_->IsDead()) return false;
-	const Vector3 playerPos = scene_->player_->GetPosition();
-	for (const auto& enemy : scene_->enemies_) {
+	if (!context_.player || context_.player->IsDead()) return false;
+	const Vector3 playerPos = context_.player->GetPosition();
+	for (const auto& enemy : (*context_.enemies)) {
 		if (enemy && !enemy->IsDead()) {
-			if (auto jammer = dynamic_cast<JammerEnemy*>(enemy.get())) {
-				float distSq = LengthSqVector3(SubtractVector3(playerPos, jammer->GetPosition()));
-				float jammerRadius = jammer->GetJammingRadius();
+			const float jammerRadius = enemy->GetJammingRadius();
+			if (jammerRadius > 0.0f) {
+				const float distSq = LengthSqVector3(SubtractVector3(playerPos, enemy->GetPosition()));
 				if (distSq <= jammerRadius * jammerRadius) {
 					return true;
 				}
@@ -515,7 +502,7 @@ bool LockOnManager::IsPlayerJammed(Camera* activeCamera) const {
 }
 
 Enemy *LockOnManager::FindAimAssistTarget(Camera *activeCamera) {
-	if (!scene_->player_ || !activeCamera || scene_->player_->IsDead()) {
+	if (!context_.player || !activeCamera || context_.player->IsDead()) {
 		return nullptr;
 	}
 
@@ -533,9 +520,9 @@ Enemy *LockOnManager::FindAimAssistTarget(Camera *activeCamera) {
 		return nullptr;
 	}
 
-	PlayerModeParams p = scene_->player_->GetModeParams(scene_->player_->GetCurrentMode());
-	const Vector3 playerPosition = scene_->player_->GetPosition();
-	const Vector3 playerForward = MyMath::Normalize(scene_->player_->GetForwardVector());
+	PlayerModeParams p = context_.player->GetModeParams(context_.player->GetCurrentMode());
+	const Vector3 playerPosition = context_.player->GetPosition();
+	const Vector3 playerForward = MyMath::Normalize(context_.player->GetForwardVector());
 	float maxDistanceSq = p.maxLockOnDistance * p.maxLockOnDistance;
 	if (IsPlayerJammed(activeCamera)) {
 		maxDistanceSq *= 0.04f; // 距離を20%に制限 (0.2 * 0.2 = 0.04)
@@ -545,11 +532,8 @@ Enemy *LockOnManager::FindAimAssistTarget(Camera *activeCamera) {
 	Enemy *bestTarget = nullptr;
 	float bestScore = (std::numeric_limits<float>::max)();
 
-	for (const auto &enemy : scene_->enemies_) {
-		if (!enemy.get()) continue;
-		try {
-			if (enemy->IsDead()) continue;
-		} catch (...) { continue; }
+	for (const auto &enemy : (*context_.enemies)) {
+		if (!enemy || enemy->IsDead()) continue;
 		if (IsFighterReacquireBlocked(enemy.get())) continue;
 
 		const Vector3 toEnemy = SubtractVector3(enemy->GetPosition(), playerPosition);
@@ -557,8 +541,8 @@ Enemy *LockOnManager::FindAimAssistTarget(Camera *activeCamera) {
 		if (distSq > maxDistanceSq) {
 			continue;
 		}
-		if (scene_->player_->GetCurrentMode() == PlayerMode::Fighter) {
-			const float minimumDistance = scene_->player_->GetCollisionRadius()
+		if (context_.player->GetCurrentMode() == PlayerMode::Fighter) {
+			const float minimumDistance = context_.player->GetCollisionRadius()
 				+ enemy->GetCollisionRadius() + kFighterLockSafetyMargin;
 			if (distSq <= minimumDistance * minimumDistance) continue;
 		}
@@ -570,10 +554,7 @@ Enemy *LockOnManager::FindAimAssistTarget(Camera *activeCamera) {
 		}
 
 		Vector3 targetPosition = enemy->GetAimPosition();
-		float collisionRadius = 1.0f;
-		try {
-			collisionRadius = enemy->GetCollisionRadius();
-		} catch (...) {}
+		const float collisionRadius = enemy->GetCollisionRadius();
 		if (!enemy->IsBoss()) targetPosition.y += collisionRadius * 0.3f;
 
 		Vector3 screenPosition = MyMath::WorldToScreen(
@@ -607,11 +588,11 @@ Enemy *LockOnManager::FindAimAssistTarget(Camera *activeCamera) {
 }
 
 bool LockOnManager::FindNextMultiLockTarget(Camera *activeCamera, MultiLockTarget &outTarget) const {
-	if (!scene_->player_ || !activeCamera || scene_->player_->IsDead()) {
+	if (!context_.player || !activeCamera || context_.player->IsDead()) {
 		return false;
 	}
-	PlayerModeParams p = scene_->player_->GetModeParams(scene_->player_->GetCurrentMode());
-	if (scene_->multiLockTargets_.size() >= p.maxMultiLock) {
+	PlayerModeParams p = context_.player->GetModeParams(context_.player->GetCurrentMode());
+	if (context_.multiLockChargeState->GetTargetCount() >= static_cast<size_t>(p.maxMultiLock)) {
 		return false;
 	}
 
@@ -631,8 +612,8 @@ bool LockOnManager::FindNextMultiLockTarget(Camera *activeCamera, MultiLockTarge
 	const float centerX = screenWidth * 0.5f;
 	const float centerY = screenHeight * 0.5f;
 
-	const Vector3 playerPosition = scene_->player_->GetPosition();
-	const Vector3 playerForward = NormalizeOrVector3(scene_->player_->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
+	const Vector3 playerPosition = context_.player->GetPosition();
+	const Vector3 playerForward = NormalizeOrVector3(context_.player->GetForwardVector(), { 0.0f, 0.0f, 1.0f });
 	float maxDistanceSq = (p.maxLockOnDistance * 2.0f) * (p.maxLockOnDistance * 2.0f);
 
 	float bestScore = (std::numeric_limits<float>::max)();
@@ -640,10 +621,8 @@ bool LockOnManager::FindNextMultiLockTarget(Camera *activeCamera, MultiLockTarge
 	MultiLockTarget bestCandidate{};
 
 	auto evaluateCandidate = [&](Enemy *enemy, int turretIndex, const Vector3 &worldPos) {
-		for (const auto &locked : scene_->multiLockTargets_) {
-			if (locked.enemy == enemy && locked.turretIndex == turretIndex) {
-				return;
-			}
+		if (context_.multiLockChargeState->HasTarget(enemy, turretIndex)) {
+			return;
 		}
 
 		const Vector3 toTarget = SubtractVector3(worldPos, playerPosition);
@@ -690,19 +669,17 @@ bool LockOnManager::FindNextMultiLockTarget(Camera *activeCamera, MultiLockTarge
 		}
 	};
 
-	for (const auto &enemy : scene_->enemies_) {
-		if (!enemy.get()) continue;
-		try {
-			if (enemy->IsDead()) continue;
-		} catch (...) { continue; }
+	for (const auto &enemy : (*context_.enemies)) {
+		if (!enemy || enemy->IsDead()) continue;
 
-		if (Boss *boss = dynamic_cast<Boss*>(enemy.get())) {
-			for (size_t i = 0; i < boss->GetLockOnPartCount(); ++i) {
-				if (boss->IsLockOnPartAvailable(i)) {
-					evaluateCandidate(boss, static_cast<int>(i), boss->GetLockOnPartPosition(i));
+		const size_t partCount = enemy->GetLockOnPartCount();
+		if (partCount > 0) {
+			for (size_t i = 0; i < partCount; ++i) {
+				if (enemy->IsLockOnPartAvailable(i)) {
+					evaluateCandidate(enemy.get(), static_cast<int>(i), enemy->GetLockOnPartPosition(i));
 				}
 			}
-			evaluateCandidate(boss, -1, boss->GetBodyLockOnPosition());
+			evaluateCandidate(enemy.get(), -1, enemy->GetBodyLockOnPosition());
 		} else {
 			evaluateCandidate(enemy.get(), -1, enemy->GetAimPosition());
 		}
@@ -716,9 +693,7 @@ bool LockOnManager::FindNextMultiLockTarget(Camera *activeCamera, MultiLockTarge
 }
 
 void LockOnManager::BeginMultiLock() {
-	scene_->isMultiLockCharging_ = true;
-	scene_->multiLockChargeFrames_ = 0;
-	scene_->multiLockTargets_.clear();
+	context_.multiLockChargeState->BeginCharge();
 }
 
 void LockOnManager::PruneMultiLockTargets() {
@@ -727,13 +702,9 @@ void LockOnManager::PruneMultiLockTargets() {
 			return false;
 		}
 		bool enemyFound = false;
-		for (const auto &enemy : scene_->enemies_) {
+		for (const auto &enemy : (*context_.enemies)) {
 			if (enemy.get() == target.enemy) {
-				try {
-					if (enemy->IsDead()) {
-						return false;
-					}
-				} catch (...) {
+				if (enemy->IsDead()) {
 					return false;
 				}
 				enemyFound = true;
@@ -745,101 +716,94 @@ void LockOnManager::PruneMultiLockTargets() {
 		}
 
 		if (target.turretIndex >= 0) {
-			if (const Boss *boss = dynamic_cast<const Boss*>(target.enemy)) {
-				if (!boss->IsLockOnPartAvailable(static_cast<size_t>(target.turretIndex))) {
-					return false;
-				}
+			if (!target.enemy->IsLockOnPartAvailable(static_cast<size_t>(target.turretIndex))) {
+				return false;
 			}
 		}
 		return true;
 	};
 
-	scene_->multiLockTargets_.erase(
-		std::remove_if(
-			scene_->multiLockTargets_.begin(),
-			scene_->multiLockTargets_.end(),
-			[&](const MultiLockTarget &target) { return !isTargetAlive(target); }),
-		scene_->multiLockTargets_.end());
+	context_.multiLockChargeState->PruneTargetsIf([&](const MultiLockTarget &target) {
+		return !isTargetAlive(target);
+	});
 }
 
 void LockOnManager::UpdateMultiLock(Camera *activeCamera) {
-	if (!scene_->isMultiLockCharging_) {
+	if (!context_.multiLockChargeState->IsCharging()) {
 		return;
 	}
 
 	PruneMultiLockTargets();
 
 	// 既存ロックターゲットの位置を最新に更新
-	for (auto &target : scene_->multiLockTargets_) {
+	context_.multiLockChargeState->ForEachTargetMutable([](MultiLockTarget &target) {
 		if (target.enemy) {
-			if (target.turretIndex >= 0) {
-				if (const Boss *boss = dynamic_cast<const Boss*>(target.enemy)) {
-					target.targetPoint = boss->GetLockOnPartPosition(static_cast<size_t>(target.turretIndex));
-					target.hasTargetPoint = true;
-				}
+			if (target.turretIndex >= 0 && target.enemy->GetLockOnPartCount() > 0) {
+				target.targetPoint = target.enemy->GetLockOnPartPosition(static_cast<size_t>(target.turretIndex));
+				target.hasTargetPoint = true;
 			} else {
 				target.targetPoint = target.enemy->GetAimPosition();
 			}
 		}
-	}
+	});
 
-	PlayerModeParams p = scene_->player_->GetModeParams(scene_->player_->GetCurrentMode());
-	const bool shouldAcquireTarget = scene_->multiLockTargets_.empty() ||
-		scene_->multiLockChargeFrames_ >= kMultiLockTargetAcquireIntervalFrames;
-	if (scene_->multiLockTargets_.size() < p.maxMultiLock && shouldAcquireTarget) {
+	PlayerModeParams p = context_.player->GetModeParams(context_.player->GetCurrentMode());
+	if (context_.multiLockChargeState->ShouldAcquireNextTarget(
+			static_cast<size_t>(p.maxMultiLock), kMultiLockTargetAcquireIntervalFrames)) {
 		MultiLockTarget nextTarget{};
 		if (FindNextMultiLockTarget(activeCamera, nextTarget)) {
-			scene_->multiLockTargets_.push_back(nextTarget);
-			scene_->multiLockChargeFrames_ = 0;
+			context_.multiLockChargeState->AddTarget(nextTarget, true);
 			if (nextTarget.enemy) {
 				nextTarget.enemy->StartChasingPlayer();
 			}
 		}
 	}
 
-	++scene_->multiLockChargeFrames_;
+	context_.multiLockChargeState->AdvanceChargeFrame();
 }
 
 void LockOnManager::FireMultiLockMissiles() {
-	if (!scene_->isMultiLockCharging_) {
+	if (!context_.multiLockChargeState->IsCharging()) {
 		return;
 	}
 
 	PruneMultiLockTargets();
-	if (scene_->multiLockTargets_.empty()) {
-		if (scene_->aimAssistEnemy_) {
+	if (!context_.multiLockChargeState->HasTargets()) {
+		if (Enemy* aimAssistEnemy = context_.targetSelection->GetAimAssistEnemy()) {
 			MultiLockTarget altTarget{};
-			altTarget.enemy = scene_->aimAssistEnemy_;
+			altTarget.enemy = aimAssistEnemy;
 			altTarget.turretIndex = -1;
-			altTarget.targetPoint = scene_->aimAssistEnemy_->GetAimPosition();
+			altTarget.targetPoint = aimAssistEnemy->GetAimPosition();
 			altTarget.hasTargetPoint = false;
-			scene_->multiLockTargets_.push_back(altTarget);
-		} else if (scene_->lockedEnemy_ && IsLockedEnemyAlive()) {
+			context_.multiLockChargeState->AddTarget(altTarget);
+		} else if (Enemy* lockedEnemy = context_.targetSelection->GetLockedEnemy(); lockedEnemy && IsLockedEnemyAlive()) {
+			const int turretIndex = context_.targetSelection->GetLockedBossTurretIndex();
 			MultiLockTarget altTarget{};
-			altTarget.enemy = scene_->lockedEnemy_;
-			altTarget.turretIndex = scene_->lockedBossTurretIndex_;
+			altTarget.enemy = lockedEnemy;
+			altTarget.turretIndex = turretIndex;
 			altTarget.targetPoint = GetLockedTargetPosition();
-			altTarget.hasTargetPoint = (scene_->lockedBossTurretIndex_ >= 0);
-			scene_->multiLockTargets_.push_back(altTarget);
+			altTarget.hasTargetPoint = (turretIndex >= 0);
+			context_.multiLockChargeState->AddTarget(altTarget);
 		}
 	}
 
-	if (scene_->multiLockTargets_.empty()) {
-		if (scene_->missilePresetManager_->FirePlayerMissile(MissileType::MissileWithTrail) &&
-			scene_->tutorialEnabled_ && scene_->tutorialPhase_ == GamePlayScene::TutorialPhase::MultiLock) {
-			++scene_->tutorialHomingLaunches_;
+	const auto& targets = context_.multiLockChargeState->GetTargets();
+	if (targets.empty()) {
+		if (context_.missilePresetManager->FirePlayerMissile(MissileType::MissileWithTrail) &&
+			context_.tutorialController->IsEnabled() && context_.tutorialController->GetPhase() == TutorialPhase::MultiLock) {
+			context_.tutorialProgress->RecordHomingLaunch();
 		}
 	} else {
 		const float spacing = 0.35f;
-		const float center = (static_cast<float>(scene_->multiLockTargets_.size()) - 1.0f) * 0.5f;
-		for (size_t index = 0; index < scene_->multiLockTargets_.size(); ++index) {
+		const float center = (static_cast<float>(targets.size()) - 1.0f) * 0.5f;
+		for (size_t index = 0; index < targets.size(); ++index) {
 			const float horizontalOffset = (static_cast<float>(index) - center) * spacing;
-			const auto &target = scene_->multiLockTargets_[index];
+			const auto &target = targets[index];
 			const Vector3 *targetPointPtr = target.hasTargetPoint ? &target.targetPoint : nullptr;
-			if (scene_->missilePresetManager_->FirePlayerMissile(MissileType::MissileWithTrail,
+			if (context_.missilePresetManager->FirePlayerMissile(MissileType::MissileWithTrail,
 				target.enemy, horizontalOffset, true, targetPointPtr) &&
-				scene_->tutorialEnabled_ && scene_->tutorialPhase_ == GamePlayScene::TutorialPhase::MultiLock) {
-				++scene_->tutorialHomingLaunches_;
+				context_.tutorialController->IsEnabled() && context_.tutorialController->GetPhase() == TutorialPhase::MultiLock) {
+				context_.tutorialProgress->RecordHomingLaunch();
 			}
 		}
 	}
@@ -848,7 +812,5 @@ void LockOnManager::FireMultiLockMissiles() {
 }
 
 void LockOnManager::CancelMultiLock() {
-	scene_->isMultiLockCharging_ = false;
-	scene_->multiLockChargeFrames_ = 0;
-	scene_->multiLockTargets_.clear();
+	context_.multiLockChargeState->CancelCharge();
 }

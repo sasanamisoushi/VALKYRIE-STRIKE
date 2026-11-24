@@ -1,9 +1,13 @@
 #pragma once
+#include "2D/Sprite.h"
+#include "engine/base/WinApp.h"
+#include "engine/Camera/FlyCamera.h"
 #include "engine/Debug/ImGuiManager.h"
 #include "engine/Input/Input.h"
 #include <externals/imgui/imgui.h>
 #include "engine/math/MyMath.h"
 #include "externals/json.hpp"
+#include "Game/enemy/Enemy.h"
 #include "Game/Player/Player.h"
 
 using json = nlohmann::json;
@@ -308,21 +312,12 @@ namespace {
 			return;
 		}
 		
-		try {
-			if (target->IsDead()) {
-				return;
-			}
-		} catch(...) {
+		if (target->IsDead()) {
 			return;
 		}
 
 		Vector3 worldPosition = targetPoint ? *targetPoint : target->GetAimPosition();
-		float collisionRadius = 1.0f;
-		if (targetRadius > 0.0f) {
-			collisionRadius = targetRadius;
-		} else try {
-			collisionRadius = target->GetCollisionRadius();
-		} catch(...) {}
+		const float collisionRadius = (targetRadius > 0.0f) ? targetRadius : target->GetCollisionRadius();
 		if (!targetPoint && !target->IsBoss()) worldPosition.y += collisionRadius * 0.3f;
 		float minX = 0.0f;
 		float minY = 0.0f;
@@ -374,19 +369,12 @@ namespace {
 			return;
 		}
 
-		try {
-			if (target->IsDead()) {
-				return;
-			}
-		} catch (...) {
+		if (target->IsDead()) {
 			return;
 		}
 
 		Vector3 worldPosition = targetPoint ? *targetPoint : target->GetAimPosition();
-		float collisionRadius = 1.0f;
-		try {
-			collisionRadius = target->GetCollisionRadius();
-		} catch (...) {}
+		const float collisionRadius = target->GetCollisionRadius();
 		if (!targetPoint && !target->IsBoss()) worldPosition.y += collisionRadius * 0.3f;
 
 		float minX = 0.0f;

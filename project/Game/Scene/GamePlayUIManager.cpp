@@ -27,9 +27,10 @@ namespace {
 		const std::filesystem::path relativeBlendPath = L"resources\\level_editor\\stage.blend";
 		std::vector<std::filesystem::path> searchStarts;
 
-		try {
-			searchStarts.push_back(std::filesystem::current_path());
-		} catch (...) {
+		std::error_code ec;
+		const std::filesystem::path currentPath = std::filesystem::current_path(ec);
+		if (!ec) {
+			searchStarts.push_back(currentPath);
 		}
 
 		wchar_t modulePath[MAX_PATH] = {};
@@ -397,55 +398,12 @@ void GamePlayUIManager::Initialize() {
 }
 
 void GamePlayUIManager::DrawEditorToolbar() {
-#ifdef ENABLE_IMGUI
-	if (!ImGui::BeginMainMenuBar()) {
-		return;
-	}
-	const bool isBossBattleActive = [&]() {
-		for (const auto& enemy : scene_->enemies_) {
-			if (enemy && enemy->IsBoss() && !enemy->IsDead()) return true;
-		}
-		return false;
-	}();
-
-	if (ImGui::Button("再生")) {
-		// ボス戦を編集停止した後は、現在の位置・HP・設定を保ったまま再開する。
-		// 通常のレベル編集では従来どおり初期配置から再生する。
-		if (!isBossBattleActive) {
-			scene_->ResetEditorPreview();
-		}
-		scene_->isEditorPreviewPlaying_ = true;
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("編集に戻す")) {
-		if (isBossBattleActive) {
-			// ボスを削除せず、その場の状態を保持して停止する。
-			scene_->isEditorPreviewPlaying_ = false;
-		} else {
-			scene_->ResetEditorPreview();
-		}
-	}
-
-	ImGui::SameLine();
-	ImGui::TextDisabled("|");
-	ImGui::SameLine();
-
-	static int selectedSceneIndex = 1;
-	const char *sceneLabels[] = { "タイトル", "ゲーム" };
-	const char *sceneNames[] = { "TITLE", "GAMEPLAY" };
-	selectedSceneIndex = std::clamp(selectedSceneIndex, 0, IM_ARRAYSIZE(sceneNames) - 1);
-	ImGui::SetNextItemWidth(130.0f);
-	ImGui::Combo("##切替先シーン", &selectedSceneIndex, sceneLabels, IM_ARRAYSIZE(sceneLabels));
-	ImGui::SameLine();
-	if (ImGui::Button("シーン切替")) {
-		SceneManager::GetInstance()->ChangeScene(sceneNames[selectedSceneIndex]);
-	}
-
-	ImGui::SameLine();
-	ImGui::TextDisabled(scene_->isEditorPreviewPlaying_ ? "再生中" :
-		(isBossBattleActive ? "ボス戦編集モード（停止中）" : "編集モード（停止中）"));
-	ImGui::EndMainMenuBar();
-#endif
+	if (!scene_) return;
+	simulationControlPanel_.DrawEditorToolbar({
+		&scene_->enemies_,
+		&scene_->isEditorPreviewPlaying_,
+		[this]() { scene_->ResetEditorPreview(); },
+	});
 }
 
 void GamePlayUIManager::UpdateUI() {
@@ -455,10 +413,6 @@ void GamePlayUIManager::UpdateUI() {
 		destructionEffectPreviewElapsed_ += ImGui::GetIO().DeltaTime;
 	}
 #define enemyEventManager_ scene_->enemyEventManager_
-#define lockedEnemy_ scene_->lockedEnemy_
-#define aimAssistEnemy_ scene_->aimAssistEnemy_
-#define isMultiLockCharging_ scene_->isMultiLockCharging_
-#define multiLockTargets_ scene_->multiLockTargets_
 
 #define mode_ scene_->mode_
 #define camera scene_->camera
@@ -522,19 +476,10 @@ void GamePlayUIManager::UpdateUI() {
 #define showSprite scene_->showSprite
 #define skeletonLinesModel scene_->skeletonLinesModel
 #define skeletonLinesObject scene_->skeletonLinesObject
-#define debugColliderLinesObject scene_->debugColliderLinesObject
 #define showDebugColliders scene_->showDebugColliders
 #define debugFlyCamera_ scene_->debugFlyCamera_
 #define isDebugCameraActive_ scene_->isDebugCameraActive_
 #define isEditorPreviewPlaying_ scene_->isEditorPreviewPlaying_
-#define isCinematicLockOnCameraEnabled_ scene_->isCinematicLockOnCameraEnabled_
-#define isCinematicLockOnCameraInitialized_ scene_->isCinematicLockOnCameraInitialized_
-#define cinematicLockOnCameraPosition_ scene_->cinematicLockOnCameraPosition_
-#define cinematicLockOnCameraRotation_ scene_->cinematicLockOnCameraRotation_
-#define cinematicLockOnCameraFocus_ scene_->cinematicLockOnCameraFocus_
-#define cinematicLockOnCameraBackDirection_ scene_->cinematicLockOnCameraBackDirection_
-#define cinematicLockOnCameraSideSign_ scene_->cinematicLockOnCameraSideSign_
-#define cinematicLockOnCameraSeparation_ scene_->cinematicLockOnCameraSeparation_
 #define showParticles scene_->environmentRenderer_->showParticles_
 #define showModel scene_->showModel
 #define enableSkinning scene_->enableSkinning
@@ -564,43 +509,22 @@ void GamePlayUIManager::UpdateUI() {
 #define enemies_ scene_->enemies_
 #define enemyBulletManager_ scene_->enemyBulletManager_
 #define enemySpawns_ scene_->enemySpawns_
-#define enemyRespawnTimers_ scene_->enemyRespawnTimers_
 #define obstacles_ scene_->obstacles_
 #define newEnemyPos scene_->newEnemyPos
 #define explosionManager_ scene_->explosionManager_
-#define isGameOver_ scene_->isGameOver_
-#define gameOverTimer_ scene_->gameOverTimer_
 #define simulationManager_ scene_->simulationManager_
 #define missilePresetManager_ scene_->missilePresetManager_
 #define lockOnManager_ scene_->lockOnManager_
 #define cameraManager_ scene_->cameraManager_
-#define levelManager_ scene_->levelManager_
 #define uiManager_ scene_->uiManager_
 #define ammoManager_ scene_->ammoManager_
-#define lastJsonWriteTime_ scene_->lastJsonWriteTime_
-#define aimAssistEnemy_ scene_->aimAssistEnemy_
-#define isMultiLockCharging_ scene_->isMultiLockCharging_
-#define multiLockChargeFrames_ scene_->multiLockChargeFrames_
-#define IsSimulationMode scene_->IsSimulationMode
 #define SetDebugCameraActive scene_->SetDebugCameraActive
-#define ReloadSceneJson scene_->ReloadSceneJson
 #define ResetEditorPreview scene_->ResetEditorPreview
 #define MakeMissileTuning scene_->MakeMissileTuning
-#define SpawnEnemyFromSpawnPoint scene_->SpawnEnemyFromSpawnPoint
-#define IsEnemySpawnPointActive scene_->IsEnemySpawnPointActive
-#define ScheduleEnemySpawn scene_->ScheduleEnemySpawn
-#define TriggerEnemyReinforcements scene_->TriggerEnemyReinforcements
-#define UpdateEnemyRespawns scene_->UpdateEnemyRespawns
-#define HasPendingEnemySpawns scene_->HasPendingEnemySpawns
-#define UpdateCinematicLockOnCamera scene_->UpdateCinematicLockOnCamera
 
 
 #ifdef ENABLE_IMGUI
 	if (ImGuiManager::IsVisible()) {
-		if (IsSimulationMode()) {
-			simulationManager_->DrawSimulationScreenUI();
-			return;
-		}
 		DrawEditorToolbar();
 
 		ImGui::Begin("ゲーム設定");
@@ -652,7 +576,7 @@ void GamePlayUIManager::UpdateUI() {
 			}
 			else if (currentSimulationTarget_ == 2) {
 				ImGui::Text("=== 敵の出現とルート ===");
-				ImGui::Text("Lock-on: %s", lockedEnemy_ ? "LOCKED" : "NONE");
+				ImGui::Text("Lock-on: %s", scene_->targetSelection_.HasLockedEnemy() ? "LOCKED" : "NONE");
 				ImGui::Text("Tab: lock target / X: unlock");
 				ImGui::DragFloat3("出現座標 (X,Y,Z)", newEnemyPos, 1.0f);
 
@@ -766,8 +690,11 @@ void GamePlayUIManager::UpdateUI() {
 				} else {
 					ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "[PLAYER FOLLOW CAM]");
 					if (ImGui::Button("Switch to Debug Camera")) SetDebugCameraActive(true);
-					if (ImGui::Checkbox("Cinematic lock-on camera", &isCinematicLockOnCameraEnabled_)) isCinematicLockOnCameraInitialized_ = false;
-					ImGui::Text("Cinematic: %s", (isCinematicLockOnCameraEnabled_ && lockedEnemy_) ? "ACTIVE" : "OFF");
+					bool cinematicLockOnEnabled = scene_->IsCinematicLockOnCameraEnabled();
+					if (ImGui::Checkbox("Cinematic lock-on camera", &cinematicLockOnEnabled)) {
+						scene_->SetCinematicLockOnCameraEnabled(cinematicLockOnEnabled);
+					}
+					ImGui::Text("Cinematic: %s", (scene_->IsCinematicLockOnCameraEnabled() && scene_->targetSelection_.HasLockedEnemy()) ? "ACTIVE" : "OFF");
 					Vector3 camPos = camera->GetTranslate();
 					float camPosArr[3] = { camPos.x, camPos.y, camPos.z };
 					if (ImGui::DragFloat3("カメラ位置 (参考)##follow", camPosArr, 0.1f)) camera->SetTranslate({ camPosArr[0], camPosArr[1], camPosArr[2] });
@@ -796,16 +723,8 @@ void GamePlayUIManager::UpdateUI() {
 		"チュートリアル",
 		};
 
-		ImGui::SetNextWindowSize(ImVec2(200.0f, 620.0f), ImGuiCond_Once);
-		ImGui::Begin("設定一覧");
-		ImGui::Separator();
-		for (int categoryIndex = 0; categoryIndex < IM_ARRAYSIZE(engineSettingsCategories); ++categoryIndex) {
-			const bool isSelected = currentEngineSettingsTarget_ == categoryIndex;
-			if (ImGui::Selectable(engineSettingsCategories[categoryIndex], isSelected, 0, ImVec2(0.0f, 32.0f))) {
-				currentEngineSettingsTarget_ = categoryIndex;
-			}
-		}
-		ImGui::End();
+		simulationControlPanel_.DrawCategorySidebar(
+			engineSettingsCategories, IM_ARRAYSIZE(engineSettingsCategories), currentEngineSettingsTarget_);
 
 		ImGui::SetNextWindowSize(ImVec2(500.0f, 620.0f), ImGuiCond_Once);
 		ImGui::Begin("設定内容");
@@ -813,32 +732,22 @@ void GamePlayUIManager::UpdateUI() {
 		ImGui::Separator();
 
 		if (currentEngineSettingsTarget_ == 0) {
-
-		ImGui::Text("表示設定");
-		ImGui::Checkbox("スカイボックスを表示", &showSkybox);
-		ImGui::Checkbox("平面を表示", &showPlane);
-		ImGui::Checkbox("球体（ミサイル頭）を表示", &showSphere);
-		ImGui::Checkbox("通常リングを表示", &showNormalRing);
-		ImGui::Checkbox("部分リングを表示", &showPartialRing);
-		ImGui::Checkbox("シリンダーを表示", &showCylinder);
-		ImGui::Checkbox("トレイルを表示", &showTrail);
-		ImGui::Checkbox("モデルを表示", &showModel);
-		ImGui::Checkbox("パーティクルを表示", &showParticles);
-		ImGui::Checkbox("ボーンを表示", &showBones);
-		ImGui::Checkbox("スプライトを表示", &showSprite);
-		ImGui::Checkbox("Show Debug Colliders", &showDebugColliders);
-		bool showEnemyPaths = Enemy::IsPathVisualizationEnabled();
-		if (ImGui::Checkbox("敵の飛行ルートを表示", &showEnemyPaths)) {
-			Enemy::SetPathVisualizationEnabled(showEnemyPaths);
-		}
-
-		ImGui::Separator();
-		ImGui::Text("デバック　カメラ");
-		if (ImGui::Button(isDebugCameraActive_ ? "Switch to Player Camera" : "Switch to Debug Camera")) {
-			SetDebugCameraActive(!isDebugCameraActive_);
-		}
-		ImGui::SameLine();
-		ImGui::Text("%s", isDebugCameraActive_ ? "Active: Debug Camera" : "Active: Player Camera");
+		simulationControlPanel_.DrawDebugDisplayControls({
+			&showSkybox,
+			&showPlane,
+			&showSphere,
+			&showNormalRing,
+			&showPartialRing,
+			&showCylinder,
+			&showTrail,
+			&showModel,
+			&showParticles,
+			&showBones,
+			&showSprite,
+			&showDebugColliders,
+			isDebugCameraActive_,
+			[this](bool active) { SetDebugCameraActive(active); },
+		});
 
 		ImGui::Separator();
 		ImGui::Text("GPUパーティクルの操作");
@@ -1010,100 +919,15 @@ void GamePlayUIManager::UpdateUI() {
 		}
 
 		if (currentEngineSettingsTarget_ == 8) {
-			ImGui::Text("敵イベント");
-			ImGui::TextDisabled("敵撃破後に別の敵を出現させる増援イベントを作成します。");
-			static int selectedTrigger = 0;
-			static int selectedTarget = 0;
-			static int eventDelay = 60;
-			std::vector<const char*> enemyNames;
-			for (const auto& spawn : enemySpawns_) {
-				enemyNames.push_back(spawn.name.c_str());
-			}
-			if (enemyNames.empty()) {
-				ImGui::TextDisabled("登録済みの敵配置がありません。先に「敵・障害物」で敵を追加してください。");
-			} else {
-				if (selectedTrigger >= static_cast<int>(enemyNames.size())) selectedTrigger = 0;
-				if (selectedTarget >= static_cast<int>(enemyNames.size())) selectedTarget = 0;
-				ImGui::Combo("トリガーとなる敵##event", &selectedTrigger, enemyNames.data(), static_cast<int>(enemyNames.size()));
-				ImGui::Combo("出現する敵##event", &selectedTarget, enemyNames.data(), static_cast<int>(enemyNames.size()));
-				ImGui::DragInt("出現までのディレイ（フレーム）##event", &eventDelay, 1, 0, 600);
-				if (ImGui::Button("イベントを追加##event")) {
-					enemyEventManager_.AddEvent(enemyNames[selectedTrigger], enemyNames[selectedTarget], eventDelay);
-					enemySpawns_[selectedTarget].isInitialSpawn = false;
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("イベントを保存##event")) enemyEventManager_.SaveEvents("resources/enemy_events.json");
-				for (size_t index = 0; index < enemyEventManager_.GetEvents().size(); ++index) {
-					const auto& event = enemyEventManager_.GetEvents()[index];
-					ImGui::Text("[%d] %s が死んだら %d F後に %s が出現", static_cast<int>(index), event.triggerEnemyName.c_str(), event.delayFrames, event.targetEnemyName.c_str());
-					ImGui::SameLine();
-					if (ImGui::Button(("削除##event" + std::to_string(index)).c_str())) {
-						enemyEventManager_.RemoveEvent(index);
-						break;
-					}
-				}
-			}
-			ImGui::Separator();
-			simulationManager_->DrawBossBattleControls();
-
-			ImGui::Separator();
-			ImGui::Text("選択中のボス部位");
-			ImGui::TextDisabled("Game Viewで本体または推進炎を左クリックし、ドラッグで移動します。");
-			Boss* activeBoss = nullptr;
-			for (const auto& enemy : enemies_) {
-				if (enemy && enemy->IsBoss() && !enemy->IsDead()) {
-					activeBoss = dynamic_cast<Boss*>(enemy.get());
-					if (activeBoss) break;
-				}
-			}
-			if (!activeBoss) {
-				selectedBossEditorPart_ = -1;
-				ImGui::TextDisabled("編集するボスがいません。「この位置にボス戦を開始」で配置してください。");
-			} else if (selectedBossEditorPart_ == 0) {
-				Vector3 position = activeBoss->GetPosition();
-				ImGui::TextColored(ImVec4(0.35f, 0.90f, 1.0f, 1.0f), "ボス本体");
-				if (ImGui::DragFloat3("位置 (X, Y, Z)##selectedBossBody", &position.x, 0.05f)) {
-					activeBoss->SetPosition(position);
-					activeBoss->UpdateModel();
-					bossBattlePosition_[0] = position.x;
-					bossBattlePosition_[1] = position.y;
-					bossBattlePosition_[2] = position.z;
-				}
-				if (ImGui::Button("ボスの位置を保存##saveBossBodyPosition")) {
-					simulationManager_->SaveBossThrusterSettings("resources/boss_thruster_settings.json");
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("保存した位置を読込##loadBossBodyPosition")) {
-					simulationManager_->LoadBossThrusterSettings("resources/boss_thruster_settings.json");
-				}
-			} else if (selectedBossEditorPart_ > 0 &&
-				static_cast<size_t>(selectedBossEditorPart_ - 1) < activeBoss->GetRearThrusterCount()) {
-				const size_t thrusterIndex = static_cast<size_t>(selectedBossEditorPart_ - 1);
-				Boss::Tuning tuning = activeBoss->GetTuning();
-				Vector3& individualOffset = tuning.rearThrusterIndividualOffsets[thrusterIndex];
-				const Vector3 worldPosition = activeBoss->GetRearThrusterWorldPosition(thrusterIndex);
-				ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.30f, 1.0f), "後部スラスター %d", selectedBossEditorPart_);
-				ImGui::Text("現在の位置: %.2f, %.2f, %.2f", worldPosition.x, worldPosition.y, worldPosition.z);
-				if (ImGui::DragFloat3("個別位置補正 (X, Y, Z)##selectedBossThruster", &individualOffset.x, 0.02f)) {
-					activeBoss->SetTuning(tuning);
-					activeBoss->UpdateModel();
-					bossTuning_ = tuning;
-				}
-				if (ImGui::Button("このスラスターの位置補正を戻す")) {
-					tuning.rearThrusterIndividualOffsets[thrusterIndex] = { 0.0f, 0.0f, 0.0f };
-					activeBoss->SetTuning(tuning);
-					activeBoss->UpdateModel();
-					bossTuning_ = tuning;
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("スラスター位置を保存##saveThrusterPosition")) {
-					simulationManager_->SaveBossThrusterSettings("resources/boss_thruster_settings.json");
-				}
-				ImGui::TextDisabled("数値はボス本体に対するローカル位置補正です。");
-			} else {
-				selectedBossEditorPart_ = -1;
-				ImGui::TextDisabled("Game Viewで編集する部位を選択してください。");
-			}
+			bossEditorPanel_.Draw({
+				&enemySpawns_,
+				&enemyEventManager_,
+				simulationManager_.get(),
+				&enemies_,
+				&selectedBossEditorPart_,
+				bossBattlePosition_,
+				&bossTuning_,
+			});
 		}
 
 		if (currentEngineSettingsTarget_ == 1) {
@@ -1172,10 +996,11 @@ void GamePlayUIManager::UpdateUI() {
 
 			ImGui::Separator();
 			// 自機追従カメラの現在位置表示（参考用）
-			if (ImGui::Checkbox("Cinematic lock-on camera", &isCinematicLockOnCameraEnabled_)) {
-				isCinematicLockOnCameraInitialized_ = false;
+			bool cinematicLockOnEnabled = scene_->IsCinematicLockOnCameraEnabled();
+			if (ImGui::Checkbox("Cinematic lock-on camera", &cinematicLockOnEnabled)) {
+				scene_->SetCinematicLockOnCameraEnabled(cinematicLockOnEnabled);
 			}
-			ImGui::Text("Cinematic: %s", (isCinematicLockOnCameraEnabled_ && lockedEnemy_) ? "ACTIVE" : "OFF");
+			ImGui::Text("Cinematic: %s", (scene_->IsCinematicLockOnCameraEnabled() && scene_->targetSelection_.HasLockedEnemy()) ? "ACTIVE" : "OFF");
 			ImGui::Separator();
 
 			Vector3 camPos = camera->GetTranslate();
@@ -1730,7 +1555,7 @@ void GamePlayUIManager::UpdateUI() {
 		}
 
 		if (currentEngineSettingsTarget_ == 9) {
-			auto& settings = scene_->boundaryShieldSettings_;
+			auto settings = scene_->GetBoundaryShieldSettings().Get();
 			bool changed = false;
 			bool saveAfterEdit = false;
 			auto editFloat = [&changed, &saveAfterEdit](const char* label, float* value, float minimum, float maximum, const char* format) {
@@ -1758,139 +1583,53 @@ void GamePlayUIManager::UpdateUI() {
 			saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
 
 			if (changed) {
-				scene_->ApplyBoundaryShieldSettings();
+				scene_->GetBoundaryShieldSettings().Set(settings, scene_->GetPlayer());
 			}
 			if (saveAfterEdit) {
-				scene_->boundaryShieldSettingsMessage_ = scene_->SaveBoundaryShieldSettings()
+				boundaryShieldSettingsMessage_ = scene_->GetBoundaryShieldSettings().Save("resources/boundary_shield_settings.json")
 					? "境界シールド設定を保存して即時反映しました。"
 					: "境界シールド設定を保存できませんでした。";
 			}
 
 			ImGui::Separator();
 			if (ImGui::Button("現在の設定を保存", ImVec2(-1.0f, 0.0f))) {
-				scene_->ApplyBoundaryShieldSettings();
-				scene_->boundaryShieldSettingsMessage_ = scene_->SaveBoundaryShieldSettings()
+				scene_->GetBoundaryShieldSettings().Set(settings, scene_->GetPlayer());
+				boundaryShieldSettingsMessage_ = scene_->GetBoundaryShieldSettings().Save("resources/boundary_shield_settings.json")
 					? "境界シールド設定を保存しました。"
 					: "境界シールド設定を保存できませんでした。";
 			}
 			if (ImGui::Button("保存設定を読み込む", ImVec2(-1.0f, 0.0f))) {
-				scene_->boundaryShieldSettingsMessage_ = scene_->LoadBoundaryShieldSettings()
+				boundaryShieldSettingsMessage_ = scene_->GetBoundaryShieldSettings().Load("resources/boundary_shield_settings.json", scene_->GetPlayer())
 					? "境界シールド設定を読み込み、即時反映しました。"
 					: "境界シールド設定を読み込めませんでした。";
 			}
 			if (ImGui::Button("初期値に戻す", ImVec2(-1.0f, 0.0f))) {
-				settings = GamePlayScene::BoundaryShieldSettings{};
-				scene_->ApplyBoundaryShieldSettings();
-				scene_->boundaryShieldSettingsMessage_ = scene_->SaveBoundaryShieldSettings()
+				scene_->GetBoundaryShieldSettings().Reset(scene_->GetPlayer());
+				boundaryShieldSettingsMessage_ = scene_->GetBoundaryShieldSettings().Save("resources/boundary_shield_settings.json")
 					? "初期値へ戻して保存しました。"
 					: "初期値へ戻しましたが保存できませんでした。";
 			}
-			if (!scene_->boundaryShieldSettingsMessage_.empty()) {
-				ImGui::TextWrapped("%s", scene_->boundaryShieldSettingsMessage_.c_str());
+			if (!boundaryShieldSettingsMessage_.empty()) {
+				ImGui::TextWrapped("%s", boundaryShieldSettingsMessage_.c_str());
 			}
 			ImGui::TextDisabled("保存先: resources/boundary_shield_settings.json");
 		}
 
 		if (currentEngineSettingsTarget_ == 10) {
-			auto& balance = scene_->gameplayBalanceSettings_;
-			bool changed = false;
-			bool saveAfterEdit = false;
-			auto editFloat = [&changed, &saveAfterEdit](const char* label, float* value, float min, float max, const char* format) {
-				changed |= ImGui::SliderFloat(label, value, min, max, format, ImGuiSliderFlags_AlwaysClamp);
-				saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
-			};
-			auto editInt = [&changed, &saveAfterEdit](const char* label, int* value, int min, int max) {
-				changed |= ImGui::SliderInt(label, value, min, max, "%d", ImGuiSliderFlags_AlwaysClamp);
-				saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
-			};
-
-			ImGui::TextWrapped("プレイヤー操作、武器、必殺技、歌、ボス増援のゲームプレイ数値をまとめて調整します。変更は即時反映され、操作を確定すると自動保存されます。");
-			const char* modeNames[] = { "ファイター", "ガウォーク", "バトロイド" };
-			for (int mode = 0; mode < 3; ++mode) {
-				PlayerModeParams& params = balance.playerModes[mode];
-				if (ImGui::TreeNode(modeNames[mode])) {
-					ImGui::PushID(mode);
-					editFloat("最大移動速度", &params.maxMoveSpeed, 0.01f, 1.0f, "%.3f");
-					editFloat("移動加速度", &params.moveAcceleration, 0.001f, 0.10f, "%.3f");
-					editFloat("移動減衰", &params.moveDamping, 0.10f, 1.0f, "%.2f");
-					editFloat("ピッチ速度", &params.pitchSpeed, 0.001f, 0.10f, "%.3f");
-					editFloat("ヨー速度", &params.yawSpeed, 0.001f, 0.10f, "%.3f");
-					editFloat("ロール速度", &params.rollSpeed, 0.001f, 0.10f, "%.3f");
-					changed |= ImGui::Checkbox("ガード可能", &params.canGuard); saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
-					changed |= ImGui::Checkbox("近接攻撃可能", &params.canMelee); saveAfterEdit |= ImGui::IsItemDeactivatedAfterEdit();
-					editInt("同時ロック数", &params.maxMultiLock, 1, 12);
-					editFloat("ロック角度", &params.lockOnAngleDot, -1.0f, 1.0f, "%.2f");
-					editFloat("ロック距離", &params.maxLockOnDistance, 1.0f, 1000.0f, "%.0f");
-					ImGui::PopID();
-					ImGui::TreePop();
-				}
-			}
-
-			if (ImGui::TreeNode("通常弾")) {
-				editFloat("速度##normal", &missileNormalSpeed, 0.01f, 10.0f, "%.2f");
-				editFloat("追尾力##normal", &missileNormalHomingStrength, 0.0f, 1.0f, "%.2f");
-				editFloat("表示サイズ##normal", &missileNormalScale, 0.01f, 5.0f, "%.2f");
-				editFloat("当たり判定半径##normal", &missileNormalCollisionRadius, 0.01f, 10.0f, "%.2f");
-				editInt("寿命フレーム##normal", &missileNormalLifeTime, 1, 3600);
-				ImGui::TreePop();
-			}
-			if (ImGui::TreeNode("誘導ミサイル")) {
-				editFloat("速度##homing", &missileSpeed, 0.01f, 10.0f, "%.2f");
-				editFloat("追尾力##homing", &missileHomingStrength, 0.0f, 1.0f, "%.2f");
-				editFloat("表示サイズ##homing", &missileHomingScale, 0.01f, 5.0f, "%.2f");
-				editFloat("当たり判定半径##homing", &missileHomingCollisionRadius, 0.01f, 10.0f, "%.2f");
-				editFloat("軌跡の太さ", &missileTrailWidth, 0.0f, 10.0f, "%.2f");
-				editInt("寿命フレーム##homing", &missileLifeTime, 1, 3600);
-				editFloat("発射位置オフセット", &missileMuzzleOffset, 0.0f, 20.0f, "%.2f");
-				ImGui::TreePop();
-			}
-			if (ImGui::TreeNode("低空スピード線")) {
-				const bool wasEnabled = balance.speedRushEnabled;
-				changed |= ImGui::Checkbox("有効", &balance.speedRushEnabled);
-				saveAfterEdit |= wasEnabled != balance.speedRushEnabled;
-				ImGui::TextDisabled("ファイター形態で低空・高速時のみ、カメラ近傍を後方へ流れる大気・ダストです。");
-				editFloat("最大高度", &balance.speedRushMaxAltitude, 1.0f, 200.0f, "%.1f");
-				editFloat("発生開始速度比", &balance.speedRushMinSpeedRatio, 0.05f, 2.0f, "%.2f");
-				editInt("最大発生数/フレーム", &balance.speedRushMaxParticlesPerFrame, 1, 16);
-				editFloat("カメラ前方の発生距離", &balance.speedRushSpawnDistance, 1.0f, 50.0f, "%.1f");
-				editFloat("横方向の発生幅", &balance.speedRushSpawnHalfWidth, 0.1f, 30.0f, "%.1f");
-				editFloat("縦方向の発生幅", &balance.speedRushSpawnHalfHeight, 0.1f, 20.0f, "%.1f");
-				editFloat("流れる速さ", &balance.speedRushParticleSpeed, 0.01f, 3.0f, "%.2f");
-				editFloat("線のサイズ", &balance.speedRushParticleScale, 0.01f, 3.0f, "%.2f");
-				editFloat("線の寿命", &balance.speedRushParticleLifetime, 0.05f, 2.0f, "%.2f 秒");
-				ImGui::TreePop();
-			}
-			if (ImGui::TreeNode("必殺技・歌・ボス")) {
-				editFloat("必殺技SP消費", &balance.specialAttackCost, 0.0f, 100.0f, "%.1f");
-				editFloat("SP回復/秒", &balance.spGaugeRecoveryPerSecond, 0.0f, 60.0f, "%.1f");
-				editInt("必殺技時間フレーム", &balance.specialAttackDurationFrames, 1, 3600);
-				editInt("必殺技発射間隔フレーム", &balance.specialAttackFireIntervalFrames, 1, 300);
-				editInt("歌の継続フレーム", &balance.songDurationFrames, 60, 7200);
-				editInt("ボス増援の同時上限", &balance.bossMaxActiveMinions, 0, 24);
-				ImGui::TreePop();
-			}
-
-			if (changed) scene_->ApplyGameplayBalanceSettings();
-			if (saveAfterEdit) {
-				scene_->gameplayBalanceSettingsMessage_ = scene_->SaveGameplayBalanceSettings()
-					? "ゲームバランス設定を保存して即時反映しました。" : "ゲームバランス設定を保存できませんでした。";
-			}
-			ImGui::Separator();
-			if (ImGui::Button("ゲームバランスを保存", ImVec2(-1.0f, 0.0f))) {
-				scene_->ApplyGameplayBalanceSettings();
-				scene_->gameplayBalanceSettingsMessage_ = scene_->SaveGameplayBalanceSettings() ? "ゲームバランス設定を保存しました。" : "ゲームバランス設定を保存できませんでした。";
-			}
-			if (ImGui::Button("保存したゲームバランスを読み込む", ImVec2(-1.0f, 0.0f))) {
-				scene_->gameplayBalanceSettingsMessage_ = scene_->LoadGameplayBalanceSettings() ? "ゲームバランス設定を読み込みました。" : "ゲームバランス設定を読み込めませんでした。";
-			}
-			if (!scene_->gameplayBalanceSettingsMessage_.empty()) ImGui::TextWrapped("%s", scene_->gameplayBalanceSettingsMessage_.c_str());
-			ImGui::TextDisabled("保存先: resources/gameplay_balance_settings.json");
-			ImGui::Separator();
-			DrawAmmoSettingsUI();
+			playerTuningPanel_.DrawGameplayBalanceTab({
+				&scene_->GetGameplayBalanceSettings(),
+				scene_->GetPlayer(),
+				scene_->CollectGameplayBalanceMissileSettings(),
+				[this](const GameplayBalanceMissileSettings& settings) { scene_->ApplyGameplayBalanceMissileSettings(settings); },
+				[this]() { scene_->ApplyGameplayBalanceSettings(); },
+				[this]() { return scene_->SaveGameplayBalanceSettings(); },
+				[this]() { return scene_->LoadGameplayBalanceSettings(); },
+				[this]() { DrawAmmoSettingsUI(); },
+			});
 		}
 
 		if (currentEngineSettingsTarget_ == 11) {
-			auto& requirements = scene_->tutorialRequirements_;
+			auto requirements = scene_->GetTutorialRequirements().Get();
 			bool changed = false;
 			auto editRequirement = [&changed](const char* label, int* value, const char* format) {
 				changed |= ImGui::SliderInt(label, value, 1, 20, format, ImGuiSliderFlags_AlwaysClamp);
@@ -1908,189 +1647,35 @@ void GamePlayUIManager::UpdateUI() {
 			editRequirement("ファイター変形回数", &requirements.fighterTransform, "%d 回");
 			editRequirement("ホーミング発射数", &requirements.homingLaunches, "%d 発");
 			if (changed) {
-				scene_->ApplyTutorialRequirements();
+				scene_->GetTutorialRequirements().Set(requirements);
 			}
 
 			ImGui::Separator();
 			if (ImGui::Button("チュートリアル設定を保存", ImVec2(-1.0f, 0.0f))) {
-				scene_->ApplyTutorialRequirements();
-				scene_->tutorialRequirementsMessage_ = scene_->SaveTutorialRequirements()
+				scene_->GetTutorialRequirements().Set(requirements);
+				tutorialRequirementsMessage_ = scene_->GetTutorialRequirements().Save("resources/tutorial_requirements.json")
 					? "チュートリアル設定を保存しました。"
 					: "チュートリアル設定を保存できませんでした。";
 			}
 			if (ImGui::Button("保存した設定を読み込む", ImVec2(-1.0f, 0.0f))) {
-				scene_->tutorialRequirementsMessage_ = scene_->LoadTutorialRequirements()
+				tutorialRequirementsMessage_ = scene_->GetTutorialRequirements().Load("resources/tutorial_requirements.json")
 					? "保存したチュートリアル設定を読み込みました。"
 					: "チュートリアル設定を読み込めませんでした。";
 			}
 			if (ImGui::Button("初期値に戻して保存", ImVec2(-1.0f, 0.0f))) {
-				requirements = GamePlayScene::TutorialActionRequirements{};
-				scene_->ApplyTutorialRequirements();
-				scene_->tutorialRequirementsMessage_ = scene_->SaveTutorialRequirements()
+				scene_->GetTutorialRequirements().Reset();
+				tutorialRequirementsMessage_ = scene_->GetTutorialRequirements().Save("resources/tutorial_requirements.json")
 					? "初期値へ戻して保存しました。"
 					: "初期値へ戻しましたが、保存できませんでした。";
 			}
-			if (!scene_->tutorialRequirementsMessage_.empty()) {
-				ImGui::TextWrapped("%s", scene_->tutorialRequirementsMessage_.c_str());
+			if (!tutorialRequirementsMessage_.empty()) {
+				ImGui::TextWrapped("%s", tutorialRequirementsMessage_.c_str());
 			}
 			ImGui::TextDisabled("保存先: resources/tutorial_requirements.json");
 		}
 
 		if (currentEngineSettingsTarget_ == 7) {
-			ImGui::Text("スラスターの見た目・取付位置");
-			ImGui::TextWrapped("炎の幅・長さ・明るさと取付位置を調整できます。変更はゲーム画面に即反映します。");
-			ImGui::TextWrapped("ゲーム／シミュレーションの編集停止中も出力65%で噴射を表示します。通常・加速の見え方を切り替えて比較できます。");
-			ImGui::Separator();
-			if (player_ && player_->GetBoosterEffect()) {
-				BoosterEffect* booster = player_->GetBoosterEffect();
-				const auto saveAndApplySettings = [this, booster](const char* successMessage) {
-					constexpr const char* kSettingsPath = "resources/vf-15c/thruster_position.json";
-					if (!booster->SaveSettings(kSettingsPath)) {
-						thrusterSettingsMessage_ = "保存できませんでした。resources/vf-15c に書き込み可能か確認してください。";
-						return;
-					}
-					if (!booster->LoadSettings(kSettingsPath)) {
-						thrusterSettingsMessage_ = "保存後の設定を読み込めませんでした。ファイル内容を確認してください。";
-						return;
-					}
-					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
-						static_cast<int>(player_->GetCurrentMode()));
-					thrusterSettingsMessage_ = successMessage;
-				};
-				bool previewAccelerating = booster->GetEditorPreviewAcceleration();
-				if (ImGui::Checkbox("加速状態をプレビュー", &previewAccelerating)) {
-					booster->SetEditorPreviewAcceleration(previewAccelerating);
-				}
-				bool thrusterPlumeEnabled = booster->IsThrusterPlumeEnabled();
-				if (ImGui::Checkbox("光跡を表示", &thrusterPlumeEnabled)) {
-					booster->SetThrusterPlumeEnabled(thrusterPlumeEnabled);
-					saveAndApplySettings("光跡の表示設定を保存して、ただちに反映しました。");
-				}
-				ImGui::TextDisabled("OFFにすると、ノズル本体は残して光跡と炎だけを非表示にします。");
-				ImGui::Separator();
-				ImGui::Text("エフェクトの見た目");
-				BoosterEffect::EffectSettings effect = booster->GetEffectSettings();
-				bool effectChanged = false;
-				bool saveEffectSettings = false;
-				const auto editEffectSlider = [&effectChanged, &saveEffectSettings](const char* label, float* value,
-					float minimum, float maximum, const char* format) {
-					effectChanged |= ImGui::SliderFloat(label, value, minimum, maximum, format, ImGuiSliderFlags_AlwaysClamp);
-					// ドラッグ中に毎フレーム書き込まず、操作を終えた時点で保存対象にする。
-					saveEffectSettings |= ImGui::IsItemDeactivatedAfterEdit();
-				};
-				editEffectSlider("炎の幅", &effect.widthScale, 0.25f, 6.0f, "%.2f 倍");
-				editEffectSlider("炎の長さ", &effect.lengthScale, 0.25f, 4.0f, "%.2f 倍");
-				editEffectSlider("明るさ", &effect.brightness, 0.1f, 3.0f, "%.2f 倍");
-				editEffectSlider("周囲の光", &effect.glowScale, 0.0f, 3.0f, "%.2f 倍");
-				if (ImGui::TreeNode("加速・白い芯の調整")) {
-					editEffectSlider("加速時の幅倍率", &effect.boostWidthMultiplier, 1.0f, 2.0f, "%.2f 倍");
-					editEffectSlider("加速時の長さ倍率", &effect.boostLengthMultiplier, 1.0f, 2.0f, "%.2f 倍");
-					editEffectSlider("白い芯の長さ比率", &effect.coreLengthRatio, 0.2f, 0.8f, "%.2f");
-					ImGui::TreePop();
-				}
-				if (effectChanged) {
-					booster->SetEffectSettings(effect);
-				}
-				if (ImGui::Button("エフェクトの見た目をリセット", ImVec2(-1.0f, 0.0f))) {
-					booster->ResetEffectSettings();
-					saveEffectSettings = true;
-				}
-				if (saveEffectSettings) {
-					saveAndApplySettings("エフェクト設定を保存して、ただちに反映しました。");
-				}
-				ImGui::TextDisabled("エフェクトの変更は、操作を終えると保存・即時反映されます。");
-				ImGui::Separator();
-				const int placementMode = static_cast<int>(player_->GetCurrentMode());
-				const char* placementModeName = placementMode == 0 ? "ファイター"
-					: (placementMode == 1 ? "ガウォーク" : "バトロイド");
-				ImGui::Text("取付調整（現在の形態: %s）", placementModeName);
-				ImGui::TextDisabled("形態ごとに位置・サイズ・回転を別々に保存できます。");
-				ImGui::Checkbox("位置合わせ用マーカー", &showThrusterPlacementMarkers_);
-				booster->SetPlacementMarkersVisible(showThrusterPlacementMarkers_);
-				BoosterEffect::PlacementSettings placement = booster->GetPlacementSettings(placementMode);
-				bool placementChanged = false;
-				placementChanged |= ImGui::DragFloat3("位置補正 X・Y・Z", &placement.positionOffset.x,
-					0.01f, -3.0f, 3.0f, "%.3f m");
-				placementChanged |= ImGui::DragFloat3("ノズルサイズ X・Y・Z", &placement.scale.x,
-					0.01f, 0.2f, 3.0f, "%.2f 倍");
-				placementChanged |= ImGui::DragFloat3("ノズル回転 X・Y・Z", &placement.rotationDegrees.x,
-					1.0f, -180.0f, 180.0f, "%.1f 度");
-				if (placementChanged) {
-					booster->SetPlacementSettings(placementMode, placement);
-					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
-						placementMode);
-				}
-				ImGui::TextDisabled("+X: 右 / +Y: 上 / +Z: 前方。Yをマイナスにすると下がります。");
-				ImGui::TextDisabled("回転は機体ローカル軸、サイズはノズルと噴射炎に反映されます。");
-				if (ImGui::Button("現在の形態の取付調整をリセット", ImVec2(-1.0f, 0.0f))) {
-					booster->ResetPlacementAdjustment(placementMode);
-					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
-						placementMode);
-				}
-				ImGui::Separator();
-				ImGui::Text("追加スラスター（現在の形態のみ）");
-				ImGui::TextDisabled("追加したノズルは、位置・サイズ・回転を1基ずつ編集して保存できます。最大8基です。");
-				const auto& extraThrusters = booster->GetExtraThrusters(placementMode);
-				bool extraThrusterChanged = false;
-				bool removeExtraThruster = false;
-				size_t extraThrusterToRemove = 0;
-				for (size_t index = 0; index < extraThrusters.size(); ++index) {
-					BoosterEffect::ExtraThrusterSettings extra = extraThrusters[index];
-					bool extraChanged = false;
-					ImGui::PushID(static_cast<int>(index));
-					const std::string title = "追加ノズル " + std::to_string(index + 1);
-					if (ImGui::TreeNode(title.c_str())) {
-						extraChanged |= ImGui::DragFloat3("位置 X・Y・Z", &extra.position.x,
-							0.01f, -3.0f, 3.0f, "%.3f m");
-						extraChanged |= ImGui::DragFloat3("サイズ X・Y・Z", &extra.scale.x,
-							0.01f, 0.2f, 3.0f, "%.2f 倍");
-						extraChanged |= ImGui::DragFloat3("回転 X・Y・Z", &extra.rotationDegrees.x,
-							1.0f, -180.0f, 180.0f, "%.1f 度");
-						if (ImGui::Button("このノズルを削除")) {
-							removeExtraThruster = true;
-							extraThrusterToRemove = index;
-						}
-						ImGui::TreePop();
-					}
-					ImGui::PopID();
-					if (extraChanged) {
-						booster->SetExtraThrusterSettings(placementMode, index, extra);
-						extraThrusterChanged = true;
-					}
-				}
-				if (removeExtraThruster) {
-					booster->RemoveExtraThruster(placementMode, extraThrusterToRemove);
-					extraThrusterChanged = true;
-				}
-				if (ImGui::Button("スラスターを追加", ImVec2(-1.0f, 0.0f))) {
-					if (booster->AddExtraThruster(placementMode)) {
-						extraThrusterChanged = true;
-					} else {
-						thrusterSettingsMessage_ = "追加できるスラスターは1形態につき8基までです。";
-					}
-				}
-				if (extraThrusterChanged) {
-					booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(), placementMode);
-				}
-				if (ImGui::Button("位置・エフェクト設定を保存して即時反映", ImVec2(-1.0f, 0.0f))) {
-					saveAndApplySettings("取付位置・追加スラスター・エフェクト設定を保存して、ただちに反映しました。");
-				}
-				if (ImGui::Button("保存設定を読み込む", ImVec2(-1.0f, 0.0f))) {
-					if (booster->LoadSettings("resources/vf-15c/thruster_position.json")) {
-						booster->RefreshPlacement(player_->GetPosition(), player_->GetQuaternion(),
-							static_cast<int>(player_->GetCurrentMode()));
-						thrusterSettingsMessage_ = "取付位置とエフェクト設定を読み込みました。";
-					} else {
-						thrusterSettingsMessage_ = "保存データを読み込めません。先に設定を保存するか、ファイル内容を確認してください。";
-					}
-				}
-				if (!thrusterSettingsMessage_.empty()) {
-					ImGui::TextWrapped("%s", thrusterSettingsMessage_.c_str());
-				}
-				ImGui::TextDisabled("保存先: resources/vf-15c/thruster_position.json");
-			} else {
-				ImGui::TextDisabled("プレイヤーが初期化されていません。");
-			}
+			playerTuningPanel_.DrawThrusterTuningTab(player_.get());
 		}
 		if (currentEngineSettingsTarget_ != 7 && player_ && player_->GetBoosterEffect()) {
 			player_->GetBoosterEffect()->SetPlacementMarkersVisible(false);
@@ -2162,19 +1747,10 @@ void GamePlayUIManager::UpdateUI() {
 #undef showSprite
 #undef skeletonLinesModel
 #undef skeletonLinesObject
-#undef debugColliderLinesObject
 #undef showDebugColliders
 #undef debugFlyCamera_
 #undef isDebugCameraActive_
 #undef isEditorPreviewPlaying_
-#undef isCinematicLockOnCameraEnabled_
-#undef isCinematicLockOnCameraInitialized_
-#undef cinematicLockOnCameraPosition_
-#undef cinematicLockOnCameraRotation_
-#undef cinematicLockOnCameraFocus_
-#undef cinematicLockOnCameraBackDirection_
-#undef cinematicLockOnCameraSideSign_
-#undef cinematicLockOnCameraSeparation_
 #undef showParticles
 #undef showModel
 #undef enableSkinning
@@ -2204,42 +1780,21 @@ void GamePlayUIManager::UpdateUI() {
 #undef enemies_
 #undef enemyBulletManager_
 #undef enemySpawns_
-#undef enemyRespawnTimers_
 #undef obstacles_
 #undef newEnemyPos
 #undef explosionManager_
-#undef isGameOver_
-#undef gameOverTimer_
 #undef simulationManager_
 #undef missilePresetManager_
 #undef lockOnManager_
 #undef cameraManager_
-#undef levelManager_
 #undef uiManager_
 #undef ammoManager_
-#undef lastJsonWriteTime_
-#undef aimAssistEnemy_
-#undef isMultiLockCharging_
-#undef multiLockChargeFrames_
-#undef IsSimulationMode
 #undef SetDebugCameraActive
-#undef ReloadSceneJson
 #undef ResetEditorPreview
 #undef MakeMissileTuning
-#undef SpawnEnemyFromSpawnPoint
-#undef IsEnemySpawnPointActive
-#undef ScheduleEnemySpawn
-#undef TriggerEnemyReinforcements
-#undef UpdateEnemyRespawns
-#undef HasPendingEnemySpawns
-#undef UpdateCinematicLockOnCamera
 
 
 #undef enemyEventManager_
-#undef lockedEnemy_
-#undef aimAssistEnemy_
-#undef isMultiLockCharging_
-#undef multiLockTargets_
 }
 
 void GamePlayUIManager::DrawGameplayActionControls() {

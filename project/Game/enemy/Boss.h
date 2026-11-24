@@ -75,7 +75,7 @@ public:
     int ConsumeSummonRequests();
     size_t GetTurretCount() const { return kTurretCount; }
     // 船体モデルの境界中心。Enemy::position_ は OBJ の原点なので本体ロックオンには使わない。
-    Vector3 GetBodyLockOnPosition() const;
+    Vector3 GetBodyLockOnPosition() const override;
     Vector3 GetAimPosition() const override { return GetBodyLockOnPosition(); }
     bool IsTurretAlive(size_t turretIndex) const;
     Vector3 GetTurretLockOnPosition(size_t turretIndex) const;
@@ -83,12 +83,12 @@ public:
     int GetTurretHP(size_t turretIndex) const;
     int GetTurretMaxHP() const;
     // 砲台に加え、非展開時の側面シールド発生装置をロックオン候補に含める。
-    size_t GetLockOnPartCount() const { return kTurretCount + kSideShieldGeneratorCount; }
-    bool IsLockOnPartAvailable(size_t partIndex) const;
-    Vector3 GetLockOnPartPosition(size_t partIndex) const;
-    float GetLockOnPartRadius(size_t partIndex) const;
-    int GetLockOnPartHP(size_t partIndex) const;
-    int GetLockOnPartMaxHP(size_t partIndex) const;
+    size_t GetLockOnPartCount() const override { return kTurretCount + kSideShieldGeneratorCount; }
+    bool IsLockOnPartAvailable(size_t partIndex) const override;
+    Vector3 GetLockOnPartPosition(size_t partIndex) const override;
+    float GetLockOnPartRadius(size_t partIndex) const override;
+    int GetLockOnPartHP(size_t partIndex) const override;
+    int GetLockOnPartMaxHP(size_t partIndex) const override;
     bool IsSideShieldGeneratorDestroyed(size_t face) const;
     SideShieldState GetSideShieldState() const { return sideShieldState_; }
     const Tuning& GetTuning() const { return tuning_; }
