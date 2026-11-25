@@ -10,7 +10,7 @@
 #include "engine/Resource/TextureManager.h"
 #include "engine/base/WinApp.h"
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 #include <externals/imgui/imgui.h>
 #endif
 
@@ -86,7 +86,7 @@ void RadarRenderer::Draw(
 	};
 
 	bool drawVectorRadarMarkers = false;
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	ImDrawList* radarDrawList = nullptr;
 	float radarOverlayMinX = 0.0f;
 	float radarOverlayMinY = 0.0f;
@@ -128,7 +128,7 @@ void RadarRenderer::Draw(
 	if (sweepAngle_ >= 6.2831853f) {
 		sweepAngle_ -= 6.2831853f;
 	}
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (drawVectorRadarMarkers) {
 		radarDrawList->AddLine(toRadarOverlay(radarCenter),
 			toRadarOverlay({ radarCenter.x + std::sin(sweepAngle_) * radarRadius,
@@ -163,7 +163,7 @@ void RadarRenderer::Draw(
 	const float altitudeScaleX = radarCenter.x + radarSize * 0.56f;
 	const float altitudeScaleHalfHeight = radarRadius * 0.88f;
 	const float altitudeScaleHeight = altitudeScaleHalfHeight * 2.0f;
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (drawVectorRadarMarkers) {
 		const ImU32 scaleColor = IM_COL32(92, 238, 255, 230);
 		const ImU32 scaleDimColor = IM_COL32(52, 156, 184, 180);
@@ -271,7 +271,7 @@ void RadarRenderer::Draw(
 		const float altitudeRatio = std::clamp(relativeAltitude / kAltitudeRange, -1.0f, 1.0f);
 		const float altitudeY = radarCenter.y - altitudeRatio * altitudeScaleHalfHeight;
 		if (drawVectorRadarMarkers) {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 			const Vector2 blipPosition = {
 				radarCenter.x + (localRight * positionScale / kRadarRange) * radarRadius,
 				radarCenter.y - (localForward * positionScale / kRadarRange) * radarRadius
@@ -329,7 +329,7 @@ void RadarRenderer::Draw(
 				{ altitudeMarkerWidth, multiLockCount > 0 ? 4.0f : 3.0f }, markerColor);
 		}
 	}
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (drawVectorRadarMarkers) {
 		radarDrawList->PopClipRect();
 	}

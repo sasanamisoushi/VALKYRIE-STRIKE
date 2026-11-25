@@ -3,7 +3,7 @@
 #include "GameOverSequence.h"
 #include "engine/Debug/ImGuiManager.h"
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 #include <externals/imgui/imgui.h>
 
 #include <algorithm>
@@ -22,7 +22,7 @@ void GameOverOverlayRenderer::Draw(const GameOverSequence& sequence,
 		return;
 	}
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (!ImGui::GetCurrentContext()) {
 		return;
 	}

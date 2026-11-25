@@ -5,7 +5,7 @@
 #include "Game/Player/Player.h"
 #include "Game/enemy/Enemy.h"
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 #include <externals/imgui/imgui.h>
 
 #include <algorithm>
@@ -15,7 +15,7 @@
 void StageObjectiveOverlayRenderer::Draw(bool enabled, const Player* player,
 	const std::list<std::unique_ptr<Enemy>>& enemies, bool isBossObjective,
 	float screenWidth, float screenHeight) const {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (!enabled || !ImGui::GetCurrentContext()) {
 		return;
 	}

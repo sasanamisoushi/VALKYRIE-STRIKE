@@ -323,7 +323,7 @@ void LoadingScene::UpdateStageSelectionInput() {
 }
 
 void LoadingScene::DrawStageSelectOverlay() {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (phase_ != TransitionPhase::WarpLoop || stageSelectionConfirmed_ || !ImGui::GetCurrentContext()) {
 		return;
 	}

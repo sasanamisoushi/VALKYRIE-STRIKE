@@ -12,7 +12,7 @@
 #include "engine/Input/Input.h"
 #include "engine/math/MyMath.h"
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 #include <externals/imgui/imgui.h>
 #endif
 
@@ -21,7 +21,7 @@
 #include <limits>
 #include <string>
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 namespace {
 struct GameViewTransform {
 	float minX = 0.0f;
@@ -488,7 +488,7 @@ void DrawControlGuide(ImDrawList* hudText, const GameViewTransform& view, const 
 #endif
 
 void CombatHudOverlayRenderer::Draw(const CombatHudOverlayContext& context) const {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	// ImGuiの座標はアプリ全体、Spriteの座標はGame View内部なので、
 	// Game Viewの矩形へ変換してHUDの外へ文字がずれないようにする。
 	float gameViewMinX = 0.0f;

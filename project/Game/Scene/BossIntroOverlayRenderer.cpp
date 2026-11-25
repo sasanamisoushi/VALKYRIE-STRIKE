@@ -4,7 +4,7 @@
 #include "engine/Camera/FlyCamera.h"
 #include "engine/Debug/ImGuiManager.h"
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 #include <externals/imgui/imgui.h>
 
 #include <algorithm>
@@ -19,7 +19,7 @@ namespace {
 #endif
 
 void BossIntroOverlayRenderer::Draw(const BossEncounterState& state, float screenWidth, float screenHeight) const {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (!state.IsIntroActive() || !ImGui::GetCurrentContext()) {
 		return;
 	}

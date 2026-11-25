@@ -3,7 +3,7 @@
 #include "AttractDemoState.h"
 #include "engine/Debug/ImGuiManager.h"
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 #include <externals/imgui/imgui.h>
 #endif
 
@@ -16,7 +16,7 @@ void AttractDemoOverlayRenderer::Draw(bool enabled, const AttractDemoState& demo
 		return;
 	}
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (!ImGui::GetCurrentContext()) {
 		return;
 	}

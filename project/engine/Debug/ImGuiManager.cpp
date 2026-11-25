@@ -2,13 +2,13 @@
 #include <cstdint>
 #include "engine/Graphics/SrvManager.h"
 
-bool ImGuiManager::sIsVisible_ = true;
+bool ImGuiManager::sIsVisible_ = false;
 ImFont* ImGuiManager::sResultRankFont_ = nullptr;
 ImFont* ImGuiManager::sGameOverFont_ = nullptr;
 ImFont* ImGuiManager::sJapaneseDisplayFont_ = nullptr;
 
 void ImGuiManager::Initialize(HWND hwnd, ID3D12Device *device, int numFramesInFlight, DXGI_FORMAT rtvFormat, ID3D12DescriptorHeap *srvHeap) {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	// ImGuiのコンテキストを作成
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -41,7 +41,13 @@ void ImGuiManager::Initialize(HWND hwnd, ID3D12Device *device, int numFramesInFl
 	}
 
 	// ドッキング機能を有効にする
+#ifdef ENABLE_IMGUI
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+#else
+	// 配布版は描画専用。開発用レイアウトの読込・保存とカーソル操作を無効化する。
+	io.IniFilename = nullptr;
+	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+#endif
 
 	// フォントアトラスを明示的にビルドする
 	// これにより、最初のフレームの計算時にフォントデータが不足してクラッシュするのを防ぎます
@@ -61,7 +67,7 @@ void ImGuiManager::Initialize(HWND hwnd, ID3D12Device *device, int numFramesInFl
 }
 
 void ImGuiManager::Shutdown() {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	// 逆順で終了処理
 	ImGui_ImplDX12_Shutdown();
 	ImGui_ImplWin32_Shutdown();
@@ -73,7 +79,7 @@ void ImGuiManager::Shutdown() {
 }
 
 void ImGuiManager::BeginFrame() {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	// 編集UIが非表示でも、ゲーム内HUD用の描画リストは毎フレーム作成する。
 	ImGui_ImplDX12_NewFrame();
 	ImGui_ImplWin32_NewFrame();
@@ -82,7 +88,7 @@ void ImGuiManager::BeginFrame() {
 }
 
 void ImGuiManager::EndFrame(ID3D12GraphicsCommandList *commandList) {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	//描画データを生成
 	ImGui::Render();
 

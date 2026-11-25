@@ -11,7 +11,7 @@
 #include "engine/Input/Input.h"
 #include "engine/math/MyMath.h"
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 #include <externals/imgui/imgui.h>
 #endif
 
@@ -37,7 +37,7 @@ void TutorialOverlayRenderer::Draw(const TutorialPhaseController& controller, co
 	const TutorialRequirements& requirements, const TutorialGoalMarker& goalMarker,
 	const Player* player, Camera* navigationCamera, std::size_t remainingEnemyCount,
 	float screenWidth, float screenHeight) const {
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	if (controller.GetPhase() == TutorialPhase::Disabled || !ImGui::GetCurrentContext()) {
 		return;
 	}

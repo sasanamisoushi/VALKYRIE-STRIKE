@@ -36,11 +36,8 @@ void Game::Initialize() {
 
 	Framework::Initialize();
 
-#ifdef ENABLE_IMGUI
-	// Game の初期値と ImGui 側の表示状態を揃える。非表示中は ImGui の
-	// フレーム生成・編集パネル描画を行わず、通常プレイの負荷を抑える。
+	// ゲーム用HUDの描画とは独立した、開発用パネルの表示状態。
 	ImGuiManager::SetVisible(showImGui_);
-#endif
 
 	renderWidth_ = static_cast<uint32_t>(WinApp::GetClientWidth());
 	renderHeight_ = static_cast<uint32_t>(WinApp::GetClientHeight());
@@ -105,6 +102,10 @@ void Game::Update() {
 	// 編集UIを開いている間だけOSカーソルを表示する。
 	winApp->SetCursorVisible(showImGui_);
 
+#ifdef CG2_ENABLE_GAME_UI
+	// ReleaseでもHUD・チュートリアル・リザルト用の描画フレームを生成する。
+	imGuiManager->BeginFrame();
+#endif
 #ifdef ENABLE_IMGUI
 	// F1キーでImGuiの表示・非表示を切り替え
 	// DirectInputではなく、ゲームウィンドウが受け取ったWM_KEYDOWNを使う。
@@ -114,9 +115,6 @@ void Game::Update() {
 		ImGuiManager::SetVisible(showImGui_);
 	}
 
-	// 編集UIが閉じている通常プレイ中も、ゲーム内操作ガイドなどの
-	// オーバーレイを描画できるよう ImGui フレームだけは開始する。
-	imGuiManager->BeginFrame();
 	if (showImGui_) {
 
 		// 画面全体をImGuiの「ドッキングエリア」にする
@@ -268,7 +266,7 @@ void Game::Draw() {
 		// 深度バッファをDSV（書き込み）に戻す
 		DirectXCommon::GetInstance()->SetDepthStateToDSV();
 
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 		// 通常プレイ用の HUD オーバーレイをスワップチェーンへ重ねる。
 		imGuiManager->EndFrame(DirectXCommon::GetInstance()->GetCommandList());
 #endif

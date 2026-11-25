@@ -599,7 +599,7 @@ void TitleScene::Draw() {
 }
 
 void TitleScene::DrawAttractDemoStartPrompt(float screenWidth, float screenHeight) {
-#if defined(CG2_RELEASE_BUILD) && defined(ENABLE_IMGUI)
+#if defined(CG2_RELEASE_BUILD) && defined(CG2_ENABLE_GAME_UI)
 	if (!isAttractDemoAvailable_ || isSettingsOpen_ || !ImGui::GetCurrentContext()) {
 		return;
 	}

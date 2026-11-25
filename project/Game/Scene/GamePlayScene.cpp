@@ -2080,7 +2080,7 @@ void GamePlayScene::DrawOverlay() {
 		&specialAttackState_,
 		&combatAlertState_,
 	});
-#ifdef ENABLE_IMGUI
+#ifdef CG2_ENABLE_GAME_UI
 	const bool showStageObjective = !IsTitleBackgroundMode() && !IsAttractDemoMode() &&
 		!pauseMenuState_.IsPaused() && !gameOverSequence_.IsActive();
 	stageObjectiveOverlayRenderer_.Draw(showStageObjective, player_.get(), enemies_,
