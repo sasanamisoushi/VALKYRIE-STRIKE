@@ -1,7 +1,7 @@
 {
     "bossPosition": [
         0.0,
-        3.3670880794525146,
+        4.345853328704834,
         30.0
     ],
     "tuning": {
@@ -14,6 +14,7 @@
         "mainTurretPitchTracking": true,
         "mainTurretYawFollow": 0.09000000357627869,
         "mainTurretYawTracking": true,
+        "maxHP": 12,
         "rearThrusterBrightness": 0.8999999761581421,
         "rearThrusterCount": 12,
         "rearThrusterFlareRadius": 0.41999998688697815,
@@ -87,7 +88,7 @@
         ],
         "rearThrusterRadius": 0.27000001072883606,
         "rearThrusterSpacing": 0.6200000047683716,
-        "sideShieldOpacity": 0.82
+        "sideShieldOpacity": 0.8199999928474426
     },
     "version": 1
 }

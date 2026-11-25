@@ -771,6 +771,7 @@ bool SimulationManager::SaveBossThrusterSettings(const std::string& filePath) {
 			scene_->uiManager_->bossBattlePosition_[2],
 		} },
 		{ "tuning", {
+			{ "maxHP", tuning.maxHP },
 			{ "mainTurretYawTracking", tuning.mainTurretYawTracking },
 			{ "mainTurretPitchTracking", tuning.mainTurretPitchTracking },
 			{ "mainTurretYawFollow", tuning.mainTurretYawFollow },
@@ -856,6 +857,7 @@ bool SimulationManager::LoadBossThrusterSettings(const std::string& filePath, bo
 
 	Boss::Tuning tuning = scene_->uiManager_->bossTuning_;
 	const json& data = root["tuning"];
+	tuning.maxHP = std::clamp(data.value("maxHP", Boss::kMaxHP), 1, 1000000);
 	tuning.mainTurretYawTracking = data.value("mainTurretYawTracking", tuning.mainTurretYawTracking);
 	tuning.mainTurretPitchTracking = data.value("mainTurretPitchTracking", tuning.mainTurretPitchTracking);
 	tuning.mainTurretYawFollow = data.value("mainTurretYawFollow", tuning.mainTurretYawFollow);
@@ -961,6 +963,11 @@ void SimulationManager::DrawBossBattleControls() {
 
 	bool changed = false;
 	Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
+	if (ImGui::InputInt("ボス最大HP##boss", &tuning.maxHP)) {
+		tuning.maxHP = std::clamp(tuning.maxHP, 1, 1000000);
+		changed = true;
+	}
+	ImGui::TextDisabled("HP変更時は出現中のボスも満タンに更新します。下の保存ボタンで次回起動にも反映します。");
 	if (ImGui::CollapsingHeader("砲台の回転・スライド##boss", ImGuiTreeNodeFlags_DefaultOpen)) {
 		changed |= ImGui::Checkbox("主砲の横追尾 (ヨー)##boss", &tuning.mainTurretYawTracking);
 		changed |= ImGui::Checkbox("主砲の縦追尾 (ピッチ)##boss", &tuning.mainTurretPitchTracking);
@@ -1000,7 +1007,7 @@ void SimulationManager::DrawBossBattleControls() {
 	if (ImGui::Button("保存したボスの位置・設定を読み込む##boss")) {
 		LoadBossThrusterSettings("resources/boss_thruster_settings.json");
 	}
-	ImGui::TextDisabled("保存先: resources/boss_thruster_settings.json (ボスの出現座標・砲台・スラスター・シールド設定)");
+	ImGui::TextDisabled("保存先: resources/boss_thruster_settings.json (ボスHP・出現座標・砲台・スラスター・シールド設定)");
 	if (!scene_->uiManager_->bossTuningMessage_.empty()) ImGui::TextWrapped("%s", scene_->uiManager_->bossTuningMessage_.c_str());
 #endif
 }

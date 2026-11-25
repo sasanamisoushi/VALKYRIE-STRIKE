@@ -25,6 +25,7 @@ public:
 
     // ImGui のボス戦調整で使う、砲台・後部スラスターのライブ設定。
     struct Tuning {
+        int maxHP = kMaxHP;
         bool mainTurretYawTracking = true;
         bool mainTurretPitchTracking = true;
         float mainTurretYawFollow = 0.09f;
@@ -71,7 +72,7 @@ public:
         float impactRadius = 0.0f) override;
     bool IsHitBy(const Sphere& attackSphere) const override;
     OBB GetOBB() const override;
-    int GetMaxHP() const override { return kMaxHP; }
+    int GetMaxHP() const override { return tuning_.maxHP; }
     int ConsumeSummonRequests();
     size_t GetTurretCount() const { return kTurretCount; }
     // 船体モデルの境界中心。Enemy::position_ は OBJ の原点なので本体ロックオンには使わない。

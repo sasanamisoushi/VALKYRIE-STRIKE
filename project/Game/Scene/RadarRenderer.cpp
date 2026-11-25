@@ -6,6 +6,7 @@
 #include "Game/enemy/Enemy.h"
 #include "MultiLockChargeState.h"
 #include "engine/Camera/FlyCamera.h"
+#include "engine/Debug/ImGuiManager.h"
 #include "engine/Resource/TextureManager.h"
 #include "engine/base/WinApp.h"
 
@@ -19,7 +20,7 @@
 
 namespace {
 bool GetOverlayBounds(float& minX, float& minY, float& maxX, float& maxY) {
-	if (FlyCamera::GetGameViewBounds(minX, minY, maxX, maxY) && maxX > minX && maxY > minY) {
+	if (ImGuiManager::IsVisible() && FlyCamera::GetGameViewBounds(minX, minY, maxX, maxY) && maxX > minX && maxY > minY) {
 		return true;
 	}
 
@@ -84,17 +85,58 @@ void RadarRenderer::Draw(
 		radarSize * 0.5f + 20.0f
 	};
 
-	frameSprite_->SetPosition(radarCenter);
-	frameSprite_->SetSize({ radarSize, radarSize });
-	frameSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.96f });
-	frameSprite_->Update();
-	frameSprite_->Draw();
+	bool drawVectorRadarMarkers = false;
+#ifdef ENABLE_IMGUI
+	ImDrawList* radarDrawList = nullptr;
+	float radarOverlayMinX = 0.0f;
+	float radarOverlayMinY = 0.0f;
+	float radarOverlayWidth = screenWidth;
+	float radarOverlayHeight = screenHeight;
+	if (ImGui::GetCurrentContext()) {
+		float maxX = 0.0f;
+		float maxY = 0.0f;
+		if (GetOverlayBounds(radarOverlayMinX, radarOverlayMinY, maxX, maxY)) {
+			radarOverlayWidth = maxX - radarOverlayMinX;
+			radarOverlayHeight = maxY - radarOverlayMinY;
+			radarDrawList = ImGui::GetForegroundDrawList();
+			drawVectorRadarMarkers = radarDrawList != nullptr;
+		}
+	}
+	const auto toRadarOverlay = [&](const Vector2& position) {
+		return ImVec2(radarOverlayMinX + position.x * radarOverlayWidth / screenWidth,
+			radarOverlayMinY + position.y * radarOverlayHeight / screenHeight);
+	};
+	if (drawVectorRadarMarkers) {
+		// 枠もマーカーと同じ描画先・座標変換に統一する。
+		radarDrawList->PushClipRect(ImVec2(radarOverlayMinX, radarOverlayMinY),
+			ImVec2(radarOverlayMinX + radarOverlayWidth, radarOverlayMinY + radarOverlayHeight), true);
+		radarDrawList->AddImage((ImTextureID)TextureManager::GetInstance()->GetSrvHandleGPU("resources/radar_frame.png").ptr,
+			toRadarOverlay({ radarCenter.x - radarSize * 0.5f, radarCenter.y - radarSize * 0.5f }),
+			toRadarOverlay({ radarCenter.x + radarSize * 0.5f, radarCenter.y + radarSize * 0.5f }),
+			ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 245));
+	}
+#endif
+	if (!drawVectorRadarMarkers) {
+		frameSprite_->SetPosition(radarCenter);
+		frameSprite_->SetSize({ radarSize, radarSize });
+		frameSprite_->SetColor({ 1.0f, 1.0f, 1.0f, 0.96f });
+		frameSprite_->Update();
+		frameSprite_->Draw();
+	}
 
 	sweepAngle_ += 0.025f;
 	if (sweepAngle_ >= 6.2831853f) {
 		sweepAngle_ -= 6.2831853f;
 	}
-	if (sweepSprite_) {
+#ifdef ENABLE_IMGUI
+	if (drawVectorRadarMarkers) {
+		radarDrawList->AddLine(toRadarOverlay(radarCenter),
+			toRadarOverlay({ radarCenter.x + std::sin(sweepAngle_) * radarRadius,
+				radarCenter.y - std::cos(sweepAngle_) * radarRadius }), IM_COL32(0, 230, 255, 122),
+			2.0f * radarOverlayWidth / screenWidth);
+	}
+#endif
+	if (!drawVectorRadarMarkers && sweepSprite_) {
 		sweepSprite_->SetAnchorPoint({ 0.0f, 0.5f });
 		sweepSprite_->SetPosition(radarCenter);
 		sweepSprite_->SetSize({ radarRadius, 2.0f });
@@ -121,31 +163,8 @@ void RadarRenderer::Draw(
 	const float altitudeScaleX = radarCenter.x + radarSize * 0.56f;
 	const float altitudeScaleHalfHeight = radarRadius * 0.88f;
 	const float altitudeScaleHeight = altitudeScaleHalfHeight * 2.0f;
-	bool drawVectorRadarMarkers = false;
 #ifdef ENABLE_IMGUI
-	ImDrawList* radarDrawList = nullptr;
-	float radarOverlayMinX = 0.0f;
-	float radarOverlayMinY = 0.0f;
-	float radarOverlayWidth = 0.0f;
-	float radarOverlayHeight = 0.0f;
-	if (ImGui::GetCurrentContext()) {
-		float maxX = 0.0f;
-		float maxY = 0.0f;
-		if (GetOverlayBounds(radarOverlayMinX, radarOverlayMinY, maxX, maxY)) {
-			radarOverlayWidth = maxX - radarOverlayMinX;
-			radarOverlayHeight = maxY - radarOverlayMinY;
-			if (radarOverlayWidth > 0.0f && radarOverlayHeight > 0.0f) {
-				radarDrawList = ImGui::GetForegroundDrawList();
-				drawVectorRadarMarkers = radarDrawList != nullptr;
-			}
-		}
-	}
 	if (drawVectorRadarMarkers) {
-		auto toRadarOverlay = [&](const Vector2& position) {
-			return ImVec2(
-				radarOverlayMinX + position.x * radarOverlayWidth / screenWidth,
-				radarOverlayMinY + position.y * radarOverlayHeight / screenHeight);
-		};
 		const ImU32 scaleColor = IM_COL32(92, 238, 255, 230);
 		const ImU32 scaleDimColor = IM_COL32(52, 156, 184, 180);
 		radarDrawList->AddLine(toRadarOverlay({ altitudeScaleX, radarCenter.y - altitudeScaleHalfHeight }),
@@ -253,11 +272,6 @@ void RadarRenderer::Draw(
 		const float altitudeY = radarCenter.y - altitudeRatio * altitudeScaleHalfHeight;
 		if (drawVectorRadarMarkers) {
 #ifdef ENABLE_IMGUI
-			auto toRadarOverlay = [&](const Vector2& position) {
-				return ImVec2(
-					radarOverlayMinX + position.x * radarOverlayWidth / screenWidth,
-					radarOverlayMinY + position.y * radarOverlayHeight / screenHeight);
-			};
 			const Vector2 blipPosition = {
 				radarCenter.x + (localRight * positionScale / kRadarRange) * radarRadius,
 				radarCenter.y - (localForward * positionScale / kRadarRange) * radarRadius
@@ -276,7 +290,7 @@ void RadarRenderer::Draw(
 			if (multiLockCount > 0) {
 				// マルチロック済みは、三角を囲むリングで明確に区別する。
 				const float ringRadius = triangleSize + 4.0f + multiLockPulse * 2.0f;
-				radarDrawList->AddCircle(toRadarOverlay(blipPosition), ringRadius, enemyColor, 20, 2.0f);
+				radarDrawList->AddCircle(toRadarOverlay(blipPosition), ringRadius * radarOverlayWidth / screenWidth, enemyColor, 20, 2.0f);
 			}
 
 			// 高度目盛り上にも、対応する赤い横マーカーを出す。
@@ -315,4 +329,9 @@ void RadarRenderer::Draw(
 				{ altitudeMarkerWidth, multiLockCount > 0 ? 4.0f : 3.0f }, markerColor);
 		}
 	}
+#ifdef ENABLE_IMGUI
+	if (drawVectorRadarMarkers) {
+		radarDrawList->PopClipRect();
+	}
+#endif
 }

@@ -341,7 +341,7 @@ void Boss::Initialize(const Vector3 &position) {
     // 本体と砲台が同じ戦艦スケールを使用するよう、描画だけでなく当たり判定の
     // 基準になる Enemy::scale_ も同期する。
     SetScale(kBossScale);
-    hp_ = kMaxHP;
+    hp_ = tuning_.maxHP;
     SetScale(kBossScale);
     // 艦首をプレイヤーの進行方向に対して横へ向ける。
     SetRotation({ 0.0f, kBossSidewaysYaw, 0.0f });
@@ -728,7 +728,13 @@ int Boss::GetTurretMaxHP() const {
 }
 
 void Boss::SetTuning(const Tuning& tuning) {
+    const int previousMaxHP = tuning_.maxHP;
     tuning_ = tuning;
+    tuning_.maxHP = std::clamp(tuning_.maxHP, 1, 1000000);
+    // HP設定を変更した時だけ満タンにする。外観調整で戦闘中のHPを回復させない。
+    if (previousMaxHP != tuning_.maxHP && !IsDead()) {
+        hp_ = tuning_.maxHP;
+    }
     // 縦レール移動は廃止。旧JSONでtrueでも、砲台は必ずピッチ回転で照準する。
     tuning_.forwardTurretsVerticalSlide = false;
     tuning_.mainTurretYawFollow = std::clamp(tuning_.mainTurretYawFollow, 0.0f, 1.0f);

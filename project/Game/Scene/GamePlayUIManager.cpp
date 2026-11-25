@@ -1,6 +1,7 @@
 #include "GamePlayUIManager.h"
 #include "GamePlayScene.h"
 #include "GamePlaySceneHelpers.h"
+#include "Game/base/GameSettings.h"
 #include "engine/Debug/ImGuiManager.h"
 #include <externals/imgui/imgui.h>
 #include "SimulationManager.h"
@@ -530,6 +531,21 @@ void GamePlayUIManager::UpdateUI() {
 		ImGui::Begin("ゲーム設定");
 		ImGui::Text("ゲーム設定");
 		ImGui::TextWrapped("ゲーム内の設定をここで確認・変更できます。");
+		ImGui::Separator();
+		ImGui::Text("音声設定（変更は自動保存されます）");
+		GameSettings& gameSettings = GameSettings::GetInstance();
+		bool gameplayBgmEnabled = gameSettings.IsGameplayBgmEnabled();
+		if (ImGui::Checkbox("ゲームプレイBGM", &gameplayBgmEnabled)) {
+			gameSettings.SetGameplayBgmEnabled(gameplayBgmEnabled);
+		}
+		bool nonGameplayBgmEnabled = gameSettings.IsNonGameplayBgmEnabled();
+		if (ImGui::Checkbox("ゲームプレイ外のBGM", &nonGameplayBgmEnabled)) {
+			gameSettings.SetNonGameplayBgmEnabled(nonGameplayBgmEnabled);
+		}
+		bool soundEffectsEnabled = gameSettings.IsSoundEffectsEnabled();
+		if (ImGui::Checkbox("効果音（SE）", &soundEffectsEnabled)) {
+			gameSettings.SetSoundEffectsEnabled(soundEffectsEnabled);
+		}
 		DrawGameplayActionControls();
 		DrawAmmoSettingsUI();
 		ImGui::End();

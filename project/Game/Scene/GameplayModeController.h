@@ -89,6 +89,8 @@ public:
 		bool isImGuiVisible) const;
 
 	GameplayFrameUpdatePolicy EvaluateFrameUpdatePolicy(const GameplayFramePolicyInput& input) const;
+	// タイトル背景を最初に描く前に、自動飛行軌道の先頭姿勢へ同期する。
+	void PrimeTitleBackgroundPlayer(Player& player, const std::list<std::unique_ptr<Obstacle>>& obstacles);
 
 	void UpdatePlayerForMode(const GameplayPlayerModeContext& context);
 

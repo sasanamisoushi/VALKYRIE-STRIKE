@@ -139,6 +139,8 @@ private:
 	bool IsAutoFlightMode() const { return IsTitleBackgroundMode(); }
 	// ポーズ入力と選択を完結させる。タイトル帰還へ遷移した場合は true を返す。
 	bool UpdatePauseMenu(bool canUseKeyboardInput);
+	bool IsPauseBlockedByCinematic() const;
+	void CancelPauseForCinematic();
 	void DrawOverlay();
 	// 初回プレイ時に、飛行・変形・武装・標的撃破・離脱地点までを案内する。
 	void UpdateTutorial();
@@ -153,6 +155,8 @@ private:
 	MissileTuning MakeMissileTuning(MissileType type) const;
 	bool TryConsumeAmmo(MissileType type);
 	void UpdateAutoReload();
+	// 設定変更に合わせて、ゲームプレイ用BGMとSEをその場で開始・停止する。
+	void ApplyAudioSettings();
 	GameplayBalanceMissileSettings CollectGameplayBalanceMissileSettings() const;
 	void ApplyGameplayBalanceMissileSettings(const GameplayBalanceMissileSettings& missileSettings);
 	void CaptureGameplayBalanceDefaults();

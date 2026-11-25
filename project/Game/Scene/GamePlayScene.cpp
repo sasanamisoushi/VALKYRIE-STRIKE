@@ -169,13 +169,8 @@ void GamePlayScene::ActivateFromWarp() {
 		}
 	}
 
-	// 4. 本編音声の開始
-	if (!pVoice1) pVoice1 = AudioManager::GetInstance()->PlayWave(soundData1, true);
-	if (!pVoice2) pVoice2 = AudioManager::GetInstance()->PlayWave(soundData2, true);
-	if (!pSongVoice) {
-		pSongVoice = AudioManager::GetInstance()->PlayWave(songSoundData, true);
-		if (pSongVoice) pSongVoice->SetVolume(0.0f);
-	}
+	// 4. 本編音声の開始（保存済みの音声設定をそのまま反映する）
+	ApplyAudioSettings();
 
 	// 5. プレイヤーの移動制御フラグと推力・コライダー復帰（PDF原因1・2対策）
 	if (player_) {
@@ -433,13 +428,9 @@ void GamePlayScene::Initialize() {
 	soundData2 = AudioManager::GetInstance()->LoadAudio("resources/maou_bgm_fantasy15.mp3");
 	songSoundData = AudioManager::GetInstance()->LoadAudio("resources/song_bgm.mp3");
 
-	// タイトル背景では、タイトル側の音と競合しないよう本編BGMを鳴らさない。
-	if (!IsTitleBackgroundMode()) {
-		pVoice1 = AudioManager::GetInstance()->PlayWave(soundData1, true);
-		pVoice2 = AudioManager::GetInstance()->PlayWave(soundData2, true);
-		pSongVoice = AudioManager::GetInstance()->PlayWave(songSoundData, true);
-		if (pSongVoice) pSongVoice->SetVolume(0.0f);
-	}
+	// タイトル背景では無音。本編では保存済み設定に応じて再生する。
+	AudioManager::GetInstance()->SetMasterVolume(GameSettings::GetInstance().GetMasterVolume());
+	ApplyAudioSettings();
 
 
 	ModelManager::GetInstance()->CreateTrailModel("SmokeTrail");
@@ -543,6 +534,11 @@ void GamePlayScene::Initialize() {
 	isEditorPreviewPlaying_ = true;
 
 	ReloadSceneJson();
+	// タイトル背景では、ステージ上の PLAYER 向きを一度表示せず、最初の描画から
+	// 自動飛行コースの位置・姿勢にする。
+	if (IsTitleBackgroundMode() && player_) {
+		gameplayModeController_.PrimeTitleBackgroundPlayer(*player_, obstacles_);
+	}
 	if (!IsAutoFlightMode() && !IsAttractDemoMode()) {
 		GameStartTransitionData titleTransition;
 		if (GameStartTransition::Consume(titleTransition) && player_) {
@@ -841,8 +837,33 @@ void GamePlayScene::Finalize() {
 	EditorReceiver::GetInstance()->Finalize();
 }
 
+bool GamePlayScene::IsPauseBlockedByCinematic() const {
+	return IsTitleBackgroundMode() ||
+		gameOverSequence_.IsActive() ||
+		bossClearSequence_.IsActive() ||
+		bossEncounterState_.IsIntroActive() ||
+		warpExitPresentation_.IsActive() ||
+		introBoostState_.IsActive() ||
+		returnToTitleTransition_.IsActive();
+}
+
+void GamePlayScene::CancelPauseForCinematic() {
+	if (!pauseMenuState_.IsPaused()) {
+		return;
+	}
+	pauseMenuState_.Resume();
+	// ポーズ開始時に止めた歌も、演出時間の進行と同じ状態へ戻す。
+	if (songState_.IsActive() && pSongVoice) {
+		pSongVoice->Start();
+	}
+}
+
 bool GamePlayScene::UpdatePauseMenu(bool canUseKeyboardInput) {
-	if (IsTitleBackgroundMode() || gameOverSequence_.IsActive() || !canUseKeyboardInput) {
+	if (IsPauseBlockedByCinematic()) {
+		CancelPauseForCinematic();
+		return false;
+	}
+	if (!canUseKeyboardInput) {
 		return false;
 	}
 
@@ -893,7 +914,56 @@ bool GamePlayScene::UpdatePauseMenu(bool canUseKeyboardInput) {
 	return false;
 }
 
+void GamePlayScene::ApplyAudioSettings() {
+	const auto stopVoice = [](IXAudio2SourceVoice*& voice) {
+		if (voice) {
+			voice->Stop();
+			voice->DestroyVoice();
+			voice = nullptr;
+		}
+	};
+
+	// タイトル背景は常に無音。本編・デモだけが音声設定の対象になる。
+	if (IsTitleBackgroundMode()) {
+		stopVoice(pVoice1);
+		stopVoice(pVoice2);
+		stopVoice(pSongVoice);
+		return;
+	}
+
+	const GameSettings& settings = GameSettings::GetInstance();
+	if (settings.IsSoundEffectsEnabled()) {
+		if (!pVoice1) {
+			pVoice1 = AudioManager::GetInstance()->PlayWave(soundData1, true);
+		}
+	} else {
+		stopVoice(pVoice1);
+	}
+
+	if (!settings.IsGameplayBgmEnabled()) {
+		stopVoice(pVoice2);
+		stopVoice(pSongVoice);
+		return;
+	}
+
+	if (!pVoice2) {
+		pVoice2 = AudioManager::GetInstance()->PlayWave(soundData2, true);
+	}
+	if (!pSongVoice) {
+		pSongVoice = AudioManager::GetInstance()->PlayWave(songSoundData, true);
+	}
+
+	const bool songIsActive = songState_.IsActive();
+	if (pVoice2) {
+		pVoice2->SetVolume(songIsActive ? 0.0f : 1.0f);
+	}
+	if (pSongVoice) {
+		pSongVoice->SetVolume(songIsActive ? 1.0f : 0.0f);
+	}
+}
+
 void GamePlayScene::Update() {
+	ApplyAudioSettings();
 	combatAlertState_.Update();
 	Camera* activeCamera = isDebugCameraActive_ ? static_cast<Camera*>(debugFlyCamera_.get()) : camera.get();
 	if (activeCamera) {
@@ -959,6 +1029,8 @@ void GamePlayScene::Update() {
 		(!IsAttractDemoMode() || !attractDemoController_.IsClearCinematic()) &&
 		!bossClearSequence_.IsActive() && player_ && player_->IsDead()) {
 		gameOverSequence_.Start(player_->GetPosition());
+		// 撃墜したフレームに ESC が重なっても、ゲームオーバー演出を停止させない。
+		CancelPauseForCinematic();
 		MissionResultStore::Set({ MissionResultOutcome::Failed, defeatedEnemyCount_, player_->GetHP(), gameplayElapsedFrames_,
 			IsAttractDemoMode(), tutorialController_.IsEnabled() ? MissionStage::Tutorial : MissionStage::Standard });
 		player_->SetPresentationThrustersVisible(false);
@@ -976,6 +1048,8 @@ void GamePlayScene::Update() {
 
 	const bool isBossClearSequenceActive = bossClearSequence_.IsActive();
 	if (isBossClearSequenceActive) {
+		// ボス撃破と ESC が同フレームでも、墜落・爆散シーケンスを必ず進行させる。
+		CancelPauseForCinematic();
 		ParticleManager* particles = environmentRenderer_ ? environmentRenderer_->GetParticleManager() : nullptr;
 		if (bossClearSequence_.Update(
 				pauseMenuState_.IsPaused(),

@@ -348,6 +348,22 @@ void TitleScene::DrawBackgroundModeImGui() {
 		if (ImGui::Checkbox("Fold transition", &foldTransitionEnabled)) {
 			GameSettings::GetInstance().SetFoldTransitionEnabled(foldTransitionEnabled);
 		}
+
+		ImGui::Separator();
+		ImGui::Text("Audio (saved automatically)");
+		GameSettings& settings = GameSettings::GetInstance();
+		bool gameplayBgmEnabled = settings.IsGameplayBgmEnabled();
+		if (ImGui::Checkbox("Gameplay BGM", &gameplayBgmEnabled)) {
+			settings.SetGameplayBgmEnabled(gameplayBgmEnabled);
+		}
+		bool nonGameplayBgmEnabled = settings.IsNonGameplayBgmEnabled();
+		if (ImGui::Checkbox("Non-gameplay BGM", &nonGameplayBgmEnabled)) {
+			settings.SetNonGameplayBgmEnabled(nonGameplayBgmEnabled);
+		}
+		bool soundEffectsEnabled = settings.IsSoundEffectsEnabled();
+		if (ImGui::Checkbox("Sound effects", &soundEffectsEnabled)) {
+			settings.SetSoundEffectsEnabled(soundEffectsEnabled);
+		}
 		ImGui::TextDisabled("Saved automatically");
 	}
 	ImGui::End();
@@ -370,8 +386,10 @@ void TitleScene::BeginLaunchSequence() {
 		launchVoice_->Stop();
 		launchVoice_->DestroyVoice();
 	}
-	// 手持ち素材は出撃警報として使い、ブーストの視覚演出と同期させる。
-	launchVoice_ = AudioManager::GetInstance()->PlayWave(launchSoundData_);
+	// 手持ち素材は出撃警報として使う。SEが無効なら鳴らさない。
+	if (GameSettings::GetInstance().IsSoundEffectsEnabled()) {
+		launchVoice_ = AudioManager::GetInstance()->PlayWave(launchSoundData_);
+	}
 }
 
 void TitleScene::UpdateTitleFlight() {

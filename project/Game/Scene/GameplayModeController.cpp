@@ -161,6 +161,14 @@ void GameplayModeController::UpdateTitleBackgroundAutoFlight(Player& player, con
 	player.UpdatePresentation(position, { pitch, yaw, roll }, (std::max)(0.9f, horizontalSpeed * 7.0f), false);
 }
 
+void GameplayModeController::PrimeTitleBackgroundPlayer(
+	Player& player, const std::list<std::unique_ptr<Obstacle>>& obstacles) {
+	// scene.json の PLAYER 姿勢を一度描いてから自動飛行へ切り替えると、タイトルへ
+	// 戻る瞬間だけ機首が不自然に折れたように見える。最初の Draw より前に軌道へ置く。
+	titleBackgroundFrame_ = 0;
+	UpdateTitleBackgroundAutoFlight(player, obstacles);
+}
+
 void GameplayModeController::UpdatePlayerForMode(const GameplayPlayerModeContext& context) {
 	if (!context.player || !context.obstacles) {
 		return;
