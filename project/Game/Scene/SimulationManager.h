@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "AnimationEditorPanel.h"
 #include "engine/Camera/Camera.h"
 #include "Game/enemy/Enemy.h"
 #include "Game/Player/Player.h"
@@ -11,6 +12,9 @@
 #include <set>
 
 class GamePlayScene;
+struct SimulationActionContext;
+struct SimulationBossEditorContext;
+struct SimulationSceneJsonContext;
 
 class SimulationManager {
 public:
@@ -39,11 +43,11 @@ public:
 	void DrawAnimationEditorUI();
 	void RefreshActionAnimationsList();
 
-	const std::set<std::string>& GetSelectedBoneNames() const { return selectedBoneNames_; }
-	void AddSelectedBoneName(const std::string& name) { selectedBoneNames_.insert(name); }
-	void RemoveSelectedBoneName(const std::string& name) { selectedBoneNames_.erase(name); }
-	void ClearSelectedBones() { selectedBoneNames_.clear(); }
-	bool IsBoneSelected(const std::string& name) const { return selectedBoneNames_.count(name) > 0; }
+	const std::set<std::string>& GetSelectedBoneNames() const { return animationEditorPanel_.GetSelectedBoneNames(); }
+	void AddSelectedBoneName(const std::string& name) { animationEditorPanel_.AddSelectedBoneName(name); }
+	void RemoveSelectedBoneName(const std::string& name) { animationEditorPanel_.RemoveSelectedBoneName(name); }
+	void ClearSelectedBones() { animationEditorPanel_.ClearSelectedBones(); }
+	bool IsBoneSelected(const std::string& name) const { return animationEditorPanel_.IsBoneSelected(name); }
 	
 	void AddBoneRotationFromDrag(const std::string& boneName, float deltaX, float deltaY);
 	void AddBoneTranslationFromDrag(const std::string& boneName, float deltaX, float deltaY);
@@ -55,20 +59,11 @@ public:
 	void DeleteSelectedBonesKeyframes();
 
 private:
+	SimulationSceneJsonContext MakeSceneJsonContext() const;
+	SimulationActionContext MakeActionContext() const;
+	SimulationBossEditorContext MakeBossEditorContext() const;
+
 	GamePlayScene* scene_;
-
-	// アニメーション編集用状態
-	Animation customAnimation_;
-	char actionName_[128] = "Guard";
-	std::vector<std::string> availableActionAnimations_;
-	
-	std::set<std::string> selectedBoneNames_;
-	float currentFrameTime_ = 0.0f;
-	bool isAnimationPlaying_ = false;
-	bool isLooping_ = true;
-
-	std::vector<Animation> undoHistory_;
-	std::vector<Animation> redoHistory_;
-	bool isDragging_ = false; // ドラッグ状態の追跡
+	AnimationEditorPanel animationEditorPanel_;
 };
 

@@ -1,4 +1,6 @@
 #include "ParticleManager.h"
+#include "ParticleBurstEmitter.h"
+#include "ParticlePipelineBuilder.h"
 #include <cassert>
 #include "Logger.h"
 #include "engine/Resource/TextureManager.h"
@@ -11,17 +13,6 @@
 using namespace Microsoft::WRL;
 
 namespace {
-uint32_t ClampEmitCountToCapacity(const ParticleManager::ParticleGroup &group, uint32_t requestedCount) {
-	const size_t maxCount = static_cast<size_t>(group.kNumMaxInstance);
-	const size_t activeCount = group.particle.size();
-	if (activeCount >= maxCount) {
-		return 0;
-	}
-
-	const size_t availableCount = maxCount - activeCount;
-	return static_cast<uint32_t>((std::min)(static_cast<size_t>(requestedCount), availableCount));
-}
-
 constexpr bool kEnableGpuParticleSimulation = false;
 }
 
@@ -45,81 +36,6 @@ void ParticleManager::ReleaseParticleGroupDescriptors() {
 		release(group.freeListUavIndex);
 	}
 }
-
-IDxcBlob *CompileShader(
-	// CompilerするShaderファイルへのパス
-	const std::wstring &filePath,
-	// Compilerに使用するProfile
-	const wchar_t *profile,
-	// 初期化で生成したものを3つ
-	IDxcUtils *dxcUtils,
-	IDxcCompiler3 *dxcCompiler, // 変数名をわかりやすく変更
-	IDxcIncludeHandler *includeHandler) {
-	// 1. これからシェーダーをコンパイルする旨をログに出す
-	// Loggerクラスのインスタンス(logger)を使用
-	std::string message = StringUtility::ConvertString(std::format(L"Begin CompileShader, path:{}, profile:{}\n", filePath, profile));
-	logger.Log(message);
-
-	// 2. hlslファイルを読む
-	ComPtr<IDxcBlobEncoding> shaderSource = nullptr; // ComPtrに変更
-	HRESULT hr = dxcUtils->LoadFile(filePath.c_str(), nullptr, &shaderSource);
-	// 読めなかったら止める
-	assert(SUCCEEDED(hr));
-
-	// 3. 読み込んだファイルの内容を設定する
-	DxcBuffer shaderSourceBuffer;
-	shaderSourceBuffer.Ptr = shaderSource->GetBufferPointer();
-	shaderSourceBuffer.Size = shaderSource->GetBufferSize();
-	shaderSourceBuffer.Encoding = DXC_CP_UTF8;
-
-	LPCWSTR arguments[] = {
-		filePath.c_str(),          // コンパイル対象のhlslファイル名
-		L"-E", L"main",            // エントリーポイント
-		L"-T", profile,            // ShaderProfile
-		L"-Zi", L"-Qembed_debug",  // デバッグ情報
-		L"-Od",                    // 最適化なし
-		L"-Zpr",                   // 行優先
-	};
-
-	// 4. 実際にShaderをコンパイルする
-	ComPtr<IDxcResult> shaderResult = nullptr; // ComPtrに変更
-	hr = dxcCompiler->Compile(
-		&shaderSourceBuffer,
-		arguments,
-		_countof(arguments),
-		includeHandler,
-		IID_PPV_ARGS(&shaderResult)
-	);
-	// 致命的なエラーチェック
-	assert(SUCCEEDED(hr));
-
-	// 5. 警告・エラーが出てたらログに出して止める
-	ComPtr<IDxcBlobUtf8> shaderError = nullptr;
-	shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&shaderError), nullptr);
-
-	if (shaderError != nullptr && shaderError->GetStringLength() != 0) {
-		// エラー内容をログに出す
-		std::string errorMsg = shaderError->GetStringPointer();
-		logger.Log(errorMsg);
-		// 警告・エラーダメゼッタイ
-		assert(false);
-	}
-
-	// 6. コンパイル結果から実行用のバイナリ部分を取得
-	ComPtr<IDxcBlob> shaderBlob = nullptr;
-	hr = shaderResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
-	assert(SUCCEEDED(hr));
-
-	// 7. 成功したらログを出す
-	message = StringUtility::ConvertString(std::format(L"Compile Succeeded, path:{}, profile:{}\n", filePath, profile));
-	logger.Log(message);
-
-	// ComPtrを使っているので手動Releaseは不要です
-
-	// 実行用のバイナリを返却 (Detachして所有権を呼び出し元に移す)
-	return shaderBlob.Detach();
-}
-
 
 void ParticleManager::Initialize(DirectXCommon *dxCommon) {
 	// -------------------------------------------------------------
@@ -777,90 +693,10 @@ void ParticleManager::Emit(const std::string name, const Vector3 &position, uint
 	float scale, float scaleVariance,
 	float lifeTimeMin, float lifeTimeMax,
 	float posVariance) {
-	// 1. 登録済みのパーティクルグループを検索
-	if (particleGroups_.find(name) == particleGroups_.end()) {
-		return;
-	}
-
-	// グループの参照を取得
-	ParticleGroup &group = particleGroups_[name];
-	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
-	if (emitCount == 0) {
-		return;
-	}
-
-	// 2. ランダム生成器の準備
-	static std::random_device seed_gen;
-	static std::mt19937_64 engine(seed_gen());
-
-	// ランダムの分布設定
-	constexpr float kPi = 3.14159265f;
-	std::uniform_real_distribution<float> distZ(-1.0f, 1.0f);
-	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
-	std::uniform_real_distribution<float> distRotate(-3.14159265f, 3.14159265f);
-	std::uniform_real_distribution<float> distAngularSpeed(0.06f, 0.16f);
-	std::uniform_int_distribution<int> distSpinDirection(0, 1);
-	std::uniform_real_distribution<float> distScale(scale - scaleVariance, scale + scaleVariance);
-	std::uniform_real_distribution<float> distRadius(posVariance * 0.4f, posVariance);
-	std::uniform_real_distribution<float> distLife(lifeTimeMin, lifeTimeMax);
-	std::uniform_real_distribution<float> distSpeed(speed - speedVariance, speed + speedVariance);
-
-	// 3. 指定された数だけパーティクルを生成
-	for (uint32_t i = 0; i < emitCount; ++i) {
-		Particle newParticle{};
-
-		// ==========================================
-		// ■ Transform (位置・スケール・回転)
-		// ==========================================
-		// スケールを縦横同じにして「真円」にする
-		float randomScale = distScale(engine);
-		newParticle.initialScale = randomScale;
-		newParticle.finalScale = 0.0f;
-		newParticle.transform.scale = { randomScale, randomScale, 1.0f };
-
-		newParticle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
-		const float spinDirection = distSpinDirection(engine) == 0 ? -1.0f : 1.0f;
-		newParticle.angularVelocity = distAngularSpeed(engine) * spinDirection;
-
-		// 球面上の一様な方向を作り、初期位置と飛ぶ方向をそろえる
-		const float z = distZ(engine);
-		const float angle = distAngle(engine);
-		const float xyLength = std::sqrt(1.0f - z * z);
-		const Vector3 dir = {
-			xyLength * std::cos(angle),
-			xyLength * std::sin(angle),
-			z
-		};
-		const float spawnRadius = distRadius(engine);
-		newParticle.transform.translate = {
-			position.x + dir.x * spawnRadius,
-			position.y + dir.y * spawnRadius,
-			position.z + dir.z * spawnRadius
-		};
-
-		// ==========================================
-		// ■ Velocity (速度)
-		// ==========================================
-		// 粒ごとに少しスピードにばらつきを持たせる
-		float kSpeed = distSpeed(engine);
-		newParticle.velocity = {
-			dir.x * kSpeed,
-			dir.y * kSpeed,
-			dir.z * kSpeed
-		};
-
-		// ==========================================
-		// ■ Color (色) と Lifetime (寿命)
-		// ==========================================
-		// ★修正4：引数で受け取った色（オレンジなど）を適用する！
-		newParticle.color = color;
-
-		newParticle.lifeTime = distLife(engine);
-		newParticle.currentTime = 0.0f; // 経過時間は0からスタート
-
-		// リストに追加
-		group.particle.push_back(newParticle);
-	}
+	auto it = particleGroups_.find(name);
+	if (it == particleGroups_.end()) return;
+	ParticleBurstEmitter{}.Emit(it->second, position, count, color,
+		speed, speedVariance, scale, scaleVariance, lifeTimeMin, lifeTimeMax, posVariance);
 }
 
 void ParticleManager::EmitDirectionalBurst(const std::string name, const Vector3 &position, const Vector3 &direction,
@@ -869,157 +705,20 @@ void ParticleManager::EmitDirectionalBurst(const std::string name, const Vector3
 	float scale, float scaleVariance,
 	float lifeTimeMin, float lifeTimeMax,
 	float posVariance) {
-	if (particleGroups_.find(name) == particleGroups_.end()) {
-		return;
-	}
-
-	ParticleGroup &group = particleGroups_[name];
-	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
-	if (emitCount == 0) {
-		return;
-	}
-
-	const float directionLength = std::sqrt(
-		direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
-	if (directionLength <= 0.0001f) {
-		return;
-	}
-
-	const Vector3 forward = {
-		direction.x / directionLength,
-		direction.y / directionLength,
-		direction.z / directionLength,
-	};
-	const Vector3 referenceAxis = std::abs(forward.y) > 0.92f
-		? Vector3{ 1.0f, 0.0f, 0.0f }
-		: Vector3{ 0.0f, 1.0f, 0.0f };
-	Vector3 right = {
-		referenceAxis.y * forward.z - referenceAxis.z * forward.y,
-		referenceAxis.z * forward.x - referenceAxis.x * forward.z,
-		referenceAxis.x * forward.y - referenceAxis.y * forward.x,
-	};
-	const float rightLength = std::sqrt(right.x * right.x + right.y * right.y + right.z * right.z);
-	right = { right.x / rightLength, right.y / rightLength, right.z / rightLength };
-	const Vector3 up = {
-		forward.y * right.z - forward.z * right.y,
-		forward.z * right.x - forward.x * right.z,
-		forward.x * right.y - forward.y * right.x,
-	};
-
-	static std::random_device seedGenerator;
-	static std::mt19937_64 engine(seedGenerator());
-	constexpr float kPi = 3.14159265f;
-	const float clampedSpread = std::clamp(spreadRadians, 0.0f, 1.50f);
-	std::uniform_real_distribution<float> distCosTheta(std::cos(clampedSpread), 1.0f);
-	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
-	std::uniform_real_distribution<float> distSpeed(speed - speedVariance, speed + speedVariance);
-	std::uniform_real_distribution<float> distScale(scale - scaleVariance, scale + scaleVariance);
-	std::uniform_real_distribution<float> distLife(lifeTimeMin, lifeTimeMax);
-	std::uniform_real_distribution<float> distRadius(0.0f, posVariance);
-	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
-	std::uniform_real_distribution<float> distAngularSpeed(0.08f, 0.22f);
-	std::uniform_int_distribution<int> distSpinDirection(0, 1);
-
-	for (uint32_t i = 0; i < emitCount; ++i) {
-		const float cosTheta = distCosTheta(engine);
-		const float sinTheta = std::sqrt((std::max)(0.0f, 1.0f - cosTheta * cosTheta));
-		const float angle = distAngle(engine);
-		const Vector3 burstDirection = {
-			forward.x * cosTheta + right.x * std::cos(angle) * sinTheta + up.x * std::sin(angle) * sinTheta,
-			forward.y * cosTheta + right.y * std::cos(angle) * sinTheta + up.y * std::sin(angle) * sinTheta,
-			forward.z * cosTheta + right.z * std::cos(angle) * sinTheta + up.z * std::sin(angle) * sinTheta,
-		};
-
-		Particle particle{};
-		const float particleScale = (std::max)(0.0f, distScale(engine));
-		particle.initialScale = particleScale;
-		particle.finalScale = 0.0f;
-		particle.transform.scale = { particleScale, particleScale, 1.0f };
-		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
-		particle.angularVelocity = distAngularSpeed(engine) * (distSpinDirection(engine) == 0 ? -1.0f : 1.0f);
-
-		const float spawnRadius = distRadius(engine);
-		particle.transform.translate = {
-			position.x + burstDirection.x * spawnRadius,
-			position.y + burstDirection.y * spawnRadius,
-			position.z + burstDirection.z * spawnRadius,
-		};
-		const float particleSpeed = (std::max)(0.0f, distSpeed(engine));
-		particle.velocity = {
-			burstDirection.x * particleSpeed,
-			burstDirection.y * particleSpeed,
-			burstDirection.z * particleSpeed,
-		};
-		particle.color = color;
-		particle.lifeTime = (std::max)(0.01f, distLife(engine));
-		particle.currentTime = 0.0f;
-		group.particle.push_back(particle);
-	}
+	auto it = particleGroups_.find(name);
+	if (it == particleGroups_.end()) return;
+	ParticleBurstEmitter{}.EmitDirectionalBurst(it->second, position, direction, count, color, spreadRadians,
+		speed, speedVariance, scale, scaleVariance, lifeTimeMin, lifeTimeMax, posVariance);
 }
 
 void ParticleManager::EmitInwardBurst(const std::string name, const Vector3& position, uint32_t count,
 	const Vector4& color, float innerRadius, float outerRadius,
 	float speed, float speedVariance, float scale, float scaleVariance,
 	float lifeTimeMin, float lifeTimeMax) {
-	if (particleGroups_.find(name) == particleGroups_.end()) {
-		return;
-	}
-
-	ParticleGroup& group = particleGroups_[name];
-	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
-	if (emitCount == 0) {
-		return;
-	}
-
-	static std::random_device seedGenerator;
-	static std::mt19937_64 engine(seedGenerator());
-	constexpr float kPi = 3.14159265f;
-	const float minimumRadius = (std::max)(0.0f, (std::min)(innerRadius, outerRadius));
-	const float maximumRadius = (std::max)(minimumRadius, (std::max)(innerRadius, outerRadius));
-	std::uniform_real_distribution<float> distZ(-1.0f, 1.0f);
-	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
-	std::uniform_real_distribution<float> distRadius(minimumRadius, maximumRadius);
-	std::uniform_real_distribution<float> distSpeed((std::max)(0.0f, speed - speedVariance),
-		(std::max)(0.0f, speed + speedVariance));
-	std::uniform_real_distribution<float> distScale((std::max)(0.0f, scale - scaleVariance),
-		(std::max)(0.0f, scale + scaleVariance));
-	std::uniform_real_distribution<float> distLife((std::max)(0.01f, lifeTimeMin),
-		(std::max)((std::max)(0.01f, lifeTimeMin), lifeTimeMax));
-	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
-	std::uniform_real_distribution<float> distAngularSpeed(0.08f, 0.22f);
-	std::uniform_int_distribution<int> distSpinDirection(0, 1);
-
-	for (uint32_t i = 0; i < emitCount; ++i) {
-		const float z = distZ(engine);
-		const float angle = distAngle(engine);
-		const float xyLength = std::sqrt((std::max)(0.0f, 1.0f - z * z));
-		const Vector3 outwardDirection = {
-			xyLength * std::cos(angle), xyLength * std::sin(angle), z
-		};
-		const float spawnRadius = distRadius(engine);
-		const float particleScale = distScale(engine);
-		Particle particle{};
-		particle.initialScale = particleScale;
-		particle.finalScale = 0.0f;
-		particle.transform.scale = { particleScale, particleScale, 1.0f };
-		particle.transform.translate = {
-			position.x + outwardDirection.x * spawnRadius,
-			position.y + outwardDirection.y * spawnRadius,
-			position.z + outwardDirection.z * spawnRadius,
-		};
-		const float particleSpeed = distSpeed(engine);
-		particle.velocity = {
-			-outwardDirection.x * particleSpeed,
-			-outwardDirection.y * particleSpeed,
-			-outwardDirection.z * particleSpeed,
-		};
-		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
-		particle.angularVelocity = distAngularSpeed(engine) * (distSpinDirection(engine) == 0 ? -1.0f : 1.0f);
-		particle.color = color;
-		particle.lifeTime = distLife(engine);
-		particle.currentTime = 0.0f;
-		group.particle.push_back(particle);
-	}
+	auto it = particleGroups_.find(name);
+	if (it == particleGroups_.end()) return;
+	ParticleBurstEmitter{}.EmitInwardBurst(it->second, position, count, color, innerRadius, outerRadius,
+		speed, speedVariance, scale, scaleVariance, lifeTimeMin, lifeTimeMax);
 }
 
 void ParticleManager::EmitSmoke(const std::string& name, const Vector3& position, uint32_t count, const Vector4& color,
@@ -1027,111 +726,17 @@ void ParticleManager::EmitSmoke(const std::string& name, const Vector3& position
 	float riseSpeed, float spreadSpeed,
 	float lifeTimeMin, float lifeTimeMax,
 	float posVariance) {
-	if (particleGroups_.find(name) == particleGroups_.end()) {
-		return;
-	}
-
-	ParticleGroup& group = particleGroups_[name];
-	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
-	if (emitCount == 0) {
-		return;
-	}
-
-	static std::random_device seedGenerator;
-	static std::mt19937_64 engine(seedGenerator());
-	constexpr float kPi = 3.14159265f;
-	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
-	std::uniform_real_distribution<float> distSigned(-1.0f, 1.0f);
-	std::uniform_real_distribution<float> distLife(lifeTimeMin, lifeTimeMax);
-	std::uniform_real_distribution<float> distScaleJitter(0.85f, 1.20f);
-	std::uniform_real_distribution<float> distRadius(0.0f, posVariance);
-	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
-	std::uniform_real_distribution<float> distAngularSpeed(0.015f, 0.045f);
-
-	for (uint32_t i = 0; i < emitCount; ++i) {
-		Particle particle{};
-		const float jitter = distScaleJitter(engine);
-		particle.initialScale = (std::max)(0.05f, initialScale * jitter);
-		particle.finalScale = (std::max)(particle.initialScale, finalScale * jitter);
-		particle.transform.scale = { particle.initialScale, particle.initialScale, 1.0f };
-		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
-		particle.angularVelocity = distAngularSpeed(engine) * (distSigned(engine) < 0.0f ? -1.0f : 1.0f);
-
-		const float theta = distAngle(engine);
-		const float offsetR = distRadius(engine);
-		particle.transform.translate = {
-			position.x + std::cos(theta) * offsetR,
-			position.y + distSigned(engine) * offsetR * 0.4f,
-			position.z + std::sin(theta) * offsetR,
-		};
-		particle.velocity = {
-			distSigned(engine) * spreadSpeed,
-			riseSpeed * (0.75f + 0.5f * (distSigned(engine) * 0.5f + 0.5f)),
-			distSigned(engine) * spreadSpeed,
-		};
-		particle.color = color;
-		particle.lifeTime = (std::max)(0.05f, distLife(engine));
-		particle.currentTime = 0.0f;
-		group.particle.push_back(particle);
-	}
+	auto it = particleGroups_.find(name);
+	if (it == particleGroups_.end()) return;
+	ParticleBurstEmitter{}.EmitSmoke(it->second, position, count, color,
+		initialScale, finalScale, riseSpeed, spreadSpeed, lifeTimeMin, lifeTimeMax, posVariance);
 }
 
 void ParticleManager::EmitFireball(const std::string name, const Vector3 &position, uint32_t count,
 	const Vector4 &color, float initialScale, float finalScale, float lifeTime, float radius) {
-	if (particleGroups_.find(name) == particleGroups_.end()) {
-		return;
-	}
-
-	ParticleGroup &group = particleGroups_[name];
-	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
-	if (emitCount == 0) {
-		return;
-	}
-
-	static std::random_device seedGenerator;
-	static std::mt19937_64 engine(seedGenerator());
-
-	constexpr float kPi = 3.14159265f;
-	std::uniform_real_distribution<float> distZ(-1.0f, 1.0f);
-	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
-	std::uniform_real_distribution<float> distRadius(0.0f, radius);
-	std::uniform_real_distribution<float> distScale(0.85f, 1.15f);
-	std::uniform_real_distribution<float> distLife(0.9f, 1.1f);
-	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
-	std::uniform_real_distribution<float> distAngularSpeed(0.04f, 0.11f);
-	std::uniform_int_distribution<int> distSpinDirection(0, 1);
-
-	for (uint32_t i = 0; i < emitCount; ++i) {
-		const float z = distZ(engine);
-		const float angle = distAngle(engine);
-		const float xyLength = std::sqrt(1.0f - z * z);
-		const Vector3 dir = {
-			xyLength * std::cos(angle),
-			xyLength * std::sin(angle),
-			z
-		};
-		const float spawnRadius = distRadius(engine);
-		const float scaleFactor = distScale(engine);
-
-		Particle particle{};
-		particle.transform.translate = {
-			position.x + dir.x * spawnRadius,
-			position.y + dir.y * spawnRadius,
-			position.z + dir.z * spawnRadius
-		};
-		particle.velocity = { dir.x * 0.004f, dir.y * 0.004f, dir.z * 0.004f };
-		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
-		particle.angularVelocity =
-			distAngularSpeed(engine) * (distSpinDirection(engine) == 0 ? -1.0f : 1.0f);
-		particle.initialScale = initialScale * scaleFactor;
-		particle.finalScale = finalScale * scaleFactor;
-		particle.transform.scale = { particle.initialScale, particle.initialScale, 1.0f };
-		particle.color = color;
-		particle.lifeTime = lifeTime * distLife(engine);
-		particle.currentTime = 0.0f;
-
-		group.particle.push_back(particle);
-	}
+	auto it = particleGroups_.find(name);
+	if (it == particleGroups_.end()) return;
+	ParticleBurstEmitter{}.EmitFireball(it->second, position, count, color, initialScale, finalScale, lifeTime, radius);
 }
 
 void ParticleManager::EmitFlameToSmoke(const std::string& name, const Vector3& position, uint32_t count,
@@ -1140,414 +745,34 @@ void ParticleManager::EmitFlameToSmoke(const std::string& name, const Vector3& p
 	float speed, float speedVariance,
 	float lifeTimeMin, float lifeTimeMax,
 	float posVariance, float transitionStart) {
-	if (particleGroups_.find(name) == particleGroups_.end()) {
-		return;
-	}
-
-	ParticleGroup& group = particleGroups_[name];
-	const uint32_t emitCount = ClampEmitCountToCapacity(group, count);
-	if (emitCount == 0) {
-		return;
-	}
-
-	static std::random_device seedGenerator;
-	static std::mt19937_64 engine(seedGenerator());
-	constexpr float kPi = 3.14159265f;
-	std::uniform_real_distribution<float> distZ(-1.0f, 1.0f);
-	std::uniform_real_distribution<float> distAngle(0.0f, kPi * 2.0f);
-	std::uniform_real_distribution<float> distRadius(0.0f, (std::max)(0.0f, posVariance));
-	std::uniform_real_distribution<float> distScale(0.82f, 1.18f);
-	std::uniform_real_distribution<float> distSpeed((std::max)(0.0f, speed - speedVariance), (std::max)(0.0f, speed + speedVariance));
-	std::uniform_real_distribution<float> distLife((std::max)(0.05f, lifeTimeMin), (std::max)(0.05f, lifeTimeMax));
-	std::uniform_real_distribution<float> distRotate(-kPi, kPi);
-	std::uniform_real_distribution<float> distAngularSpeed(0.018f, 0.065f);
-
-	for (uint32_t i = 0; i < emitCount; ++i) {
-		const float z = distZ(engine);
-		const float angle = distAngle(engine);
-		const float xyLength = std::sqrt((std::max)(0.0f, 1.0f - z * z));
-		const Vector3 direction = { xyLength * std::cos(angle), z, xyLength * std::sin(angle) };
-		const float scaleFactor = distScale(engine);
-		const float spawnRadius = distRadius(engine);
-
-		Particle particle{};
-		particle.transform.translate = {
-			position.x + direction.x * spawnRadius,
-			position.y + direction.y * spawnRadius,
-			position.z + direction.z * spawnRadius,
-		};
-		const float particleSpeed = distSpeed(engine);
-		particle.velocity = {
-			direction.x * particleSpeed,
-			direction.y * particleSpeed + 0.012f,
-			direction.z * particleSpeed,
-		};
-		particle.transform.rotate = { 0.0f, 0.0f, distRotate(engine) };
-		particle.angularVelocity = distAngularSpeed(engine);
-		particle.initialScale = (std::max)(0.01f, initialScale * scaleFactor);
-		particle.finalScale = (std::max)(particle.initialScale, finalScale * scaleFactor);
-		particle.transform.scale = { particle.initialScale, particle.initialScale, 1.0f };
-		particle.color = flameColor;
-		particle.startColor = flameColor;
-		particle.endColor = smokeColor;
-		particle.colorTransitionStart = (std::clamp)(transitionStart, 0.0f, 0.95f);
-		particle.velocityDrag = 0.040f;
-		particle.upwardAcceleration = 0.0016f;
-		particle.useColorTransition = true;
-		particle.lifeTime = distLife(engine);
-		particle.currentTime = 0.0f;
-		group.particle.push_back(particle);
-	}
+	auto it = particleGroups_.find(name);
+	if (it == particleGroups_.end()) return;
+	ParticleBurstEmitter{}.EmitFlameToSmoke(it->second, position, count, flameColor, smokeColor,
+		initialScale, finalScale, speed, speedVariance, lifeTimeMin, lifeTimeMax, posVariance, transitionStart);
 }
 
 void ParticleManager::EmitCustom(const std::string& name, const CustomParticleParams& params) {
 	auto it = particleGroups_.find(name);
-	if (it == particleGroups_.end()) {
-		return;
-	}
-
-	ParticleGroup& group = it->second;
-	if (ClampEmitCountToCapacity(group, 1) == 0) {
-		return;
-	}
-
-	Particle particle{};
-	particle.transform.translate = params.position;
-	particle.transform.rotate = { 0.0f, 0.0f, params.initialRotation };
-	particle.initialScale = (std::max)(0.01f, params.initialScale);
-	particle.finalScale = (std::max)(0.0f, params.finalScale);
-	particle.transform.scale = { particle.initialScale, particle.initialScale, 1.0f };
-	particle.velocity = params.velocity;
-	particle.angularVelocity = params.angularVelocity;
-	particle.color = params.color;
-	particle.velocityDrag = (std::clamp)(params.velocityDrag, 0.0f, 0.95f);
-	particle.upwardAcceleration = params.upwardAcceleration;
-	particle.useColorTransition = false;
-	particle.lifeTime = (std::max)(0.01f, params.lifeTime);
-	particle.currentTime = 0.0f;
-	group.particle.push_back(particle);
+	if (it == particleGroups_.end()) return;
+	ParticleBurstEmitter{}.EmitCustom(it->second, params);
 }
 
 void ParticleManager::CreateRootSignature() {
-	HRESULT hr = S_FALSE;
-
-	D3D12_DESCRIPTOR_RANGE descriptorRange[1] = {};
-	descriptorRange[0].BaseShaderRegister = 0;
-	descriptorRange[0].NumDescriptors = 1;
-	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	D3D12_DESCRIPTOR_RANGE descriptorRangeForInstancing[1] = {};
-	descriptorRangeForInstancing[0].BaseShaderRegister = 0;
-	descriptorRangeForInstancing[0].NumDescriptors = 1;
-	descriptorRangeForInstancing[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	descriptorRangeForInstancing[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
-	descriptionRootSignature.Flags =
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
-	//RootParameter作成。複製設定できるので配列
-	D3D12_ROOT_PARAMETER rootParameters[5] = {};
-	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParameters[0].Descriptor.ShaderRegister = 0;           //レジスタ番号0とバインド
-
-	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-	rootParameters[1].DescriptorTable.pDescriptorRanges = descriptorRangeForInstancing;
-	rootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeForInstancing);
-
-	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRange;
-	rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
-
-	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParameters[3].Descriptor.ShaderRegister = 1;
-
-	// --- GPU Particle 追加分 ---
-	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-	rootParameters[4].Descriptor.ShaderRegister = 0; // b0
-	
-	descriptionRootSignature.pParameters = rootParameters;//ルートパラメータ配列のポインタ
-	descriptionRootSignature.NumParameters = _countof(rootParameters);//配列の長さ
-
-	D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
-	staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-	staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-	staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;
-	staticSamplers[0].ShaderRegister = 0;
-	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	descriptionRootSignature.pStaticSamplers = staticSamplers;
-	descriptionRootSignature.NumStaticSamplers = _countof(staticSamplers);
-
-	//シリアライズしてバイナルにする
-	Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob = nullptr;
-	Microsoft::WRL::ComPtr<ID3DBlob> errorBlob = nullptr;
-	hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-	if (FAILED(hr)) {
-		std::string errorMsg = reinterpret_cast<char *>(errorBlob->GetBufferPointer());
-		logger.Log(errorMsg);
-		assert(false);
-	}
-	hr = dxCommon_->GetDevice()->CreateRootSignature(
-		0,
-		signatureBlob->GetBufferPointer(),
-		signatureBlob->GetBufferSize(),
-		IID_PPV_ARGS(&rootSignature_)
-	);
-	assert(SUCCEEDED(hr));
+	ParticlePipelineBuilder::CreateGraphicsRootSignature(dxCommon_->GetDevice(), rootSignature_);
 }
 
 void ParticleManager::CreatePipelineState() {
-	HRESULT hr = S_FALSE;
-
-	//dxcCompilerを初期化
-	Microsoft::WRL::ComPtr<IDxcUtils> dxcUtils = nullptr;
-	Microsoft::WRL::ComPtr<IDxcCompiler3> dxcCompiler = nullptr;
-	hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
-	assert(SUCCEEDED(hr));
-	hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcCompiler));
-	assert(SUCCEEDED(hr));
-
-	//現時点でincludはしないが、includeに対応するための設定を行っておく
-	Microsoft::WRL::ComPtr<IDxcIncludeHandler> includeHandler = nullptr;
-	hr = dxcUtils->CreateDefaultIncludeHandler(&includeHandler);
-	assert(SUCCEEDED(hr));
-
-
-
-	//RasiterzerStateの設定
-	D3D12_RASTERIZER_DESC rasterizerDesc{};
-	//裏面を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
-	//三角形の中を塗りつぶす
-	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
-
-	//シェーダーのコンパイル
-	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob;
-	vertexShaderBlob = CompileShader(L"resources/shaders/Particle.VS.hlsl",
-		L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
-	assert(vertexShaderBlob != nullptr);
-
-	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob;
-	pixelShaderBlob = CompileShader(L"resources/shaders/Particle.PS.hlsl",
-		L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
-	assert(pixelShaderBlob != nullptr);
-
-
-	//----------------頂点レイアウト----------------
-	//InputLayoutの作成
-	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};
-	inputElementDescs[0].SemanticName = "POSITION";
-	inputElementDescs[0].SemanticIndex = 0;
-	inputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	inputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	inputElementDescs[1].SemanticName = "TEXCOORD";
-	inputElementDescs[1].SemanticIndex = 0;
-	inputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
-	inputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	inputElementDescs[2].SemanticName = "NORMAL";
-	inputElementDescs[2].SemanticIndex = 0;
-	inputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	inputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
-	inputLayoutDesc.pInputElementDescs = inputElementDescs;
-	inputLayoutDesc.NumElements = _countof(inputElementDescs);
-
-	//----------------パイプラインステートの設定----------------
-	Microsoft::WRL::ComPtr<ID3D12Device> device = nullptr;
-	Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob = nullptr;
-
-	//PSOの生成
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
-	//RootSignature
-	graphicsPipelineStateDesc.pRootSignature = rootSignature_.Get();
-	//InputLayout
-	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc;
-	//VertexShader
-	graphicsPipelineStateDesc.VS = { vertexShaderBlob->GetBufferPointer(),
-	vertexShaderBlob->GetBufferSize() };
-	//PixelShader
-	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(),
-	pixelShaderBlob->GetBufferSize() };
-
-	//BlendStateの設定
-	D3D12_BLEND_DESC blendDesc{};
-	// RGBのみ書き込む（アルファチャンネルへの書き込みを無効化し、ウィンドウ透過による黒ずみを防ぐ）
-	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_RED | D3D12_COLOR_WRITE_ENABLE_GREEN | D3D12_COLOR_WRITE_ENABLE_BLUE;
-	blendDesc.RenderTarget[0].BlendEnable = TRUE;
-	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
-
-	//BlendState
-	graphicsPipelineStateDesc.BlendState = blendDesc;
-	//RasterizerState
-	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc;
-	//書き込むRTVの情報
-	graphicsPipelineStateDesc.NumRenderTargets = 1;
-	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-
-	//利用するトポロジのタイプ。三角形
-	graphicsPipelineStateDesc.PrimitiveTopologyType =
-		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-
-	//どのように画面に色を打ち込むかの設定
-	graphicsPipelineStateDesc.SampleDesc.Count = 1;
-	graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
-
-	// 深度テストは有効にしつつ、半透明パーティクルのZ書き込みを無効化して四角い境界線を防ぐ
-	D3D12_DEPTH_STENCIL_DESC depthStencilDesc{};
-	depthStencilDesc.DepthEnable = TRUE;
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
-	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-
-	//----------------生成----------------
-	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState_));
-	if (FAILED(hr)) {
-		logger.Log("Failed to create GraphicsPipelineState for Particle.\n");
-		assert(false);
-	}
-
-	// CPUパーティクル用のパイプラインステートを作成
-	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderCPUBlob;
-	vertexShaderCPUBlob = CompileShader(L"resources/shaders/ParticleCPU.VS.hlsl",
-		L"vs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
-	assert(vertexShaderCPUBlob != nullptr);
-
-	graphicsPipelineStateDesc.VS = { vertexShaderCPUBlob->GetBufferPointer(),
-	vertexShaderCPUBlob->GetBufferSize() };
-
-	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineStateCPU_));
-	if (FAILED(hr)) {
-		logger.Log("Failed to create GraphicsPipelineState for CPU Particle.\n");
-		assert(false);
-	}
-
-	// 通常アルファブレンドのCPUパーティクル用パイプラインステート（黒煙等：Zテスト有効・Z書き込み無効 + ソフト煙PS）
-	Microsoft::WRL::ComPtr<IDxcBlob> smokePixelShaderBlob;
-	smokePixelShaderBlob = CompileShader(L"resources/shaders/SmokeParticle.PS.hlsl",
-		L"ps_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
-	assert(smokePixelShaderBlob != nullptr);
-	graphicsPipelineStateDesc.PS = { smokePixelShaderBlob->GetBufferPointer(),
-		smokePixelShaderBlob->GetBufferSize() };
-	graphicsPipelineStateDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-	hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineStateCPUAlpha_));
-	if (FAILED(hr)) {
-		logger.Log("Failed to create Alpha GraphicsPipelineState for CPU Particle.\n");
-		assert(false);
-	}
+	ParticlePipelineBuilder::CreateGraphicsPipelineStates(
+		dxCommon_->GetDevice(), rootSignature_.Get(),
+		graphicsPipelineState_, graphicsPipelineStateCPU_, graphicsPipelineStateCPUAlpha_);
 }
 
 void ParticleManager::CreateComputeRootSignature() {
-	D3D12_DESCRIPTOR_RANGE descriptorRangeU0[1] = {};
-	descriptorRangeU0[0].BaseShaderRegister = 0;
-	descriptorRangeU0[0].NumDescriptors = 1;
-	descriptorRangeU0[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-	descriptorRangeU0[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	D3D12_DESCRIPTOR_RANGE descriptorRangeU1[1] = {};
-	descriptorRangeU1[0].BaseShaderRegister = 1;
-	descriptorRangeU1[0].NumDescriptors = 1;
-	descriptorRangeU1[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-	descriptorRangeU1[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	D3D12_DESCRIPTOR_RANGE descriptorRangeU2[1] = {};
-	descriptorRangeU2[0].BaseShaderRegister = 2;
-	descriptorRangeU2[0].NumDescriptors = 1;
-	descriptorRangeU2[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-	descriptorRangeU2[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	D3D12_ROOT_PARAMETER rootParameters[5] = {};
-	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	rootParameters[0].DescriptorTable.pDescriptorRanges = descriptorRangeU0;
-	rootParameters[0].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeU0);
-
-	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	rootParameters[1].DescriptorTable.pDescriptorRanges = descriptorRangeU1;
-	rootParameters[1].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeU1);
-
-	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRangeU2;
-	rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeU2);
-
-	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	rootParameters[3].Descriptor.ShaderRegister = 0;
-
-	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	rootParameters[4].Descriptor.ShaderRegister = 1;
-
-	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
-	descriptionRootSignature.pParameters = rootParameters;
-	descriptionRootSignature.NumParameters = _countof(rootParameters);
-
-	ComPtr<ID3DBlob> signatureBlob = nullptr;
-	ComPtr<ID3DBlob> errorBlob = nullptr;
-	HRESULT hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-	if (FAILED(hr)) {
-		logger.Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
-		assert(false);
-	}
-	hr = dxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&computeRootSignature_));
-	assert(SUCCEEDED(hr));
+	ParticlePipelineBuilder::CreateComputeRootSignature(dxCommon_->GetDevice(), computeRootSignature_);
 }
 
 void ParticleManager::CreateComputePipelineState() {
-	ComPtr<IDxcUtils> dxcUtils = nullptr;
-	ComPtr<IDxcCompiler3> dxcCompiler = nullptr;
-	HRESULT hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
-	assert(SUCCEEDED(hr));
-	hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcCompiler));
-	assert(SUCCEEDED(hr));
-
-	ComPtr<IDxcIncludeHandler> includeHandler = nullptr;
-	hr = dxcUtils->CreateDefaultIncludeHandler(&includeHandler);
-	assert(SUCCEEDED(hr));
-
-	ComPtr<IDxcBlob> computeShaderInitBlob = CompileShader(L"resources/shaders/InitializeParticle.CS.hlsl", L"cs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
-	assert(computeShaderInitBlob != nullptr);
-
-	D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateInitDesc{};
-	computePipelineStateInitDesc.pRootSignature = computeRootSignature_.Get();
-	computePipelineStateInitDesc.CS = { computeShaderInitBlob->GetBufferPointer(), computeShaderInitBlob->GetBufferSize() };
-
-	hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateInitDesc, IID_PPV_ARGS(&computePipelineStateInit_));
-	assert(SUCCEEDED(hr));
-
-	ComPtr<IDxcBlob> computeShaderEmitBlob = CompileShader(L"resources/shaders/EmitParticle.CS.hlsl", L"cs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
-	assert(computeShaderEmitBlob != nullptr);
-
-	D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateEmitDesc{};
-	computePipelineStateEmitDesc.pRootSignature = computeRootSignature_.Get();
-	computePipelineStateEmitDesc.CS = { computeShaderEmitBlob->GetBufferPointer(), computeShaderEmitBlob->GetBufferSize() };
-
-	hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateEmitDesc, IID_PPV_ARGS(&computePipelineStateEmit_));
-	assert(SUCCEEDED(hr));
-
-	ComPtr<IDxcBlob> computeShaderUpdateBlob = CompileShader(L"resources/shaders/UpdateParticle.CS.hlsl", L"cs_6_0", dxcUtils.Get(), dxcCompiler.Get(), includeHandler.Get());
-	assert(computeShaderUpdateBlob != nullptr);
-
-	D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateUpdateDesc{};
-	computePipelineStateUpdateDesc.pRootSignature = computeRootSignature_.Get();
-	computePipelineStateUpdateDesc.CS = { computeShaderUpdateBlob->GetBufferPointer(), computeShaderUpdateBlob->GetBufferSize() };
-
-	hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateUpdateDesc, IID_PPV_ARGS(&computePipelineStateUpdate_));
-	assert(SUCCEEDED(hr));
+	ParticlePipelineBuilder::CreateComputePipelineStates(
+		dxCommon_->GetDevice(), computeRootSignature_.Get(),
+		computePipelineStateInit_, computePipelineStateEmit_, computePipelineStateUpdate_);
 }

@@ -54,6 +54,10 @@ public:
     bool IsMeleeActive() const override { return isMeleeActive_; }
 
 private:
+    friend class GroundEnemyDestructionController;
+    friend class GroundEnemyMovementController;
+    friend class GroundEnemyPoseController;
+
     void UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *bulletManager);
     void UpdateLocomotionPose();
     void UpdateTerrainPose(const std::list<std::unique_ptr<Obstacle>> &obstacles);

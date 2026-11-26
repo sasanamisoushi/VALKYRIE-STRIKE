@@ -1,4 +1,7 @@
 #include "Boss.h"
+#include "BossCinematicDebrisController.h"
+#include "BossSideShieldController.h"
+#include "BossTurretController.h"
 #include "3D/ModelManager.h"
 #include "3D/Object3dCommon.h"
 #include "Game/enemy/EnemyBulletManager.h"
@@ -27,22 +30,6 @@ Quaternion MakeEulerQuaternion(const Vector3& euler) {
     return MyMath::Normalize(MyMath::Multiply(MyMath::Multiply(qx, qy), qz));
 }
 
-// 行ベクトル規約 (v * R(a * b) = v * R(b) * R(a)) に合わせ、
-// 砲身ローカルのピッチ回転を先に適用し、その後にヨー回転を適用する。
-Quaternion MakePitchYawQuaternion(float pitch, float yaw) {
-    const Quaternion qx = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, pitch);
-    const Quaternion qy = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, yaw);
-    return MyMath::Normalize(MyMath::Multiply(qy, qx));
-}
-
-// 砲身が砲台の旋回支点側を向いているときは、弾の向きを勝手に曲げず発射そのものを止める。
-// 艦体中心では判定しないので、艦首・艦尾に正しく配置された砲身は発射できる。
-bool IsMuzzleFacingAwayFromPivot(const Vector3& pivotPosition, const Vector3& muzzlePosition,
-    const Vector3& barrelDirection) {
-    const Vector3 outward = NormalizeVector(SubtractVector(muzzlePosition, pivotPosition));
-    return DotVector(barrelDirection, outward) > 0.10f;
-}
-
 // Boss1 の全長約8.5mを、プレイヤーを大きく上回る戦艦サイズまで拡大する。
 constexpr Vector3 kBossScale = { 1.85f, 1.55f, 1.85f };
 constexpr float kBossSidewaysYaw = 1.57079632679f; // 90 degrees
@@ -54,40 +41,12 @@ constexpr std::array<Vector3, 2> kSideShieldPlaneCenters = {
     Vector3{ 2.5535f, 3.5352f, 0.0243f },
     Vector3{ -2.5535f, 3.5352f, 0.0243f },
 };
-constexpr float kSideShieldHeight = 5.1700f;
-constexpr float kSideShieldChordLength = 7.3200f;
-// 90度の弧の弦長を平面の横幅と一致させる。
-constexpr float kSideShieldArcRadius = kSideShieldChordLength / 1.41421356f;
-constexpr float kSideShieldArcHalfAngle = 45.0f;
-constexpr float kSideShieldAnchorOffset = 0.0800f;
-constexpr float kSideShieldShellThickness = 0.18f;
-constexpr int kSideShieldArcSubdivisions = 16;
-constexpr int kSideShieldChargingFrames = 48;
-constexpr int kSideShieldDeployFrames = 72;
-constexpr int kSideShieldActiveFrames = 300;
-constexpr int kSideShieldWarningFrames = 60;
-constexpr int kSideShieldCooldownFrames = 420;
 constexpr float kSideShieldGeneratorLockOnRadius = 3.85f;
-constexpr char kSideShieldTexturePath[] = "resources/boss_hex_shield_blue.png";
-constexpr std::array<const char*, 4> kSideShieldModels = {
-    "BossSideHexShieldOuterLeft", "BossSideHexShieldOuterRight",
-    "BossSideHexShieldInnerLeft", "BossSideHexShieldInnerRight",
-};
-
-float SmoothStep01(float value) {
-    value = std::clamp(value, 0.0f, 1.0f);
-    return value * value * (3.0f - 2.0f * value);
-}
 
 // OBJ内の実オブジェクト順を基準にする。側面の長い板（24/25, 28）は
 // シールド発生装置として別Object3dで管理するため船体から除外する。
 // 24 と 25 は同位置に重複しているため、24だけを発生装置モデルとして使用する。
 constexpr char kBossBodyModel[] = "Boss1/Boss1.obj#exclude=0,2-13,19-20,22,24-25,28-30";
-constexpr std::array<const char*, Boss::kSideShieldGeneratorCount> kSideShieldGeneratorModels = {
-    // OBJ ローダーは X 軸を反転するため、ゲーム座標 +X 側（face 0）は OBJ の group 28。
-    "Boss1/Boss1.obj#groups=28",
-    "Boss1/Boss1.obj#groups=24",
-};
 // 通常時は上記の船体モデルを一体で描画する。撃破時だけは、砲台以外の装甲・甲板も
 // 飛ばせるよう、同じOBJグループを重複なしの8ブロックへ分割して使用する。
 constexpr std::array<const char*, 8> kCinematicHullDebrisModels = {
@@ -125,67 +84,13 @@ constexpr std::array<const char*, 3> kForwardTurretModels = {
     "Boss1/Boss1.obj#groups=3;pivot=1.33,3.28,3.57",
 };
 
-struct WeaponMount {
-    Vector3 pivot;
-    std::array<Vector3, 2> muzzles;
-    std::array<Vector3, 2> barrelAxes = { Vector3{ 0.0f, 0.0f, 1.0f }, Vector3{ 0.0f, 0.0f, 1.0f } };
-    float modelPitchOffset = 0.0f;
-};
-
-// OBJ ローダーがX軸を反転するため、ここではゲーム座標へ変換済みの位置を使う。
-constexpr std::array<WeaponMount, 4> kMainWeaponMounts = {
-    WeaponMount{ Vector3{ -1.73f, 3.85f, -2.62f }, std::array<Vector3, 2>{ Vector3{ -1.41f, 4.30f, -0.48f }, Vector3{ -2.10f, 4.30f, -0.48f } } },
-    WeaponMount{ Vector3{  1.83f, 3.85f, -2.62f }, std::array<Vector3, 2>{ Vector3{  1.47f, 4.30f, -0.48f }, Vector3{  2.15f, 4.30f, -0.48f } } },
-    WeaponMount{ Vector3{  0.04f, 2.38f,  2.26f }, std::array<Vector3, 2>{ Vector3{ -0.38f, 2.07f,  4.60f }, Vector3{  0.31f, 2.07f,  4.60f } } },
-    // 選択されている上部ミニ連装砲。左右の砲身は外上方へ開く形なので、
-    // 一律の前方(+Z)ではなくOBJの実際の砲身軸をそれぞれ使う。
-    WeaponMount{ Vector3{  0.02f, 4.45f, -0.76f },
-        std::array<Vector3, 2>{ Vector3{ -0.89f, 4.89f, -0.78f }, Vector3{  0.93f, 4.89f, -0.78f } },
-        std::array<Vector3, 2>{ Vector3{ -0.634f, 0.773f, 0.0f }, Vector3{ 0.634f, 0.773f, 0.0f } } },
-};
-// 上部ミニ連装砲の各砲身のヒンジ。砲身だけをここで上下へ回す。
-constexpr std::array<Vector3, 2> kMiniTurretBarrelPivots = {
-    Vector3{ -0.72f, 4.34f, -0.78f }, Vector3{ 0.70f, 4.34f, -0.78f },
-};
-constexpr std::array<Vector3, 2> kMiniTurretBasePivots = {
-    Vector3{ -0.59f, 4.30f, -0.76f }, Vector3{ 0.58f, 4.30f, -0.76f },
-};
-constexpr std::array<float, 3> kMainTurretBaseYaws = {
-    0.0f, 0.0f, 0.0f,
-};
-// 左右の大型砲は外側を向く90度を基準にし、艦体側を通らない半円だけを使う。
-// エンジンのY回転はBlenderのZ回転に対応する。
-constexpr std::array<float, 3> kMainTurretYawMinimums = {
-    -1.57079632679f, -1.57079632679f, -1.57079632679f,
-};
-constexpr std::array<float, 3> kMainTurretYawMaximums = {
-    1.57079632679f, 1.57079632679f, 1.57079632679f,
-};
-constexpr std::array<float, 2> kMiniTurretBaseYaws = {
-    0.0f, 0.0f,
-};
-constexpr WeaponMount kMachineGunMount = WeaponMount{
-    Vector3{ 0.01f, 4.70f, 0.90f }, std::array<Vector3, 2>{ Vector3{ 0.29f, 5.22f, 1.78f }, Vector3{ -0.28f, 5.22f, 1.78f } }
-};
-
-struct ForwardWeaponMount {
-    Vector3 pivot;
-    Vector3 muzzle;
-    float hitRadius;
-};
-
-constexpr std::array<ForwardWeaponMount, 3> kForwardWeaponMounts = {
-    ForwardWeaponMount{ Vector3{ 0.02f, 4.42f, 3.23f }, Vector3{ 0.02f, 4.55f, 4.20f }, 1.00f },
-    ForwardWeaponMount{ Vector3{ -1.31f, 3.28f, 3.57f }, Vector3{ -1.31f, 3.28f, 4.92f }, 0.82f },
-    ForwardWeaponMount{ Vector3{ 1.33f, 3.28f, 3.57f }, Vector3{ 1.33f, 3.28f, 4.92f }, 0.82f },
-};
 constexpr int kTurretMaxHP = 12;
 
 // ロックオン、被弾判定、描画・発射停止で共有する砲台番号。
 constexpr size_t kForwardTurretFirst = 0;
-constexpr size_t kMainTurretFirst = kForwardTurretFirst + kForwardWeaponMounts.size();
-constexpr size_t kMiniTurretFirst = kMainTurretFirst + kMainWeaponMounts.size() - 1;
-constexpr size_t kMachineGunTurretIndex = kMiniTurretFirst + kMiniTurretBarrelPivots.size();
+constexpr size_t kMainTurretFirst = 3;
+constexpr size_t kMiniTurretFirst = 6;
+constexpr size_t kMachineGunTurretIndex = 8;
 
 // 艦尾の中央・左・右パネルにある2列×2段の穴の中心。
 // 順番は中央4基、左パネル4基、右パネル4基。どの炎も枠の内側から出る。
@@ -413,91 +318,15 @@ Vector3 Boss::LocalPointToWorld(const Vector3 &localPoint) const {
 }
 
 void Boss::FireMachineGun(const Vector3 &playerPos, EnemyBulletManager *bulletManager) {
-    if (!bulletManager || !IsTurretAlive(kMachineGunTurretIndex)) return;
-    (void)playerPos;
-    const float pitch = kMachineGunMount.modelPitchOffset;
-    const Vector3 pivotPosition = LocalPointToWorld(kMachineGunMount.pivot);
-    for (const Vector3& localMuzzle : kMachineGunMount.muzzles) {
-        const Vector3 rotatedMuzzle = AddVector(kMachineGunMount.pivot,
-            RotatePitchYaw(SubtractVector(localMuzzle, kMachineGunMount.pivot), pitch, turretYaw_));
-        const Vector3 muzzlePosition = AddVector(position_, RotatePitchYaw({
-            rotatedMuzzle.x * kBossScale.x, rotatedMuzzle.y * kBossScale.y, rotatedMuzzle.z * kBossScale.z
-        }, 0.0f, rotation_.y));
-        const Vector3 localDirection = RotatePitchYaw(kMachineGunMount.barrelAxes[0], pitch, turretYaw_);
-        const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, rotation_.y);
-        if (!IsMuzzleFacingAwayFromPivot(pivotPosition, muzzlePosition, direction)) continue;
-        bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.70f));
-    }
+    BossTurretController{}.FireMachineGun(*this, playerPos, bulletManager);
 }
 
 void Boss::FireMainBeam(const Vector3 &playerPos, EnemyBulletManager *bulletManager, size_t turretIndex) {
-    if (!bulletManager || turretIndex >= kMainWeaponMounts.size()) return;
-    if (turretIndex < mainTurrets_.size() && !IsTurretAlive(kMainTurretFirst + turretIndex)) return;
-    (void)playerPos;
-    const WeaponMount& mount = kMainWeaponMounts[turretIndex];
-    // 主砲はヨーだけ。上部ミニ連装砲は台座ヨー + 砲身ピッチの二段旋回。
-    for (size_t muzzleIndex = 0; muzzleIndex < mount.muzzles.size(); ++muzzleIndex) {
-        if (turretIndex == mainTurrets_.size() && !IsTurretAlive(kMiniTurretFirst + muzzleIndex)) continue;
-        const Vector3& localMuzzle = mount.muzzles[muzzleIndex];
-        Vector3 rotatedMuzzle{};
-        Vector3 pivotPosition{};
-        float pitch = mount.modelPitchOffset;
-        float yaw = turretIndex < mainTurretYaws_.size()
-            ? kMainTurretBaseYaws[turretIndex] + mainTurretYaws_[turretIndex]
-            : turretYaw_;
-        if (turretIndex == 3) {
-            pitch = miniTurretPitches_[muzzleIndex];
-            yaw = kMiniTurretBaseYaws[muzzleIndex] + miniTurretYaws_[muzzleIndex];
-            const Vector3& barrelPivot = kMiniTurretBarrelPivots[muzzleIndex];
-            const Vector3& basePivot = kMiniTurretBasePivots[muzzleIndex];
-            // 台座は横旋回のみ、砲身は自身のヒンジを中心に上下旋回する。
-            const Vector3 rotatedBarrelPivot = AddVector(basePivot,
-                RotatePitchYaw(SubtractVector(barrelPivot, basePivot), 0.0f, yaw));
-            rotatedMuzzle = AddVector(rotatedBarrelPivot,
-                RotatePitchYaw(SubtractVector(localMuzzle, barrelPivot), pitch, yaw));
-            pivotPosition = AddVector(position_, RotatePitchYaw({
-                rotatedBarrelPivot.x * kBossScale.x, rotatedBarrelPivot.y * kBossScale.y,
-                rotatedBarrelPivot.z * kBossScale.z
-            }, 0.0f, rotation_.y));
-        } else {
-            rotatedMuzzle = AddVector(mount.pivot,
-                RotatePitchYaw(SubtractVector(localMuzzle, mount.pivot), pitch, yaw));
-            pivotPosition = LocalPointToWorld(mount.pivot);
-        }
-        const Vector3 muzzlePosition = AddVector(position_, RotatePitchYaw({
-            rotatedMuzzle.x * kBossScale.x, rotatedMuzzle.y * kBossScale.y, rotatedMuzzle.z * kBossScale.z
-        }, 0.0f, rotation_.y));
-        const Vector3 localDirection = RotatePitchYaw(mount.barrelAxes[muzzleIndex], pitch, yaw);
-        const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, rotation_.y);
-        if (!IsMuzzleFacingAwayFromPivot(pivotPosition, muzzlePosition, direction)) continue;
-        if (turretIndex == 3) {
-            bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.88f));
-        } else {
-            // 巨大なビーム用の板ポリゴンはスラスターと見分けが付きにくく、
-            // 停止中に艦体から離れたように見えるため、主砲も通常弾として描画する。
-            bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.92f));
-        }
-    }
+    BossTurretController{}.FireMainBeam(*this, playerPos, bulletManager, turretIndex);
 }
 
 void Boss::FireForwardTurret(const Vector3 &playerPos, EnemyBulletManager *bulletManager, size_t turretIndex) {
-    if (!bulletManager || turretIndex >= kForwardWeaponMounts.size() ||
-        !IsTurretAlive(kForwardTurretFirst + turretIndex)) return;
-    (void)playerPos;
-
-    const ForwardWeaponMount& mount = kForwardWeaponMounts[turretIndex];
-    // 画像の左右砲台（1, 2）は艦体に対する横向きを固定し、上下だけを回転する。
-    // 中央砲台（0）は横回転だけで追尾する。
-    const float yaw = turretIndex > 0 ? 0.0f : turretYaw_;
-    const float pitch = turretIndex > 0 ? turretPitch_ : 0.0f;
-    const Vector3 rotatedMuzzle = AddVector(mount.pivot,
-        RotatePitchYaw(SubtractVector(mount.muzzle, mount.pivot), pitch, yaw));
-    const Vector3 muzzlePosition = LocalPointToWorld(rotatedMuzzle);
-    const Vector3 pivotPosition = LocalPointToWorld(mount.pivot);
-    const Vector3 localDirection = RotatePitchYaw({ 0.0f, 0.0f, 1.0f }, pitch, yaw);
-    const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, rotation_.y);
-    if (!IsMuzzleFacingAwayFromPivot(pivotPosition, muzzlePosition, direction)) return;
-    bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.70f));
+    BossTurretController{}.FireForwardTurret(*this, playerPos, bulletManager, turretIndex);
 }
 
 void Boss::TakeDamageAt(int damage, const Vector3 &hitPosition, const Vector3 &hitDirection, float impactRadius) {
@@ -654,52 +483,15 @@ int Boss::GetLockOnPartMaxHP(size_t partIndex) const {
 }
 
 bool Boss::ApplySideShieldGeneratorDamage(size_t face, int damage) {
-    if (!IsSideShieldGeneratorVulnerable(face) || damage <= 0) return false;
-    sideShieldGeneratorHP_[face] = (std::max)(0, sideShieldGeneratorHP_[face] - damage);
-    sideShieldGeneratorDestroyed_[face] = sideShieldGeneratorHP_[face] == 0;
-    return true;
+    return BossSideShieldController{}.ApplyGeneratorDamage(*this, face, damage);
 }
 
 bool Boss::GetActiveSideShieldImpact(const Vector3& hitPosition, float impactRadius, Vector3& outNormal) const {
-	size_t face = 0;
-	if (!TryGetSideShieldFaceAtWorldPosition(hitPosition, impactRadius, face) ||
-		!IsSideShieldProtectingFace(face)) {
-		return false;
-	}
-
-	const float outwardDirection = face == 0 ? 1.0f : -1.0f;
-	outNormal = MyMath::RotateVector({ outwardDirection, 0.0f, 0.0f }, MakeEulerQuaternion(rotation_));
-	return true;
+    return BossSideShieldController{}.GetActiveImpact(*this, hitPosition, impactRadius, outNormal);
 }
 
 bool Boss::TryGetSideShieldFaceAtWorldPosition(const Vector3& worldPosition, float radius, size_t& outFace) const {
-    const Vector3 relative = SubtractVector(worldPosition, position_);
-    const Quaternion hull = MakeEulerQuaternion(rotation_);
-    const Quaternion inverseHull = { -hull.x, -hull.y, -hull.z, hull.w };
-    const Vector3 scaledLocal = MyMath::RotateVector(relative, inverseHull);
-    const Vector3 local = {
-        scaledLocal.x / kBossScale.x,
-        scaledLocal.y / kBossScale.y,
-        scaledLocal.z / kBossScale.z,
-    };
-    const float localRadius = radius / (std::min)(kBossScale.x, (std::min)(kBossScale.y, kBossScale.z));
-
-    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
-        const Vector3& center = kSideShieldPlaneCenters[face];
-        const float outwardDirection = face == 0 ? 1.0f : -1.0f;
-        const float outwardDistance = (local.x - center.x) * outwardDirection;
-        const bool withinHeight = std::abs(local.y - center.y) <= kSideShieldHeight * 0.55f + localRadius;
-        const bool withinLength = std::abs(local.z - center.z) <= kSideShieldChordLength * 0.55f + localRadius;
-        // 弾はシールドを通過した後に船体側の OBB で着弾位置が確定する。
-        // その位置でも防御を判定できるよう、発生装置から船体表面までを側面防御領域に含める。
-        const bool withinArcDepth = outwardDistance >= -2.10f - localRadius &&
-            outwardDistance <= kSideShieldArcRadius * 0.42f + localRadius;
-        if (withinHeight && withinLength && withinArcDepth) {
-            outFace = face;
-            return true;
-        }
-    }
-    return false;
+    return BossSideShieldController{}.TryGetFaceAtWorldPosition(*this, worldPosition, radius, outFace);
 }
 
 Vector3 Boss::GetBodyLockOnPosition() const {
@@ -754,37 +546,7 @@ void Boss::SetTuning(const Tuning& tuning) {
 }
 
 void Boss::SetCinematicWreckPresentation(float burnRatio) {
-    cinematicWreckPresentation_ = true;
-    const float burn = std::clamp(burnRatio, 0.0f, 1.0f);
-    const Vector4 hullColor = {
-        0.20f * (1.0f - burn) + 0.025f * burn,
-        0.33f * (1.0f - burn) + 0.018f * burn,
-        0.39f * (1.0f - burn) + 0.014f * burn,
-        1.0f,
-    };
-    const Vector4 wreckPartColor = {
-        0.29f * (1.0f - burn) + 0.035f * burn,
-        0.43f * (1.0f - burn) + 0.022f * burn,
-        0.48f * (1.0f - burn) + 0.018f * burn,
-        1.0f,
-    };
-    if (object_ && object_->GetModel()) object_->GetModel()->SetColor(hullColor);
-    for (const auto& hullPart : cinematicHullDebris_) {
-        if (hullPart && hullPart->GetModel()) hullPart->GetModel()->SetColor(hullColor);
-    }
-    for (const auto& turret : mainTurrets_) {
-        if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
-    }
-    for (const auto& turret : miniTurretBases_) {
-        if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
-    }
-    for (const auto& barrel : miniTurretBarrels_) {
-        if (barrel && barrel->GetModel()) barrel->GetModel()->SetColor(wreckPartColor);
-    }
-    if (machineGunTurret_ && machineGunTurret_->GetModel()) machineGunTurret_->GetModel()->SetColor(wreckPartColor);
-    for (const auto& turret : forwardTurrets_) {
-        if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
-    }
+    BossCinematicDebrisController{}.SetWreckPresentation(*this, burnRatio);
 }
 
 Vector3 Boss::GetRearThrusterWorldPosition(size_t thrusterIndex) const {
@@ -793,232 +555,31 @@ Vector3 Boss::GetRearThrusterWorldPosition(size_t thrusterIndex) const {
 }
 
 Vector3 Boss::GetTurretPivot(size_t turretIndex) const {
-    if (turretIndex < kForwardWeaponMounts.size()) return kForwardWeaponMounts[turretIndex].pivot;
-    if (turretIndex < kMiniTurretFirst) return kMainWeaponMounts[turretIndex - kMainTurretFirst].pivot;
-    if (turretIndex < kMachineGunTurretIndex) return kMiniTurretBasePivots[turretIndex - kMiniTurretFirst];
-    if (turretIndex == kMachineGunTurretIndex) return kMachineGunMount.pivot;
-    return { 0.0f, 0.0f, 0.0f };
+    return BossTurretController{}.GetTurretPivot(turretIndex);
 }
 
 float Boss::GetTurretHitRadius(size_t turretIndex) const {
-    if (turretIndex < kForwardWeaponMounts.size()) return kForwardWeaponMounts[turretIndex].hitRadius;
-    if (turretIndex < kMiniTurretFirst) return 0.95f;
-    if (turretIndex < kMachineGunTurretIndex) return 0.58f;
-    if (turretIndex == kMachineGunTurretIndex) return 0.72f;
-    return 0.0f;
+    return BossTurretController{}.GetTurretHitRadius(turretIndex);
 }
 
 void Boss::UpdateTurretAim(const Vector3& playerPos) {
-    const Vector3 direction = DirectionTo(playerPos);
-    const float horizontalLength = std::sqrt(direction.x * direction.x + direction.z * direction.z);
-    if (horizontalLength <= 0.0001f) return;
-
-    const float requestedYaw = tuning_.mainTurretYawTracking
-        ? WrapAngle(std::atan2(direction.x, direction.z) - rotation_.y) : 0.0f;
-    const float requestedPitch = tuning_.mainTurretPitchTracking
-        ? std::clamp(-std::atan2(direction.y, horizontalLength), -tuning_.mainTurretMaxPitch, tuning_.mainTurretMaxPitch) : 0.0f;
-    constexpr float kQuarterPi = 0.78539816339f;
-    // ミニ連装砲は初期姿勢が上向き。+90度を基準にすることで砲身を前方へ倒し、
-    // プレイヤーが下にいる場合もさらに下向きまで追尾できる。
-    constexpr float kIgelForwardPitch = 1.57079632679f;
-    constexpr float kIgelPitchMin = 0.45f;
-    constexpr float kIgelPitchMax = 2.45f;
-    // 左右の大型砲は担当する舷側と正面境界で反応する。
-    // 正面では左右・中央の3基が揃って発射し、右側では右砲だけ、左側では左砲だけが追尾する。
-    for (size_t index = 0; index < mainTurretYaws_.size(); ++index) {
-        const bool handlesTarget = index == 0 ? requestedYaw <= 0.08f
-            : index == 1 ? requestedYaw >= -0.08f
-            : std::abs(requestedYaw) <= 0.62f;
-        mainTurretEngaged_[index] = handlesTarget;
-        const float desiredRelativeYaw = handlesTarget
-            ? std::clamp(WrapAngle(requestedYaw - kMainTurretBaseYaws[index]),
-                kMainTurretYawMinimums[index], kMainTurretYawMaximums[index])
-            : 0.0f;
-        mainTurretYaws_[index] += WrapAngle(desiredRelativeYaw - mainTurretYaws_[index]) *
-            tuning_.mainTurretYawFollow;
-    }
-    // 既存の中央機銃・艦首中央砲は前方半円に限定する。
-    const float desiredYaw = std::clamp(requestedYaw, -1.57079632679f, 1.57079632679f);
-    turretYaw_ += WrapAngle(desiredYaw - turretYaw_) * tuning_.mainTurretYawFollow;
-    turretPitch_ += (requestedPitch - turretPitch_) * tuning_.mainTurretPitchFollow;
-
-    // 上部ミニ連装砲は戦艦の機関砲と同じく、台座が横旋回・砲身が上下旋回する。
-    const float igelYawFollow = std::clamp(tuning_.mainTurretYawFollow * 3.0f, 0.16f, 0.48f);
-    const float igelPitchFollow = std::clamp(tuning_.mainTurretPitchFollow * 3.0f, 0.16f, 0.48f);
-    for (size_t index = 0; index < miniTurretYaws_.size(); ++index) {
-        // 各台座自身からプレイヤーを測る。ボス中心を共用しないため、近距離でも左右が同期しない。
-        const Vector3 miniPosition = LocalPointToWorld(kMiniTurretBasePivots[index]);
-        const Vector3 toPlayer = SubtractVector(playerPos, miniPosition);
-        const float miniHorizontalLength = std::sqrt(toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z);
-        if (miniHorizontalLength <= 0.0001f) continue;
-        const float miniRequestedYaw = WrapAngle(std::atan2(toPlayer.x, toPlayer.z) - rotation_.y);
-        const float miniRequestedPitch = std::clamp(-std::atan2(toPlayer.y, miniHorizontalLength),
-            -tuning_.mainTurretMaxPitch, tuning_.mainTurretMaxPitch);
-        // 左右の副砲を±90度へ配置し、それぞれ45度ずつの扇形を受け持たせる。
-        const float desiredRelativeYaw = std::clamp(
-            WrapAngle(miniRequestedYaw - kMiniTurretBaseYaws[index]), -kQuarterPi, kQuarterPi);
-        miniTurretYaws_[index] += WrapAngle(desiredRelativeYaw - miniTurretYaws_[index]) * igelYawFollow;
-        const float desiredPitch = std::clamp(kIgelForwardPitch + miniRequestedPitch,
-            kIgelPitchMin, kIgelPitchMax);
-        miniTurretPitches_[index] += (desiredPitch - miniTurretPitches_[index]) * igelPitchFollow;
-    }
+    BossTurretController{}.UpdateAim(*this, playerPos);
 }
 
 void Boss::BeginCinematicDebris() {
-    if (cinematicDebrisActive_) return;
-
-    const Vector3 bossCenter = GetBodyLockOnPosition();
-    const OBB bossObb = GetOBB();
-    static std::mt19937 debrisRng(std::random_device{}());
-    std::uniform_real_distribution<float> distSigned(-1.0f, 1.0f);
-    std::uniform_real_distribution<float> distScaleXZ(0.28f, 0.92f);
-    std::uniform_real_distribution<float> distScaleY(0.10f, 0.42f);
-    std::uniform_real_distribution<float> distPower(18.0f, 34.0f);
-    std::uniform_real_distribution<float> distRot(0.0f, 6.2831853f);
-    constexpr float kSpinPower = 10.5f;
-
-    cinematicDebrisParts_.fill(nullptr);
-    cinematicDebrisVelocities_.fill({});
-    cinematicDebrisAngularVelocities_.fill({});
-	cinematicSmallDebrisResting_.fill(false);
-
-    // 大型の船体・砲塔ブロックは描画せず、爆発を覆わない細かいデブリだけを使う。
-
-    const size_t thrusterCount = GetRearThrusterCount();
-    for (size_t i = 0; i < cinematicSmallDebris_.size(); ++i) {
-        Object3d* part = cinematicSmallDebris_[i].get();
-        if (!part) continue;
-
-        // 半数はエンジン付近、残りは船体各所の内部から飛び散らせる
-        Vector3 initialPos{};
-        if (thrusterCount > 0 && (i % 2 == 0)) {
-            const Vector3 enginePos = GetRearThrusterWorldPosition(i % thrusterCount);
-            initialPos = {
-                enginePos.x + distSigned(debrisRng) * 1.4f,
-                enginePos.y + distSigned(debrisRng) * 0.9f,
-                enginePos.z + distSigned(debrisRng) * 1.4f,
-            };
-        } else {
-            const float rx = distSigned(debrisRng) * bossObb.size.x * 0.75f;
-            const float ry = distSigned(debrisRng) * bossObb.size.y * 0.75f;
-            const float rz = distSigned(debrisRng) * bossObb.size.z * 0.75f;
-            initialPos = {
-                bossObb.center.x + bossObb.orientations[0].x * rx + bossObb.orientations[1].x * ry + bossObb.orientations[2].x * rz,
-                bossObb.center.y + bossObb.orientations[0].y * rx + bossObb.orientations[1].y * ry + bossObb.orientations[2].y * rz,
-                bossObb.center.z + bossObb.orientations[0].z * rx + bossObb.orientations[1].z * ry + bossObb.orientations[2].z * rz,
-            };
-        }
-
-        part->SetTranslate(initialPos);
-        part->SetQuaternionRotate(MakeEulerQuaternion({ distRot(debrisRng), distRot(debrisRng), distRot(debrisRng) }));
-        part->SetScale({ distScaleXZ(debrisRng), distScaleY(debrisRng), distScaleXZ(debrisRng) });
-        part->Update();
-
-        // デブリごとの放射状ベクトルの計算: Normalize(Debris.InitialPos - Boss.CenterPos) + ランダムばらつき
-        Vector3 offset = SubtractVector(initialPos, bossCenter);
-        offset.x += distSigned(debrisRng) * 1.8f;
-        offset.y += distSigned(debrisRng) * 1.2f;
-        offset.z += distSigned(debrisRng) * 1.8f;
-        const float len = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
-        Vector3 direction{};
-        if (len > 0.05f) {
-            direction = { offset.x / len, offset.y / len, offset.z / len };
-        } else {
-            const float angle = static_cast<float>(i) * 2.39996323f;
-            direction = NormalizeVector({ std::cos(angle), 0.45f, std::sin(angle) });
-        }
-
-        const float explosionPower = distPower(debrisRng);
-		// すべてを空の彼方へ飛ばさず、約 1/7 は地面に残る焼けた残骸にする。
-		const bool leavesWreckage = (i % 7) == 0;
-        const float upwardDir = std::abs(direction.y) * 0.85f + 0.30f;
-        cinematicSmallDebrisVelocities_[i] = {
-			direction.x * explosionPower * (leavesWreckage ? 0.32f : 1.0f),
-			leavesWreckage ? 2.0f + std::abs(direction.y) * 3.5f : upwardDir * explosionPower + 5.0f,
-			direction.z * explosionPower * (leavesWreckage ? 0.32f : 1.0f),
-        };
-        cinematicSmallDebrisAngularVelocities_[i] = {
-            distSigned(debrisRng) * kSpinPower,
-            distSigned(debrisRng) * kSpinPower,
-            distSigned(debrisRng) * kSpinPower,
-        };
-    }
-
-    cinematicDebrisActive_ = true;
-
-    // 船体および砲塔をすべて非表示にし、細かい破片のみを描画する。
-    if (object_) {
-        object_->SetScale({ 0.0f, 0.0f, 0.0f });
-        object_->Update();
-    }
+    BossCinematicDebrisController{}.Begin(*this);
 }
 
 void Boss::SetCinematicDebrisRestPlane(float worldY) {
-	cinematicDebrisRestPlaneY_ = worldY;
-	hasCinematicDebrisRestPlane_ = true;
+    BossCinematicDebrisController{}.SetRestPlane(*this, worldY);
 }
 
 void Boss::StepCinematicDebris(float deltaTime) {
-    if (!cinematicDebrisActive_ || deltaTime <= 0.0f) return;
-    // 高速で飛び散る細かいデブリへ重力を適用し、爆発後に自然な放物線で落下させる。
-    constexpr float kDebrisGravity = 16.0f;
-    for (size_t index = 0; index < cinematicDebrisParts_.size(); ++index) {
-        Object3d* part = cinematicDebrisParts_[index];
-        if (!part) continue;
-        Vector3 position = part->GetTranslate();
-        cinematicDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
-        position.x += cinematicDebrisVelocities_[index].x * deltaTime;
-        position.y += cinematicDebrisVelocities_[index].y * deltaTime;
-        position.z += cinematicDebrisVelocities_[index].z * deltaTime;
-        const Vector3 deltaEuler = {
-            cinematicDebrisAngularVelocities_[index].x * deltaTime,
-            cinematicDebrisAngularVelocities_[index].y * deltaTime,
-            cinematicDebrisAngularVelocities_[index].z * deltaTime,
-        };
-        part->SetTranslate(position);
-        part->SetQuaternionRotate(MyMath::Normalize(
-            MyMath::Multiply(MakeEulerQuaternion(deltaEuler), part->GetQuaternionRotate())));
-        part->Update();
-    }
-    for (size_t index = 0; index < cinematicSmallDebris_.size(); ++index) {
-        Object3d* part = cinematicSmallDebris_[index].get();
-        if (!part) continue;
-		if (cinematicSmallDebrisResting_[index]) continue;
-        Vector3 position = part->GetTranslate();
-        cinematicSmallDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
-        position.x += cinematicSmallDebrisVelocities_[index].x * deltaTime;
-        position.y += cinematicSmallDebrisVelocities_[index].y * deltaTime;
-        position.z += cinematicSmallDebrisVelocities_[index].z * deltaTime;
-        const Vector3 deltaEuler = {
-            cinematicSmallDebrisAngularVelocities_[index].x * deltaTime,
-            cinematicSmallDebrisAngularVelocities_[index].y * deltaTime,
-            cinematicSmallDebrisAngularVelocities_[index].z * deltaTime,
-        };
-        const Quaternion nextRot = MyMath::Normalize(
-            MyMath::Multiply(MakeEulerQuaternion(deltaEuler), part->GetQuaternionRotate()));
-		if (hasCinematicDebrisRestPlane_ && (index % 7) == 0 &&
-			cinematicSmallDebrisVelocities_[index].y < 0.0f && position.y <= cinematicDebrisRestPlaneY_) {
-			position.y = cinematicDebrisRestPlaneY_;
-			cinematicSmallDebrisVelocities_[index] = {};
-			cinematicSmallDebrisAngularVelocities_[index] = {};
-			cinematicSmallDebrisResting_[index] = true;
-		}
-        part->SetTranslate(position);
-        part->SetQuaternionRotate(nextRot);
-        part->Update();
-    }
+    BossCinematicDebrisController{}.Step(*this, deltaTime);
 }
 
 std::vector<Vector3> Boss::GetCinematicWreckageWorldPositions() const {
-	std::vector<Vector3> positions;
-	if (!cinematicDebrisActive_) return positions;
-	positions.reserve(cinematicSmallDebris_.size() / 7 + 1);
-	for (size_t i = 0; i < cinematicSmallDebris_.size(); ++i) {
-		if (cinematicSmallDebrisResting_[i] && cinematicSmallDebris_[i]) {
-			positions.push_back(cinematicSmallDebris_[i]->GetTranslate());
-		}
-	}
-	return positions;
+    return BossCinematicDebrisController{}.GetWreckageWorldPositions(*this);
 }
 
 void Boss::UpdateCinematicDebris() {
@@ -1026,282 +587,39 @@ void Boss::UpdateCinematicDebris() {
 }
 
 std::vector<Vector3> Boss::GetCinematicDebrisWorldPositions() const {
-    std::vector<Vector3> positions;
-    if (!cinematicDebrisActive_) return positions;
-    positions.reserve(cinematicDebrisParts_.size() + 14);
-    for (const Object3d* part : cinematicDebrisParts_) {
-        if (part) positions.push_back(part->GetTranslate());
-    }
-    for (size_t i = 0; i < cinematicSmallDebris_.size(); i += 3) {
-        Object3d* part = cinematicSmallDebris_[i].get();
-        if (part) {
-            positions.push_back(part->GetTranslate());
-        }
-    }
-    return positions;
+    return BossCinematicDebrisController{}.GetDebrisWorldPositions(*this);
 }
 
 void Boss::UpdateTurretModels() {
-    if (cinematicDebrisActive_) {
-        return;
-    }
-    const Quaternion hullQuat = MakeEulerQuaternion(rotation_);
-    auto updateTurret = [this, &hullQuat](Object3d* turret, const Vector3& pivot, float pitch, float yaw,
-        float modelPitchOffset = 0.0f) {
-        if (!turret) return;
-        turret->SetTranslate(LocalPointToWorld(pivot));
-        const Quaternion localQuat = MakePitchYawQuaternion(pitch + modelPitchOffset, yaw);
-        // 行ベクトル規約では右辺が先に適用されるため、砲台ローカル回転の後に船体回転を掛ける。
-        turret->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(hullQuat, localQuat)));
-        turret->SetScale(kBossScale);
-        turret->Update();
-    };
-
-    for (size_t index = 0; index < mainTurrets_.size(); ++index) {
-        if (IsTurretAlive(kMainTurretFirst + index)) {
-            updateTurret(mainTurrets_[index].get(), kMainWeaponMounts[index].pivot,
-                0.0f, kMainTurretBaseYaws[index] + mainTurretYaws_[index],
-                kMainWeaponMounts[index].modelPitchOffset);
-        }
-    }
-    // ミニ砲台: 箱形の台座だけを横旋回する。
-    for (size_t index = 0; index < miniTurretBases_.size(); ++index) {
-        if (IsTurretAlive(kMiniTurretFirst + index)) {
-            updateTurret(miniTurretBases_[index].get(), kMiniTurretBasePivots[index], 0.0f,
-                kMiniTurretBaseYaws[index] + miniTurretYaws_[index]);
-        }
-    }
-    // ミニ砲身: 台座の横旋回に追従しつつ、各自のヒンジで上下へ動く。
-    for (size_t index = 0; index < miniTurretBarrels_.size(); ++index) {
-        if (!IsTurretAlive(kMiniTurretFirst + index)) continue;
-        Object3d* barrel = miniTurretBarrels_[index].get();
-        if (!barrel) continue;
-        const Vector3& barrelPivot = kMiniTurretBarrelPivots[index];
-        const Vector3& basePivot = kMiniTurretBasePivots[index];
-        const float yaw = kMiniTurretBaseYaws[index] + miniTurretYaws_[index];
-        const Vector3 rotatedBarrelPivot = AddVector(basePivot,
-            RotatePitchYaw(SubtractVector(barrelPivot, basePivot), 0.0f, yaw));
-        barrel->SetTranslate(LocalPointToWorld(rotatedBarrelPivot));
-        const Quaternion localQuat = MakePitchYawQuaternion(miniTurretPitches_[index], yaw);
-        barrel->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(hullQuat, localQuat)));
-        barrel->SetScale(kBossScale);
-        barrel->Update();
-    }
-    // 通常の機銃も横回転だけ。上部ミニ連装砲とは別の砲台として扱う。
-    if (IsTurretAlive(kMachineGunTurretIndex)) {
-        updateTurret(machineGunTurret_.get(), kMachineGunMount.pivot, 0.0f, turretYaw_,
-            kMachineGunMount.modelPitchOffset);
-    }
-    for (size_t index = 0; index < forwardTurrets_.size(); ++index) {
-        if (IsTurretAlive(kForwardTurretFirst + index)) {
-            // 左右砲台だけはヨーを固定し、ピッチ回転だけにする。
-            const float yaw = index > 0 ? 0.0f : turretYaw_;
-            const float pitch = index > 0 ? turretPitch_ : 0.0f;
-            updateTurret(forwardTurrets_[index].get(), kForwardWeaponMounts[index].pivot, pitch, yaw);
-        }
-    }
+    BossTurretController{}.UpdateModels(*this);
 }
 
 void Boss::InitializeSideShields() {
-    ModelManager* modelManager = ModelManager::GetInstance();
-    for (const char* modelName : kSideShieldModels) {
-        // 初期状態はほぼ閉じた円弧。UpdateSideShields() で左右から開く角度へ更新する。
-        modelManager->CreateCylinderArcShellModel(modelName, kSideShieldArcSubdivisions,
-            kSideShieldArcRadius, kSideShieldHeight, kSideShieldShellThickness, 45.0f, 45.1f);
-        Model* model = modelManager->FindModel(modelName);
-        if (!model) continue;
-        model->SetTextureFilePath(kSideShieldTexturePath);
-        // 曲面の法線へ光を当て、カメラ角度によっても円弧の陰影を見せる。
-        model->SetEnableLighting(true);
-		model->SetDoubleSidedLighting(true);
-        model->SetShininess(24.0f);
-        model->SetAlphaReference(0.0f);
-        model->SetColor({ 0.30f, 0.78f, 1.00f, 0.0f });
-    }
-
-    for (size_t index = 0; index < sideShieldSegments_.size(); ++index) {
-        sideShieldSegments_[index] = std::make_unique<Object3d>();
-        sideShieldSegments_[index]->Initialize(Object3dCommon::GetInstance());
-        sideShieldSegments_[index]->SetModel(kSideShieldModels[index]);
-    }
-
-    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
-        const char* modelName = kSideShieldGeneratorModels[face];
-        if (!modelManager->FindModel(modelName)) {
-            modelManager->LoadModel(modelName);
-        }
-        sideShieldGenerators_[face] = std::make_unique<Object3d>();
-        sideShieldGenerators_[face]->Initialize(Object3dCommon::GetInstance());
-        sideShieldGenerators_[face]->SetModel(modelName);
-        if (Model* model = sideShieldGenerators_[face]->GetModel()) {
-            model->SetEnableLighting(true);
-            model->SetShininess(112.0f);
-            model->SetColor({ 0.25f, 0.48f, 0.56f, 1.0f });
-        }
-    }
+    BossSideShieldController{}.Initialize(*this);
 }
 
 bool Boss::IsSideShieldVisible() const {
-    return sideShieldState_ == SideShieldState::Deploying ||
-        sideShieldState_ == SideShieldState::Active ||
-        sideShieldState_ == SideShieldState::Warning;
+    return BossSideShieldController{}.IsVisible(*this);
 }
 
 bool Boss::IsSideShieldProtectingFace(size_t face) const {
-    return face < kSideShieldGeneratorCount && !sideShieldGeneratorDestroyed_[face] && IsSideShieldVisible();
+    return BossSideShieldController{}.IsProtectingFace(*this, face);
 }
 
 bool Boss::IsSideShieldGeneratorVulnerable(size_t face) const {
-    return face < kSideShieldGeneratorCount && !sideShieldGeneratorDestroyed_[face] &&
-        (sideShieldState_ == SideShieldState::Charging || sideShieldState_ == SideShieldState::Cooldown);
+    return BossSideShieldController{}.IsGeneratorVulnerable(*this, face);
 }
 
 void Boss::AdvanceSideShieldState() {
-    const bool hasGenerator = std::any_of(sideShieldGeneratorDestroyed_.begin(), sideShieldGeneratorDestroyed_.end(),
-        [](bool destroyed) { return !destroyed; });
-    if (!hasGenerator) {
-        sideShieldState_ = SideShieldState::Cooldown;
-        sideShieldStateTimer_ = 0;
-        return;
-    }
-
-    ++sideShieldStateTimer_;
-    int duration = kSideShieldChargingFrames;
-    switch (sideShieldState_) {
-    case SideShieldState::Charging: duration = kSideShieldChargingFrames; break;
-    case SideShieldState::Deploying: duration = kSideShieldDeployFrames; break;
-    case SideShieldState::Active: duration = kSideShieldActiveFrames; break;
-    case SideShieldState::Warning: duration = kSideShieldWarningFrames; break;
-    case SideShieldState::Cooldown: duration = kSideShieldCooldownFrames; break;
-    }
-    if (sideShieldStateTimer_ < duration) return;
-
-    sideShieldStateTimer_ = 0;
-    switch (sideShieldState_) {
-    case SideShieldState::Charging: sideShieldState_ = SideShieldState::Deploying; break;
-    case SideShieldState::Deploying: sideShieldState_ = SideShieldState::Active; break;
-    case SideShieldState::Active: sideShieldState_ = SideShieldState::Warning; break;
-    case SideShieldState::Warning: sideShieldState_ = SideShieldState::Cooldown; break;
-    case SideShieldState::Cooldown: sideShieldState_ = SideShieldState::Charging; break;
-    }
+    BossSideShieldController{}.AdvanceState(*this);
 }
 
 void Boss::UpdateSideShields() {
-    AdvanceSideShieldState();
-
-    if (sideShieldState_ == SideShieldState::Deploying) {
-        sideShieldDeployProgress_ = SmoothStep01(
-            static_cast<float>(sideShieldStateTimer_) / static_cast<float>(kSideShieldDeployFrames));
-    } else if (sideShieldState_ == SideShieldState::Active) {
-        sideShieldDeployProgress_ = 1.0f;
-    } else if (sideShieldState_ == SideShieldState::Warning) {
-        // 解除予告の点滅と同時に、外端から中央へ畳んで消す。
-        sideShieldDeployProgress_ = 1.0f - SmoothStep01(
-            static_cast<float>(sideShieldStateTimer_) / static_cast<float>(kSideShieldWarningFrames));
-    } else {
-        sideShieldDeployProgress_ = 0.0f;
-    }
-
-    float alpha = tuning_.sideShieldOpacity;
-    Vector4 shieldColor = { 0.30f, 0.78f, 1.00f, alpha };
-    Vector4 generatorColor = { 0.25f, 0.48f, 0.56f, 1.0f };
-    switch (sideShieldState_) {
-    case SideShieldState::Charging: {
-        const float pulse = 0.62f + 0.38f * std::sin(static_cast<float>(sideShieldStateTimer_) * 0.40f);
-        generatorColor = { 0.20f + 0.30f * pulse, 0.64f + 0.28f * pulse, 0.92f + 0.08f * pulse, 1.0f };
-        break;
-    }
-    case SideShieldState::Deploying:
-        alpha *= 0.35f + 0.65f * sideShieldDeployProgress_;
-        generatorColor = { 0.24f, 0.74f, 1.00f, 1.0f };
-        break;
-    case SideShieldState::Active:
-        generatorColor = { 0.18f, 0.68f, 1.00f, 1.0f };
-        break;
-    case SideShieldState::Warning: {
-        const float blink = 0.25f + 0.75f * (0.5f + 0.5f * std::sin(static_cast<float>(sideShieldStateTimer_) * 1.30f));
-        alpha *= blink;
-        generatorColor = blink > 0.62f
-            ? Vector4{ 1.00f, 0.34f, 0.06f, 1.0f }
-            : Vector4{ 0.16f, 0.62f, 1.00f, 1.0f };
-        break;
-    }
-    case SideShieldState::Cooldown:
-        generatorColor = { 1.00f, 0.18f, 0.035f, 1.0f };
-        break;
-    }
-
-    const float arcAngle = kSideShieldArcHalfAngle * (std::max)(0.001f, sideShieldDeployProgress_);
-    const float endpointInset = kSideShieldArcRadius * 0.70710678f;
-    const bool needsMeshRebuild = std::abs(sideShieldBuiltProgress_ - sideShieldDeployProgress_) > 0.0001f;
-    if (needsMeshRebuild) sideShieldBuiltProgress_ = sideShieldDeployProgress_;
-    const Quaternion hullQuaternion = MakeEulerQuaternion(rotation_);
-
-    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
-        Object3d* generator = sideShieldGenerators_[face].get();
-        if (generator && !sideShieldGeneratorDestroyed_[face]) {
-            if (Model* model = generator->GetModel()) {
-                model->SetColor(generatorColor);
-            }
-            // 切り出した OBJ はボス原点基準の頂点座標を持つため、船体と同じ変換だけを適用する。
-            generator->SetTranslate(position_);
-            generator->SetQuaternionRotate(hullQuaternion);
-            generator->SetScale(kBossScale);
-            generator->Update();
-        }
-
-        if (sideShieldGeneratorDestroyed_[face]) continue;
-        const float outwardDirection = face == 0 ? 1.0f : -1.0f;
-        for (size_t half = 0; half < 2; ++half) {
-            Object3d* segment = sideShieldSegments_[face * 2 + half].get();
-            if (!segment) continue;
-
-            // 2枚とも中央から外端へ広げる。Warning では progress が 1→0 になるため、
-            // 逆に外端から中央へ収束して消える。
-            const float centerAngle = outwardDirection < 0.0f ? 90.0f : 270.0f;
-            const float startAngle = half == 0 ? centerAngle - arcAngle : centerAngle;
-            const float endAngle = half == 0 ? centerAngle : centerAngle + arcAngle;
-
-            Model* model = ModelManager::GetInstance()->FindModel(kSideShieldModels[face * 2 + half]);
-            if (model) {
-                if (needsMeshRebuild) {
-                    model->InitializeCylinderShell(model->GetModelCommon(), kSideShieldArcSubdivisions, 6,
-                        kSideShieldArcRadius, kSideShieldHeight, kSideShieldShellThickness,
-                        startAngle, endAngle);
-                }
-                model->SetTextureFilePath(kSideShieldTexturePath);
-                model->SetEnableLighting(true);
-                model->SetDoubleSidedLighting(true);
-                model->SetShininess(24.0f);
-                model->SetAlphaReference(0.0f);
-                model->SetColor({ shieldColor.x, shieldColor.y, shieldColor.z, alpha });
-            }
-
-            Vector3 localPosition = kSideShieldPlaneCenters[face];
-            localPosition.x += outwardDirection * (kSideShieldAnchorOffset - endpointInset);
-            localPosition.y -= kSideShieldHeight * 0.5f;
-            segment->SetTranslate(LocalPointToWorld(localPosition));
-            segment->SetRotate({ 0.0f, rotation_.y, 0.0f });
-            segment->SetScale(kBossScale);
-            segment->Update();
-        }
-    }
+    BossSideShieldController{}.Update(*this);
 }
 
 void Boss::DrawSideShields() {
-    if (!IsSideShieldVisible() || sideShieldDeployProgress_ <= 0.001f) return;
-
-    Object3dCommon* object3dCommon = Object3dCommon::GetInstance();
-    object3dCommon->SetAlphaBlendDrawSettings();
-    for (size_t face = 0; face < kSideShieldGeneratorCount; ++face) {
-        if (sideShieldGeneratorDestroyed_[face]) continue;
-        for (size_t half = 0; half < 2; ++half) {
-            if (const std::unique_ptr<Object3d>& segment = sideShieldSegments_[face * 2 + half]) {
-                segment->Draw();
-            }
-        }
-    }
-    object3dCommon->SetCommonDrawSettings();
+    BossSideShieldController{}.Draw(*this);
 }
 
 void Boss::InitializeRearThrusters() {

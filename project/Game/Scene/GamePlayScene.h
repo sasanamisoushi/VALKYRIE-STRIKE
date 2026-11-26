@@ -30,25 +30,17 @@
 #include "EnvironmentRenderer.h"
 #include "EnemySpawnManager.h"
 #include "EnemyUpdateCoordinator.h"
+#include "EnemyDefeatEffectController.h"
 #include "PlayerWeaponController.h"
 #include "GameplayModeController.h"
 #include "PlayerFlightEffectController.h"
 #include "BossEncounterState.h"
-#include "BossIntroOverlayRenderer.h"
-#include "StageObjectiveOverlayRenderer.h"
-#include "MissionStartOverlayRenderer.h"
-#include "GameOverOverlayRenderer.h"
-#include "PauseMenuOverlayRenderer.h"
-#include "ReturnToTitleOverlayRenderer.h"
-#include "TutorialOverlayRenderer.h"
-#include "BossClearOverlayRenderer.h"
-#include "AttractDemoOverlayRenderer.h"
-#include "CombatHudOverlayRenderer.h"
-#include "CombatHudSpriteRenderer.h"
+#include "GameplayOverlayCoordinator.h"
+#include "GameplayAudioController.h"
+#include "GameplayUpdateCoordinator.h"
+#include "GameplaySessionFlowController.h"
 #include "DebugColliderRenderer.h"
 #include "BoundaryShieldRenderer.h"
-#include "ReticleOverlayRenderer.h"
-#include "RadarRenderer.h"
 #include "TutorialRequirementsManager.h"
 #include "TutorialProgressTracker.h"
 #include "TutorialPhaseController.h"
@@ -144,9 +136,6 @@ private:
 	void DrawOverlay();
 	// 初回プレイ時に、飛行・変形・武装・標的撃破・離脱地点までを案内する。
 	void UpdateTutorial();
-	void BeginTutorialCombat();
-	void ActivateTutorialGoal();
-	void DrawPauseOverlay(float screenWidth, float screenHeight);
 	void SetDebugCameraActive(bool isActive);
 	void ResetDebugCameraToPlayer();
 	void ResetDebugCameraToStageOverview();
@@ -178,22 +167,11 @@ private:
 	std::unique_ptr<Object3d> groundModel;
 	std::unique_ptr<Primitive> myShere;
 
-	ReticleOverlayRenderer reticleOverlayRenderer_;
-	std::unique_ptr<Sprite> pauseOverlaySprite_;
-	std::unique_ptr<Sprite> pausePanelSprite_;
+	GameplayOverlayCoordinator overlayCoordinator_;
 	std::unique_ptr<Sprite> controlsGuideSprite_;
-	std::unique_ptr<Sprite> pauseMenuLabelsSprite_;
-	CombatHudSpriteRenderer combatHudSpriteRenderer_;
-	RadarRenderer radarRenderer_;
 	BoundaryShieldRenderer boundaryShieldRenderer_;
 	BoundaryShieldSettingsManager boundaryShieldSettings_;
 	static constexpr const char* kBoundaryShieldSettingsPath = "resources/boundary_shield_settings.json";
-	std::unique_ptr<Sprite> warpFadeInSprite_;
-	std::unique_ptr<Sprite> missionStartOverlaySprite_;
-	std::unique_ptr<Sprite> missionClearOverlaySprite_;
-	std::unique_ptr<Sprite> gameOverWhiteoutSprite_;
-	std::unique_ptr<Sprite> bossCinematicTopBarSprite_;
-	std::unique_ptr<Sprite> bossCinematicBottomBarSprite_;
 	float warpFadeInAlpha_ = 0.0f;
 	WarpExitPresentationState warpExitPresentation_;
 
@@ -203,15 +181,9 @@ private:
 	// モデル
 	std::vector<Object3d *> objects;
 
-	// 音声データ
-	SoundData soundData1;
-	SoundData soundData2;
-	SoundData songSoundData;
-
-	// 再生中のボイスを管理するポインタ
-	IXAudio2SourceVoice *pVoice1 = nullptr;
-	IXAudio2SourceVoice *pVoice2 = nullptr;
-	IXAudio2SourceVoice *pSongVoice = nullptr;
+	GameplayAudioController audioController_;
+	GameplayUpdateCoordinator updateCoordinator_;
+	GameplaySessionFlowController sessionFlowController_;
 
 	// プリミティブ
 	std::unique_ptr<Primitive> myBox;
@@ -293,28 +265,7 @@ private:
 	// 画面上に存在するミサイルを管理するマネージャ
 	std::unique_ptr<MissileManager> missileManager_;
 
-	// 通常弾で撃破した通常敵の、短時間だけ飛び散る機体パーツ。
-	struct NormalEnemyDebrisPiece {
-		std::unique_ptr<Object3d> object;
-		Vector3 velocity{};
-		Vector3 rotation{};
-		Vector3 angularVelocity{};
-		Vector3 baseScale{};
-		int remainingFrames = 0;
-	};
-	struct HomingEnemyImplosion {
-		std::unique_ptr<Object3d> object;
-		Vector3 baseScale{};
-		Vector3 rotation{};
-		int remainingFrames = 0;
-	};
-	void SpawnNormalEnemyDebris(Enemy& enemy);
-	void UpdateNormalEnemyDebris();
-	void SpawnHomingEnemyImplosion(Enemy& enemy);
-	void UpdateHomingEnemyImplosions();
-	void ClearNormalEnemyDebris();
-	std::vector<NormalEnemyDebrisPiece> normalEnemyDebris_;
-	std::vector<HomingEnemyImplosion> homingEnemyImplosions_;
+	EnemyDefeatEffectController enemyDefeatEffectController_;
 
 
 	// 敵
@@ -326,22 +277,12 @@ private:
 	EnemyUpdateCoordinator enemyUpdateCoordinator_;
 	TargetSelectionState targetSelection_;
 	BossEncounterState bossEncounterState_;
-	BossIntroOverlayRenderer bossIntroOverlayRenderer_;
-	StageObjectiveOverlayRenderer stageObjectiveOverlayRenderer_;
-	MissionStartOverlayRenderer missionStartOverlayRenderer_;
-	GameOverOverlayRenderer gameOverOverlayRenderer_;
-	PauseMenuOverlayRenderer pauseMenuOverlayRenderer_;
 	BossClearSequenceController bossClearSequence_;
 	PauseMenuState pauseMenuState_;
 	// ポーズメニューからの通信切断・システムシャットダウン遷移演出
 	void StartReturnToTitleTransition();
 	void UpdateReturnToTitleTransition();
 	ReturnToTitleTransition returnToTitleTransition_;
-	ReturnToTitleOverlayRenderer returnToTitleOverlayRenderer_;
-	TutorialOverlayRenderer tutorialOverlayRenderer_;
-	BossClearOverlayRenderer bossClearOverlayRenderer_;
-	AttractDemoOverlayRenderer attractDemoOverlayRenderer_;
-	CombatHudOverlayRenderer combatHudOverlayRenderer_;
 
 
 	// 障害物

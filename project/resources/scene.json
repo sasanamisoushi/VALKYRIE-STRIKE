@@ -2,14 +2,8 @@
     "name": "scene",
     "objects": [
         {
-            "type": "EMPTY",
             "name": "Sketchfab_model",
             "transform": {
-                "translation": [
-                    0.0,
-                    0.0,
-                    0.0
-                ],
                 "rotation": [
                     -90.00001525878906,
                     -0.0,
@@ -19,19 +13,19 @@
                     1.0,
                     1.0000001192092896,
                     1.0000001192092896
+                ],
+                "translation": [
+                    0.0,
+                    0.0,
+                    0.0
                 ]
             },
+            "type": "EMPTY",
             "vertices_count": 0
         },
         {
-            "type": "EMPTY",
             "name": "dem.wrl.cleaner.materialmerger.gles",
             "transform": {
-                "translation": [
-                    0.0,
-                    0.0,
-                    0.0
-                ],
                 "rotation": [
                     0.0,
                     -0.0,
@@ -41,19 +35,19 @@
                     1.0,
                     1.000000238418579,
                     1.000000238418579
+                ],
+                "translation": [
+                    0.0,
+                    0.0,
+                    0.0
                 ]
             },
+            "type": "EMPTY",
             "vertices_count": 0
         },
         {
-            "type": "EMPTY",
             "name": "obj1",
             "transform": {
-                "translation": [
-                    0.0,
-                    0.0,
-                    0.0
-                ],
                 "rotation": [
                     0.0,
                     -0.0,
@@ -63,32 +57,19 @@
                     1.0,
                     1.000000238418579,
                     1.000000238418579
-                ]
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "MESH",
-            "name": "OhirayamaTerrain",
-            "transform": {
+                ],
                 "translation": [
                     0.0,
                     0.0,
-                    -26.37160873413086
-                ],
-                "rotation": [
-                    0.0,
-                    -0.0,
                     0.0
-                ],
-                "scale": [
-                    35.723609924316406,
-                    43.61075973510742,
-                    4.608784198760986
                 ]
             },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "OBSTACLE",
             "collider": {
-                "type": "Box",
                 "center": [
                     0.0,
                     0.0,
@@ -98,22 +79,38 @@
                     22.44140625,
                     17.050785064697266,
                     7.366726875305176
-                ]
+                ],
+                "type": "Box"
             },
-            "category": "OBSTACLE",
             "game_obj_type": "OBSTACLE",
             "model": "OhirayamaTerrainFull.gltf",
+            "name": "OhirayamaTerrain",
+            "transform": {
+                "rotation": [
+                    0.0,
+                    -0.0,
+                    0.0
+                ],
+                "scale": [
+                    35.723609924316406,
+                    43.61075973510742,
+                    4.608784198760986
+                ],
+                "translation": [
+                    0.0,
+                    0.0,
+                    -26.37160873413086
+                ]
+            },
+            "type": "MESH",
             "vertices_count": 581904
         },
         {
-            "type": "MESH",
+            "category": "OBSTACLE",
+            "game_obj_type": "OBSTACLE",
+            "model": "立方体.obj",
             "name": "立方体",
             "transform": {
-                "translation": [
-                    -0.48639917373657227,
-                    -0.6408197283744812,
-                    -4.046515941619873
-                ],
                 "rotation": [
                     0.0,
                     -0.0,
@@ -123,22 +120,22 @@
                     1.0,
                     1.0,
                     1.0
+                ],
+                "translation": [
+                    -0.48639917373657227,
+                    -0.6408197283744812,
+                    -4.046515941619873
                 ]
             },
-            "category": "OBSTACLE",
-            "game_obj_type": "OBSTACLE",
-            "model": "立方体.obj",
+            "type": "MESH",
             "vertices_count": 8
         },
         {
-            "type": "MESH",
+            "category": "OBSTACLE",
+            "game_obj_type": "OBSTACLE",
+            "model": "立方体.001.obj",
             "name": "立方体.001",
             "transform": {
-                "translation": [
-                    -1.9687336683273315,
-                    -0.5410853624343872,
-                    0.20582544803619385
-                ],
                 "rotation": [
                     90.00000762939453,
                     -0.0,
@@ -148,47 +145,46 @@
                     0.32197511196136475,
                     0.27577927708625793,
                     0.2797301411628723
+                ],
+                "translation": [
+                    -1.9687336683273315,
+                    -0.5410853624343872,
+                    0.20582544803619385
                 ]
             },
-            "category": "OBSTACLE",
-            "game_obj_type": "OBSTACLE",
-            "model": "立方体.001.obj",
+            "type": "MESH",
             "vertices_count": 8
         },
         {
-            "type": "MESH",
+            "category": "OBSTACLE",
+            "game_obj_type": "OBSTACLE",
+            "model": "ブロック.obj",
             "name": "ブロック",
             "transform": {
-                "translation": [
-                    3.6672041416168213,
-                    2.5921106338500977,
-                    -1.115983009338379
-                ],
                 "rotation": [
-                    32.45245361328125,
+                    32.452449798583984,
                     7.547871112823486,
-                    -42.31172180175781
+                    -42.31171798706055
                 ],
                 "scale": [
                     0.9999999403953552,
                     1.0,
                     1.0
+                ],
+                "translation": [
+                    3.6672041416168213,
+                    2.5921106338500977,
+                    -1.115983009338379
                 ]
             },
-            "category": "OBSTACLE",
-            "game_obj_type": "OBSTACLE",
-            "model": "ブロック.obj",
+            "type": "MESH",
             "vertices_count": 74
         },
         {
-            "type": "MESH",
+            "category": "OBSTACLE",
+            "game_obj_type": "OBSTACLE",
             "name": "StageBounds",
             "transform": {
-                "translation": [
-                    0.0,
-                    0.0,
-                    169.0984344482422
-                ],
                 "rotation": [
                     0.0,
                     -0.0,
@@ -198,403 +194,445 @@
                     401.1805419921875,
                     363.5195007324219,
                     187.44622802734375
+                ],
+                "translation": [
+                    0.0,
+                    0.0,
+                    169.0984344482422
                 ]
             },
-            "category": "OBSTACLE",
-            "game_obj_type": "OBSTACLE",
+            "type": "MESH",
             "vertices_count": 8
         },
         {
-            "type": "MESH",
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF1"
+            },
+            "enemy_type": "VF1",
+            "game_obj_type": "ENEMY",
+            "model": "立方体.003.obj",
             "name": "立方体.003",
+            "reinforcement": {
+                "delay": 60,
+                "trigger": "EnemyV"
+            },
             "transform": {
-                "translation": [
-                    -4.40903377532959,
-                    -3.3491170406341553,
-                    1.6825778484344482
-                ],
                 "rotation": [
-                    6.084921836853027,
+                    6.084921360015869,
                     -7.171489238739014,
-                    -4.83084774017334
+                    -4.830847263336182
                 ],
                 "scale": [
                     0.18521206080913544,
                     0.18521206080913544,
                     0.18521204590797424
+                ],
+                "translation": [
+                    -4.40903377532959,
+                    -3.3491170406341553,
+                    1.6825778484344482
                 ]
             },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "model": "立方体.003.obj",
-            "enemy_type": "VF1",
-            "enemy": {
-                "type": "VF1"
-            },
-            "reinforcement": {
-                "trigger": "EnemyV",
-                "delay": 60
-            },
+            "type": "MESH",
             "vertices_count": 8
         },
         {
-            "type": "MESH",
+            "category": "PLAYER",
+            "game_obj_type": "PLAYER",
+            "model": "立方体.004.obj",
             "name": "立方体.004",
             "transform": {
-                "translation": [
-                    -1.0697284936904907,
-                    -14.866250991821289,
-                    0.0
-                ],
                 "rotation": [
-                    10.75723934173584,
-                    -0.0,
-                    0.0
+                    10.757238388061523,
+                    0.0,
+                    -0.0
                 ],
                 "scale": [
                     0.3187079429626465,
                     0.3187079429626465,
                     0.3187079429626465
+                ],
+                "translation": [
+                    -1.0697284936904907,
+                    -14.866250991821289,
+                    1.5
                 ]
             },
-            "category": "PLAYER",
-            "game_obj_type": "PLAYER",
-            "model": "立方体.004.obj",
+            "type": "MESH",
             "vertices_count": 8
         },
         {
-            "type": "MESH",
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF1-1"
+            },
+            "enemy_type": "VF1-1",
+            "game_obj_type": "ENEMY",
+            "model": "EnemyV.obj",
             "name": "EnemyV",
             "transform": {
-                "translation": [
-                    9.540788650512695,
-                    0.0,
-                    -18.506301879882812
-                ],
                 "rotation": [
                     0.0,
                     -0.0,
-                    77.58684539794922
+                    77.58683776855469
                 ],
                 "scale": [
                     0.453032910823822,
                     0.453032910823822,
                     0.453032910823822
+                ],
+                "translation": [
+                    9.540788650512695,
+                    0.0,
+                    -18.14595603942871
                 ]
             },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "model": "EnemyV.obj",
-            "enemy_type": "VF1-1",
-            "enemy": {
-                "type": "VF1-1"
-            },
+            "type": "MESH",
             "vertices_count": 8
         },
         {
-            "type": "EMPTY",
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
             "name": "AIEnemy_01",
             "transform": {
+                "rotation": [
+                    0.0,
+                    -0.0,
+                    -170.29222106933594
+                ],
+                "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                ],
                 "translation": [
                     -6.263225078582764,
                     17.43405532836914,
-                    -18.015090942382812
-                ],
+                    -18.29046630859375
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_02",
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    -170.292236328125
+                    170.29222106933594
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_02",
-            "transform": {
+                ],
                 "translation": [
                     6.263225078582764,
                     17.43405532836914,
-                    -17.206008911132812
-                ],
+                    -18.418485641479492
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_03",
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    170.292236328125
+                    -162.4747772216797
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_03",
-            "transform": {
+                ],
                 "translation": [
                     -10.53360652923584,
                     14.17969799041748,
-                    -17.570755004882812
-                ],
+                    -18.206432342529297
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_04",
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    -162.47479248046875
+                    162.4747772216797
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_04",
-            "transform": {
+                ],
                 "translation": [
                     10.53360652923584,
                     14.17969799041748,
-                    -18.054641723632812
-                ],
+                    -18.412883758544922
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_05",
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    162.47479248046875
+                    -153.81289672851563
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_05",
-            "transform": {
+                ],
                 "translation": [
                     -14.803987503051758,
                     10.925341606140137,
-                    -18.356887817382812
-                ],
+                    -18.071517944335938
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_06",
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    -153.8129119873047
+                    153.81289672851563
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_06",
-            "transform": {
+                ],
                 "translation": [
                     14.803987503051758,
                     10.925341606140137,
-                    -18.137649536132812
-                ],
+                    -18.362821578979492
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_07",
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    153.8129119873047
+                    -144.60826110839844
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_07",
-            "transform": {
+                ],
                 "translation": [
                     -19.07436752319336,
                     7.670984268188477,
-                    -15.838821411132812
-                ],
+                    -17.94269561767578
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_01.001",
+            "path_id": "EnemyPath001",
+            "reinforcement": {
+                "delay": 126,
+                "trigger": "AIEnemy_01, AIEnemy_02, AIEnemy_03, AIEnemy_04, AIEnemy_05, AIEnemy_06, AIEnemy_07"
+            },
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    -144.6082763671875
+                    -138.66464233398438
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_01.001",
-            "transform": {
+                ],
                 "translation": [
                     -6.263225078582764,
                     17.43405532836914,
                     1.1154143810272217
-                ],
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_02.001",
+            "path_id": "EnemyPath002",
+            "reinforcement": {
+                "delay": 126,
+                "trigger": "AIEnemy_01, AIEnemy_02, AIEnemy_03, AIEnemy_04, AIEnemy_05, AIEnemy_06, AIEnemy_07"
+            },
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
-                    -138.66465759277344
+                    138.66464233398438
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "path_id": "EnemyPath001",
-            "reinforcement": {
-                "trigger": "AIEnemy_01, AIEnemy_02, AIEnemy_03, AIEnemy_04, AIEnemy_05, AIEnemy_06, AIEnemy_07",
-                "delay": 126
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_02.001",
-            "transform": {
+                ],
                 "translation": [
                     6.263225078582764,
                     17.43405532836914,
                     -1.7997654676437378
-                ],
-                "rotation": [
-                    0.0,
-                    -0.0,
-                    138.66465759277344
-                ],
-                "scale": [
-                    1.0,
-                    1.0,
-                    1.0
                 ]
             },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "path_id": "EnemyPath002",
-            "reinforcement": {
-                "trigger": "AIEnemy_01, AIEnemy_02, AIEnemy_03, AIEnemy_04, AIEnemy_05, AIEnemy_06, AIEnemy_07",
-                "delay": 126
-            },
+            "type": "EMPTY",
             "vertices_count": 0
         },
         {
-            "type": "EMPTY",
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
             "name": "AIEnemy_03.001",
+            "path_id": "EnemyPath003",
+            "reinforcement": {
+                "delay": 135,
+                "trigger": "AIEnemy_01.001"
+            },
             "transform": {
+                "rotation": [
+                    5.962289810180664,
+                    0.0,
+                    62.89019775390625
+                ],
+                "scale": [
+                    0.9999999403953552,
+                    0.9999999403953552,
+                    1.0
+                ],
                 "translation": [
                     -19.07436752319336,
                     7.670984268188477,
-                    1.8917697668075562
-                ],
-                "rotation": [
-                    0.0,
-                    -0.0,
-                    -96.76807403564453
-                ],
-                "scale": [
-                    0.9999999403953552,
-                    0.9999999403953552,
-                    1.0
+                    -17.94269561767578
                 ]
             },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "path_id": "EnemyPath003",
-            "reinforcement": {
-                "trigger": "AIEnemy_01.001",
-                "delay": 135
-            },
+            "type": "EMPTY",
             "vertices_count": 0
         },
         {
-            "type": "EMPTY",
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
             "name": "AIEnemy_01.002",
+            "path_id": "EnemyPath004",
+            "reinforcement": {
+                "delay": 126,
+                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001"
+            },
             "transform": {
+                "rotation": [
+                    0.0,
+                    -0.0,
+                    -90.00000762939453
+                ],
+                "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                ],
                 "translation": [
                     -26.469205856323242,
                     -32.86811065673828,
                     0.0
-                ],
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_02.002",
+            "path_id": "EnemyPath005",
+            "reinforcement": {
+                "delay": 126,
+                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001"
+            },
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
@@ -604,30 +642,30 @@
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "path_id": "EnemyPath004",
-            "reinforcement": {
-                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001",
-                "delay": 126
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_02.002",
-            "transform": {
+                ],
                 "translation": [
                     -24.469205856323242,
                     -32.86811065673828,
                     0.0
-                ],
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_03.002",
+            "path_id": "EnemyPath006",
+            "reinforcement": {
+                "delay": 126,
+                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001"
+            },
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
@@ -637,30 +675,30 @@
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "path_id": "EnemyPath005",
-            "reinforcement": {
-                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001",
-                "delay": 126
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_03.002",
-            "transform": {
+                ],
                 "translation": [
                     -22.469205856323242,
                     -32.86811065673828,
                     0.0
-                ],
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_04.001",
+            "path_id": "EnemyPath007",
+            "reinforcement": {
+                "delay": 126,
+                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001"
+            },
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
@@ -670,30 +708,30 @@
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "path_id": "EnemyPath006",
-            "reinforcement": {
-                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001",
-                "delay": 126
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_04.001",
-            "transform": {
+                ],
                 "translation": [
                     -26.469205856323242,
                     -30.86811065673828,
                     0.0
-                ],
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "type": "VF3"
+            },
+            "enemy_type": "VF3",
+            "game_obj_type": "ENEMY",
+            "name": "AIEnemy_05.001",
+            "path_id": "EnemyPath008",
+            "reinforcement": {
+                "delay": 126,
+                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001"
+            },
+            "transform": {
                 "rotation": [
                     0.0,
                     -0.0,
@@ -703,61 +741,76 @@
                     1.0,
                     1.0,
                     1.0
-                ]
-            },
-            "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
-            "enemy": {
-                "type": "VF3"
-            },
-            "path_id": "EnemyPath007",
-            "reinforcement": {
-                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001",
-                "delay": 126
-            },
-            "vertices_count": 0
-        },
-        {
-            "type": "EMPTY",
-            "name": "AIEnemy_05.001",
-            "transform": {
+                ],
                 "translation": [
                     -24.469205856323242,
                     -30.86811065673828,
                     0.0
-                ],
+                ]
+            },
+            "type": "EMPTY",
+            "vertices_count": 0
+        },
+        {
+            "category": "ENEMY",
+            "enemy": {
+                "is_initial_spawn": true,
+                "type": "Jammer"
+            },
+            "name": "Enemy1",
+            "transform": {
                 "rotation": [
                     0.0,
-                    -0.0,
-                    -90.00000762939453
+                    0.0,
+                    0.0
                 ],
                 "scale": [
                     1.0,
                     1.0,
                     1.0
+                ],
+                "translation": [
+                    106.54618835449219,
+                    99.67391967773438,
+                    4.599999904632568
                 ]
             },
+            "type": "MESH",
+            "vertices_count": 0
+        },
+        {
             "category": "ENEMY",
-            "game_obj_type": "ENEMY",
-            "enemy_type": "VF3",
             "enemy": {
-                "type": "VF3"
+                "is_initial_spawn": true,
+                "type": "Jammer"
             },
-            "path_id": "EnemyPath008",
-            "reinforcement": {
-                "trigger": "AIEnemy_01.001, AIEnemy_02.001, AIEnemy_03.001",
-                "delay": 126
+            "name": "Enemy2",
+            "transform": {
+                "rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": [
+                    1.0,
+                    1.0,
+                    1.0
+                ],
+                "translation": [
+                    0.8999999761581421,
+                    26.5,
+                    7.599999904632568
+                ]
             },
+            "type": "MESH",
             "vertices_count": 0
         }
     ],
     "paths": [
         {
             "id": "EnemyPath",
-            "name": "EnemyPath",
             "loop": true,
-            "speed": 0.05000000074505806,
+            "name": "EnemyPath",
             "points": [
                 [
                     -4.40903377532959,
@@ -1339,13 +1392,13 @@
                     -3.3805580139160156,
                     -1.9349212646484375
                 ]
-            ]
+            ],
+            "speed": 0.05000000074505806
         },
         {
             "id": "EnemyPath001",
-            "name": "EnemyPath001",
             "loop": true,
-            "speed": 0.05000000074505806,
+            "name": "EnemyPath001",
             "points": [
                 [
                     -6.263225078582764,
@@ -1399,7 +1452,7 @@
                 ],
                 [
                     -6.305301189422607,
-                    16.019241333007812,
+                    16.019241333007813,
                     0.8043647408485413
                 ],
                 [
@@ -1529,7 +1582,7 @@
                 ],
                 [
                     -3.918260097503662,
-                    13.162612915039062,
+                    13.162612915039063,
                     0.6260870695114136
                 ],
                 [
@@ -1639,7 +1692,7 @@
                 ],
                 [
                     -1.7269567251205444,
-                    11.440872192382812,
+                    11.440872192382813,
                     1.0086957216262817
                 ],
                 [
@@ -1704,7 +1757,7 @@
                 ],
                 [
                     -1.3878262042999268,
-                    10.423477172851562,
+                    10.423477172851563,
                     1.2347826957702637
                 ],
                 [
@@ -2157,13 +2210,13 @@
                     17.434062957763672,
                     1.1154141426086426
                 ]
-            ]
+            ],
+            "speed": 0.05000000074505806
         },
         {
             "id": "EnemyPath002",
-            "name": "EnemyPath002",
             "loop": true,
-            "speed": 0.05000000074505806,
+            "name": "EnemyPath002",
             "points": [
                 [
                     6.263225078582764,
@@ -2271,7 +2324,7 @@
                     0.11307396739721298
                 ],
                 [
-                    1.1289749145507812,
+                    1.1289749145507813,
                     12.819477081298828,
                     0.20871594548225403
                 ],
@@ -2342,7 +2395,7 @@
                 ],
                 [
                     1.3704348802566528,
-                    11.440872192382812,
+                    11.440872192382813,
                     0.6086957454681396
                 ],
                 [
@@ -2407,7 +2460,7 @@
                 ],
                 [
                     2.161738872528076,
-                    10.423477172851562,
+                    10.423477172851563,
                     0.8347826600074768
                 ],
                 [
@@ -2962,7 +3015,7 @@
                 ],
                 [
                     5.749899864196777,
-                    16.238052368164062,
+                    16.238052368164063,
                     -1.469350814819336
                 ],
                 [
@@ -2975,13 +3028,13 @@
                     17.434059143066406,
                     -1.7997651100158691
                 ]
-            ]
+            ],
+            "speed": 0.05000000074505806
         },
         {
             "id": "EnemyPath003",
-            "name": "EnemyPath003",
             "loop": true,
-            "speed": 0.05000000074505806,
+            "name": "EnemyPath003",
             "points": [
                 [
                     -19.07436752319336,
@@ -2999,7 +3052,7 @@
                     1.762050747871399
                 ],
                 [
-                    -17.415969848632812,
+                    -17.415969848632813,
                     8.519987106323242,
                     1.6971912384033203
                 ],
@@ -3165,7 +3218,7 @@
                 ],
                 [
                     -9.954782485961914,
-                    13.162612915039062,
+                    13.162612915039063,
                     0.6260870695114136
                 ],
                 [
@@ -3275,7 +3328,7 @@
                 ],
                 [
                     -16.03826141357422,
-                    11.440872192382812,
+                    11.440872192382813,
                     1.0086957216262817
                 ],
                 [
@@ -3334,13 +3387,13 @@
                     1.200000286102295
                 ],
                 [
-                    -19.356521606445312,
+                    -19.356521606445313,
                     10.501738548278809,
                     1.2173913717269897
                 ],
                 [
                     -19.63304328918457,
-                    10.423477172851562,
+                    10.423477172851563,
                     1.2347826957702637
                 ],
                 [
@@ -3709,7 +3762,7 @@
                     1.9717659950256348
                 ],
                 [
-                    -24.914260864257812,
+                    -24.914260864257813,
                     6.077255725860596,
                     1.9670603275299072
                 ],
@@ -3793,13 +3846,13 @@
                     7.670982837677002,
                     1.8917696475982666
                 ]
-            ]
+            ],
+            "speed": 0.05000000074505806
         },
         {
             "id": "EnemyPath004",
-            "name": "EnemyPath004",
             "loop": true,
-            "speed": 0.5,
+            "name": "EnemyPath004",
             "points": [
                 [
                     -26.469205856323242,
@@ -3968,7 +4021,7 @@
                 ],
                 [
                     -23.33086585998535,
-                    -30.852615356445312,
+                    -30.852615356445313,
                     0.0
                 ],
                 [
@@ -4077,7 +4130,7 @@
                     0.0
                 ],
                 [
-                    -19.944778442382812,
+                    -19.944778442382813,
                     -28.174354553222656,
                     0.0
                 ],
@@ -4108,7 +4161,7 @@
                 ],
                 [
                     -19.021297454833984,
-                    -27.443923950195312,
+                    -27.443923950195313,
                     0.0
                 ],
                 [
@@ -4302,7 +4355,7 @@
                     0.0
                 ],
                 [
-                    -13.018692016601562,
+                    -13.018692016601563,
                     -22.69609260559082,
                     0.0
                 ],
@@ -4472,7 +4525,7 @@
                     0.0
                 ],
                 [
-                    -23.728469848632812,
+                    -23.728469848632813,
                     -30.78150177001953,
                     0.0
                 ],
@@ -4496,13 +4549,13 @@
                     -32.86812973022461,
                     0.0
                 ]
-            ]
+            ],
+            "speed": 0.5
         },
         {
             "id": "EnemyPath005",
-            "name": "EnemyPath005",
             "loop": true,
-            "speed": 0.5,
+            "name": "EnemyPath005",
             "points": [
                 [
                     -24.469205856323242,
@@ -4671,7 +4724,7 @@
                 ],
                 [
                     -23.33086585998535,
-                    -30.852615356445312,
+                    -30.852615356445313,
                     0.0
                 ],
                 [
@@ -4780,7 +4833,7 @@
                     0.0
                 ],
                 [
-                    -19.944778442382812,
+                    -19.944778442382813,
                     -28.174354553222656,
                     0.0
                 ],
@@ -4811,7 +4864,7 @@
                 ],
                 [
                     -19.021297454833984,
-                    -27.443923950195312,
+                    -27.443923950195313,
                     0.0
                 ],
                 [
@@ -5005,7 +5058,7 @@
                     0.0
                 ],
                 [
-                    -13.018692016601562,
+                    -13.018692016601563,
                     -22.69609260559082,
                     0.0
                 ],
@@ -5199,13 +5252,13 @@
                     -32.86812973022461,
                     0.0
                 ]
-            ]
+            ],
+            "speed": 0.5
         },
         {
             "id": "EnemyPath006",
-            "name": "EnemyPath006",
             "loop": true,
-            "speed": 0.5,
+            "name": "EnemyPath006",
             "points": [
                 [
                     -22.469205856323242,
@@ -5374,7 +5427,7 @@
                 ],
                 [
                     -23.33086585998535,
-                    -30.852615356445312,
+                    -30.852615356445313,
                     0.0
                 ],
                 [
@@ -5483,7 +5536,7 @@
                     0.0
                 ],
                 [
-                    -19.944778442382812,
+                    -19.944778442382813,
                     -28.174354553222656,
                     0.0
                 ],
@@ -5514,7 +5567,7 @@
                 ],
                 [
                     -19.021297454833984,
-                    -27.443923950195312,
+                    -27.443923950195313,
                     0.0
                 ],
                 [
@@ -5708,7 +5761,7 @@
                     0.0
                 ],
                 [
-                    -13.018692016601562,
+                    -13.018692016601563,
                     -22.69609260559082,
                     0.0
                 ],
@@ -5888,7 +5941,7 @@
                     0.0
                 ],
                 [
-                    -21.446670532226562,
+                    -21.446670532226563,
                     -31.824817657470703,
                     0.0
                 ],
@@ -5902,13 +5955,13 @@
                     -32.86812973022461,
                     0.0
                 ]
-            ]
+            ],
+            "speed": 0.5
         },
         {
             "id": "EnemyPath007",
-            "name": "EnemyPath007",
             "loop": true,
-            "speed": 0.5,
+            "name": "EnemyPath007",
             "points": [
                 [
                     -26.469205856323242,
@@ -6012,7 +6065,7 @@
                 ],
                 [
                     -25.078596115112305,
-                    -31.913223266601562,
+                    -31.913223266601563,
                     0.0
                 ],
                 [
@@ -6077,7 +6130,7 @@
                 ],
                 [
                     -23.33086585998535,
-                    -30.852615356445312,
+                    -30.852615356445313,
                     0.0
                 ],
                 [
@@ -6186,7 +6239,7 @@
                     0.0
                 ],
                 [
-                    -19.944778442382812,
+                    -19.944778442382813,
                     -28.174354553222656,
                     0.0
                 ],
@@ -6217,7 +6270,7 @@
                 ],
                 [
                     -19.021297454833984,
-                    -27.443923950195312,
+                    -27.443923950195313,
                     0.0
                 ],
                 [
@@ -6411,7 +6464,7 @@
                     0.0
                 ],
                 [
-                    -13.018692016601562,
+                    -13.018692016601563,
                     -22.69609260559082,
                     0.0
                 ],
@@ -6581,7 +6634,7 @@
                     0.0
                 ],
                 [
-                    -23.728469848632812,
+                    -23.728469848632813,
                     -29.129301071166992,
                     0.0
                 ],
@@ -6605,13 +6658,13 @@
                     -30.868101119995117,
                     0.0
                 ]
-            ]
+            ],
+            "speed": 0.5
         },
         {
             "id": "EnemyPath008",
-            "name": "EnemyPath008",
             "loop": true,
-            "speed": 0.5,
+            "name": "EnemyPath008",
             "points": [
                 [
                     -24.469205856323242,
@@ -6715,7 +6768,7 @@
                 ],
                 [
                     -24.817716598510742,
-                    -31.913223266601562,
+                    -31.913223266601563,
                     0.0
                 ],
                 [
@@ -6780,7 +6833,7 @@
                 ],
                 [
                     -23.33086585998535,
-                    -30.852615356445312,
+                    -30.852615356445313,
                     0.0
                 ],
                 [
@@ -6889,7 +6942,7 @@
                     0.0
                 ],
                 [
-                    -19.944778442382812,
+                    -19.944778442382813,
                     -28.174354553222656,
                     0.0
                 ],
@@ -6920,7 +6973,7 @@
                 ],
                 [
                     -19.021297454833984,
-                    -27.443923950195312,
+                    -27.443923950195313,
                     0.0
                 ],
                 [
@@ -7114,7 +7167,7 @@
                     0.0
                 ],
                 [
-                    -13.018692016601562,
+                    -13.018692016601563,
                     -22.69609260559082,
                     0.0
                 ],
@@ -7308,11 +7361,12 @@
                     -30.868101119995117,
                     0.0
                 ]
-            ]
+            ],
+            "speed": 0.5
         }
     ],
     "validation": {
-        "status": "G[ 28 / x 21",
+        "checks": "OK\t出力対象の有無\t\nOK\tPLAYER配置\t\nOK\t敵リスポーン地点配置\t\nOK\tStageBounds配置\t\nERROR\tスポーンがStageBounds内にある\tEnemyV: 敵リスポーン地点がStageBoundsの外にあります。\nERROR\tリスポーン地点の埋まり\t立方体.004: 自機スポーンが障害物に埋まっています: OhirayamaTerrain ほか17件\nOK\tリスポーン地点の重複\t\nWARNING\t名前ベース重複\t名前のベースが重複しています: 立方体 (立方体, 立方体.001, 立方体.003, 立方体.004) ほか5件\nWARNING\t親子関係\tdem.wrl.cleaner.materialmerger.gles: 親子関係があります。ゲーム出力ではワールド座標で扱われるため、意図通りか確認してください。 ほか1件\nOK\t飛行パスID重複\t\nOK\t飛行パス制御点数\t\nOK\t飛行パス速度\t\nOK\t飛行パス距離\t\nOK\t飛行パスの遠すぎる座標\t\nWARNING\t未使用の飛行パス\tEnemyPath: どの敵リスポーン地点にも使われていない飛行パスです。\nERROR\t敵から参照する飛行パス\t立方体.003: 飛行パスID '' が見つかりません。 ほか8件\nOK\tコライダー種別\t\nOK\tBoxコライダーサイズ\t\nOK\tAABB想定Boxコライダー回転\t\nOK\tマイナススケール\t\nOK\t異常に遠い座標\t\nOK\t空っぽのメッシュ\t\nOK\tファイル名禁則文字\t\nWARNING\tトランスフォーム未適用\t立方体.001: トランスフォームが未適用です（回転 / スケール）。必要なら Ctrl+A で適用してください。 ほか2件\nOK\tUVマップ\t\nWARNING\tNゴン\tブロック: Nゴン（5頂点以上のポリゴン）があります。三角形または四角形に分割してください。\nWARNING\tマテリアル割り当て\t立方体: マテリアルが割り当てられていない面があります。 ほか4件\nOK\tゲーム用種類設定\t\nOK\t障害物メッシュ設定\t\nWARNING\t障害物コライダー設定\t立方体: OBSTACLE にコライダーが設定されていません。 ほか2件\nOK\t敵タイプ設定\t\nOK\t増援トリガー設定\t\nOK\t0に近いスケール\t\nOK\tStageBounds種類設定\t\nOK\tその他\t",
         "errors": [
             "EnemyV: 敵リスポーン地点がStageBoundsの外にあります。",
             "立方体.004: 自機スポーンが障害物に埋まっています: OhirayamaTerrain",
@@ -7343,6 +7397,7 @@
             "AIEnemy_06: 飛行パスID '' が見つかりません。",
             "AIEnemy_07: 飛行パスID '' が見つかりません。"
         ],
+        "status": "G[ 28 / x 21",
         "warnings": [
             "名前のベースが重複しています: 立方体 (立方体, 立方体.001, 立方体.003, 立方体.004)",
             "名前のベースが重複しています: AIEnemy_01 (AIEnemy_01, AIEnemy_01.001, AIEnemy_01.002)",
@@ -7365,7 +7420,6 @@
             "立方体.004: トランスフォームが未適用です（回転 / スケール）。必要なら Ctrl+A で適用してください。",
             "立方体.004: マテリアルが割り当てられていない面があります。",
             "EnemyV: マテリアルが割り当てられていない面があります。"
-        ],
-        "checks": "OK\t出力対象の有無\t\nOK\tPLAYER配置\t\nOK\t敵リスポーン地点配置\t\nOK\tStageBounds配置\t\nERROR\tスポーンがStageBounds内にある\tEnemyV: 敵リスポーン地点がStageBoundsの外にあります。\nERROR\tリスポーン地点の埋まり\t立方体.004: 自機スポーンが障害物に埋まっています: OhirayamaTerrain ほか17件\nOK\tリスポーン地点の重複\t\nWARNING\t名前ベース重複\t名前のベースが重複しています: 立方体 (立方体, 立方体.001, 立方体.003, 立方体.004) ほか5件\nWARNING\t親子関係\tdem.wrl.cleaner.materialmerger.gles: 親子関係があります。ゲーム出力ではワールド座標で扱われるため、意図通りか確認してください。 ほか1件\nOK\t飛行パスID重複\t\nOK\t飛行パス制御点数\t\nOK\t飛行パス速度\t\nOK\t飛行パス距離\t\nOK\t飛行パスの遠すぎる座標\t\nWARNING\t未使用の飛行パス\tEnemyPath: どの敵リスポーン地点にも使われていない飛行パスです。\nERROR\t敵から参照する飛行パス\t立方体.003: 飛行パスID '' が見つかりません。 ほか8件\nOK\tコライダー種別\t\nOK\tBoxコライダーサイズ\t\nOK\tAABB想定Boxコライダー回転\t\nOK\tマイナススケール\t\nOK\t異常に遠い座標\t\nOK\t空っぽのメッシュ\t\nOK\tファイル名禁則文字\t\nWARNING\tトランスフォーム未適用\t立方体.001: トランスフォームが未適用です（回転 / スケール）。必要なら Ctrl+A で適用してください。 ほか2件\nOK\tUVマップ\t\nWARNING\tNゴン\tブロック: Nゴン（5頂点以上のポリゴン）があります。三角形または四角形に分割してください。\nWARNING\tマテリアル割り当て\t立方体: マテリアルが割り当てられていない面があります。 ほか4件\nOK\tゲーム用種類設定\t\nOK\t障害物メッシュ設定\t\nWARNING\t障害物コライダー設定\t立方体: OBSTACLE にコライダーが設定されていません。 ほか2件\nOK\t敵タイプ設定\t\nOK\t増援トリガー設定\t\nOK\t0に近いスケール\t\nOK\tStageBounds種類設定\t\nOK\tその他\t"
+        ]
     }
 }

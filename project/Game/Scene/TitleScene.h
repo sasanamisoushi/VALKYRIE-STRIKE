@@ -26,6 +26,7 @@ public:
 	// 配布ZIPでクリア演出デモが選ばれた時だけ、TABの再生内容を切り替える。
 	static bool ShouldPlayClearCinematicDemo() { return playClearCinematicDemo_; }
 private:
+	friend class TitleOverlayRenderer;
 	static inline bool isPendingFadeIn_ = false;
 	// 配布ZIPの runtime_options.json で無効化できる。設定ファイルがない開発版は有効。
 	static inline bool isAttractDemoAvailable_ = true;

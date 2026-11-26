@@ -1,4 +1,7 @@
 #include "SimulationManager.h"
+#include "SimulationSceneJsonEditor.h"
+#include "SimulationActionLibrary.h"
+#include "SimulationBossEditor.h"
 #include "BossSpawnController.h"
 #include "EnemyFactory.h"
 #include "MissilePresetManager.h"
@@ -106,910 +109,88 @@ SimulationManager::SimulationManager(GamePlayScene* scene) : scene_(scene) {
 	RefreshActionAnimationsList();
 }
 
+SimulationSceneJsonContext SimulationManager::MakeSceneJsonContext() const {
+	return {
+		scene_->player_.get(), &scene_->enemies_, &scene_->obstacles_, &scene_->enemySpawns_,
+		&scene_->stageReloadController_, &scene_->uiManager_->simulationSaveMessage_,
+		[this]() { scene_->ReloadSceneJson(); },
+	};
+}
+
+SimulationActionContext SimulationManager::MakeActionContext() const {
+	return {
+		scene_->isDebugCameraActive_, scene_->camera.get(), scene_->debugFlyCamera_.get(),
+		scene_->player_.get(), &scene_->enemies_, &scene_->obstacles_, &scene_->enemySpawns_,
+		&scene_->enemySpawnManager_, scene_->missileManager_.get(), scene_->enemyBulletManager_.get(),
+		scene_->explosionManager_.get(),
+		scene_->environmentRenderer_ ? scene_->environmentRenderer_->GetParticleManager() : nullptr,
+		scene_->lockOnManager_.get(), &scene_->targetSelection_, &scene_->gameOverSequence_,
+		{
+			&scene_->missileNormalSpeed, &scene_->missileNormalScale, &scene_->missileNormalCollisionRadius,
+			&scene_->missileNormalLifeTime, &scene_->missileSpeed, &scene_->missileAmpX, &scene_->missileAmpZ,
+			&scene_->missileAmpY, &scene_->missileFreqY, &scene_->missileBaseY, &scene_->missileHomingStrength,
+			&scene_->missileHomingScale, &scene_->missileHomingCollisionRadius, &scene_->missileTrailWidth,
+			&scene_->missileLifeTime, &scene_->missileMuzzleOffset,
+		},
+		&scene_->uiManager_->simulationActionNames_, &scene_->uiManager_->selectedSimulationActionIndex_,
+		&scene_->uiManager_->simulationActionMessage_,
+		[this]() { scene_->ResetCinematicLockOnCamera(); },
+	};
+}
+
+SimulationBossEditorContext SimulationManager::MakeBossEditorContext() const {
+	return {
+		&scene_->enemies_, &scene_->obstacles_, &scene_->bossEncounterState_,
+		&scene_->gameOverSequence_, &scene_->isEditorPreviewPlaying_,
+		scene_->uiManager_->bossBattlePosition_, &scene_->uiManager_->bossTuning_,
+		&scene_->uiManager_->bossTuningMessage_,
+		[this]() { scene_->ClearAllEnemyReferences(); },
+	};
+}
+
 bool SimulationManager::SaveCurrentSimulationLayoutToSceneJson(const std::string &filePath) {
-	json root;
-	{
-		std::ifstream ifs(filePath);
-		if (!ifs.is_open()) {
-			scene_->uiManager_->simulationSaveMessage_ = "scene.json が見つからないため保存できませんでした";
-			OutputDebugStringA(("[SimulationSave] File not found: " + filePath + "\n").c_str());
-			return false;
-		}
-
-		try {
-			ifs >> root;
-		} catch (const std::exception &e) {
-			scene_->uiManager_->simulationSaveMessage_ = "scene.json の読み込みに失敗しました";
-			OutputDebugStringA(("[SimulationSave] JSON parse failed: " + std::string(e.what()) + "\n").c_str());
-			return false;
-		}
-	}
-
-	if (!root.contains("objects") || !root["objects"].is_array()) {
-		scene_->uiManager_->simulationSaveMessage_ = "scene.json に objects がないため保存できませんでした";
-		OutputDebugStringA("[SimulationSave] objects array not found.\n");
-		return false;
-	}
-
-	json &objects = root["objects"];
-	size_t playerObjectIndex = kInvalidSceneObjectIndex;
-	std::vector<size_t> enemyObjectIndices;
-	std::vector<size_t> obstacleObjectIndices;
-
-	for (size_t index = 0; index < objects.size(); ++index) {
-		const json &objectData = objects[index];
-		if (IsScenePlayerObject(objectData) && playerObjectIndex == kInvalidSceneObjectIndex) {
-			playerObjectIndex = index;
-		}
-		if (IsSceneEnemyObject(objectData)) {
-			enemyObjectIndices.push_back(index);
-		} else if (IsSceneObstacleObject(objectData)) {
-			obstacleObjectIndices.push_back(index);
-		}
-	}
-
-	size_t savedCount = 0;
-
-	if (scene_->player_ && playerObjectIndex != kInvalidSceneObjectIndex) {
-		const Vector3 playerRotation = EulerFromQuaternionXYZ(scene_->player_->GetQuaternion());
-		WriteSceneTransform(objects[playerObjectIndex], scene_->player_->GetPosition(), &playerRotation, nullptr);
-		++savedCount;
-	}
-
-	size_t obstacleIndex = 0;
-	for (const auto &obstacle : scene_->obstacles_) {
-		if (!obstacle || obstacleIndex >= obstacleObjectIndices.size()) {
-			break;
-		}
-
-		const Vector3 obstacleRotation = obstacle->GetRotation();
-		const Vector3 obstacleScale = obstacle->GetScale();
-		WriteSceneTransform(
-			objects[obstacleObjectIndices[obstacleIndex]],
-			obstacle->GetPosition(),
-			&obstacleRotation,
-			&obstacleScale);
-		++obstacleIndex;
-		++savedCount;
-	}
-
-	for (const auto &enemy : scene_->enemies_) {
-		if (!enemy || enemy->IsDead()) {
-			continue;
-		}
-
-		const Vector3 enemyPosition = enemy->GetPosition();
-		const Vector3 enemyRotation = enemy->GetRotation();
-		const size_t spawnPointIndex = enemy->GetSpawnPointIndex();
-
-		if (spawnPointIndex != Enemy::kNoSpawnPoint && spawnPointIndex < enemyObjectIndices.size()) {
-			WriteSceneTransform(objects[enemyObjectIndices[spawnPointIndex]], enemyPosition, &enemyRotation, nullptr);
-			if (spawnPointIndex < scene_->enemySpawns_.size()) {
-				scene_->enemySpawns_[spawnPointIndex].position = enemyPosition;
-				scene_->enemySpawns_[spawnPointIndex].rotation = enemyRotation;
-			}
-			++savedCount;
-			continue;
-		}
-
-		json newEnemy;
-		newEnemy["type"] = "MESH";
-		newEnemy["name"] = MakeUniqueSceneObjectName(objects, "SimEnemy");
-		newEnemy["category"] = "ENEMY";
-		newEnemy["enemy"] = { { "type", "VF1" } };
-		newEnemy["vertices_count"] = 0;
-		const Vector3 enemyScale = enemy->GetScale();
-		WriteSceneTransform(newEnemy, enemyPosition, &enemyRotation, &enemyScale);
-
-		objects.push_back(newEnemy);
-
-		EnemySpawnData spawnData;
-		spawnData.name = newEnemy["name"].get<std::string>();
-		spawnData.position = enemyPosition;
-		spawnData.rotation = enemyRotation;
-		spawnData.isInitialSpawn = true;
-		scene_->enemySpawns_.push_back(spawnData);
-		enemy->SetSpawnPointIndex(scene_->enemySpawns_.size() - 1);
-		enemyObjectIndices.push_back(objects.size() - 1);
-		++savedCount;
-	}
-
-	// 増援・ボスなど、現在は未出現の敵もエディタで動かした位置を保存する。
-	for (size_t spawnPointIndex = 0;
-		spawnPointIndex < scene_->enemySpawns_.size() && spawnPointIndex < enemyObjectIndices.size();
-		++spawnPointIndex) {
-		const EnemySpawnData &spawn = scene_->enemySpawns_[spawnPointIndex];
-		WriteSceneTransform(objects[enemyObjectIndices[spawnPointIndex]], spawn.position, &spawn.rotation, nullptr);
-		++savedCount;
-	}
-
-	std::ofstream ofs(filePath, std::ios::trunc);
-	if (!ofs.is_open()) {
-		scene_->uiManager_->simulationSaveMessage_ = "scene.json を書き込めませんでした";
-		OutputDebugStringA(("[SimulationSave] Failed to open for write: " + filePath + "\n").c_str());
-		return false;
-	}
-
-	ofs << root.dump(4);
-	ofs.close();
-
-	scene_->stageReloadController_.SyncWriteTime(filePath);
-
-	scene_->uiManager_->simulationSaveMessage_ = "現在の配置を scene.json に保存しました。実ゲームにも反映されます";
-	OutputDebugStringA(("[SimulationSave] Saved " + std::to_string(savedCount) + " transforms.\n").c_str());
-	return true;
+	return SimulationSceneJsonEditor::SaveCurrentLayout(filePath, MakeSceneJsonContext());
 }
 
 bool SimulationManager::AddEnemySpawnToSceneJson(
-	const std::string &filePath,
-	const std::string &name,
-	const std::string &enemyType,
-	const Vector3 &position,
-	const Vector3 &rotation) {
-	json root;
-	{
-		std::ifstream ifs(filePath);
-		if (!ifs.is_open()) {
-			scene_->uiManager_->simulationSaveMessage_ = "scene.json が見つからないため敵を追加できませんでした";
-			return false;
-		}
-
-		try {
-			ifs >> root;
-		} catch (const std::exception &) {
-			scene_->uiManager_->simulationSaveMessage_ = "scene.json の読み込みに失敗したため敵を追加できませんでした";
-			return false;
-		}
-	}
-
-	if (!root.contains("objects") || !root["objects"].is_array()) {
-		scene_->uiManager_->simulationSaveMessage_ = "scene.json に objects がないため敵を追加できませんでした";
-		return false;
-	}
-
-	json &objects = root["objects"];
-	json newEnemy;
-	newEnemy["type"] = "MESH";
-	newEnemy["name"] = MakeUniqueSceneObjectName(objects, name.empty() ? "Enemy" : name);
-	newEnemy["category"] = "ENEMY";
-	newEnemy["enemy"] = {
-		{ "type", enemyType.empty() ? "VF1" : enemyType },
-		{ "is_initial_spawn", true },
-	};
-	newEnemy["vertices_count"] = 0;
-	const Vector3 defaultScale = { 1.0f, 1.0f, 1.0f };
-	WriteSceneTransform(newEnemy, position, &rotation, &defaultScale);
-	objects.push_back(std::move(newEnemy));
-
-	std::ofstream ofs(filePath, std::ios::trunc);
-	if (!ofs.is_open()) {
-		scene_->uiManager_->simulationSaveMessage_ = "scene.json を書き込めませんでした";
-		return false;
-	}
-
-	ofs << root.dump(4);
-	ofs.close();
-
-	scene_->stageReloadController_.SyncWriteTime(filePath);
-
-	// ファイル保存だけでなく、ゲーム中のプレビューにも即時反映する。
-	scene_->ReloadSceneJson();
-	scene_->uiManager_->simulationSaveMessage_ = "敵配置を scene.json に保存し、プレビューへ反映しました";
-	return true;
+	const std::string &filePath, const std::string &name, const std::string &enemyType,
+	const Vector3 &position, const Vector3 &rotation) {
+	return SimulationSceneJsonEditor::AddEnemySpawn(
+		filePath, name, enemyType, position, rotation, MakeSceneJsonContext());
 }
 
 bool SimulationManager::MoveEnemySpawnInSceneJson(const std::string &filePath, size_t sourceIndex, size_t targetIndex) {
-	json root;
-	{
-		std::ifstream ifs(filePath);
-		if (!ifs.is_open()) {
-			scene_->uiManager_->simulationSaveMessage_ = "scene.json が見つからないためスポーン順を変更できませんでした";
-			return false;
-		}
-
-		try {
-			ifs >> root;
-		} catch (const std::exception &) {
-			scene_->uiManager_->simulationSaveMessage_ = "scene.json の読み込みに失敗したためスポーン順を変更できませんでした";
-			return false;
-		}
-	}
-
-	if (!root.contains("objects") || !root["objects"].is_array()) {
-		scene_->uiManager_->simulationSaveMessage_ = "scene.json に objects がないためスポーン順を変更できませんでした";
-		return false;
-	}
-
-	json &objects = root["objects"];
-	std::vector<size_t> enemyObjectIndices;
-	for (size_t objectIndex = 0; objectIndex < objects.size(); ++objectIndex) {
-		if (IsSceneEnemyObject(objects[objectIndex])) {
-			enemyObjectIndices.push_back(objectIndex);
-		}
-	}
-
-	if (sourceIndex >= enemyObjectIndices.size() || targetIndex >= enemyObjectIndices.size() || sourceIndex == targetIndex) {
-		return false;
-	}
-
-	std::swap(objects[enemyObjectIndices[sourceIndex]], objects[enemyObjectIndices[targetIndex]]);
-	std::ofstream ofs(filePath, std::ios::trunc);
-	if (!ofs.is_open()) {
-		scene_->uiManager_->simulationSaveMessage_ = "scene.json を書き込めませんでした";
-		return false;
-	}
-	ofs << root.dump(4);
-	ofs.close();
-
-	scene_->stageReloadController_.SyncWriteTime(filePath);
-
-	scene_->ReloadSceneJson();
-	scene_->uiManager_->simulationSaveMessage_ = "敵の初期スポーン順を変更し、プレビューへ反映しました";
-	return true;
+	return SimulationSceneJsonEditor::MoveEnemySpawn(filePath, sourceIndex, targetIndex, MakeSceneJsonContext());
 }
 
 void SimulationManager::RefreshSimulationActionNames() {
-	scene_->uiManager_->simulationActionNames_.clear();
-
-	std::ifstream ifs(kSimulationActionsFilePath);
-	if (!ifs.is_open()) {
-		scene_->uiManager_->selectedSimulationActionIndex_ = 0;
-		return;
-	}
-
-	json root;
-	try {
-		ifs >> root;
-	} catch (const std::exception& e) {
-		OutputDebugStringA((std::string("[SimulationManager] Failed to read actions JSON: ") + e.what() + "\n").c_str());
-		scene_->uiManager_->selectedSimulationActionIndex_ = 0;
-		return;
-	}
-
-	if (!root.contains("actions") || !root["actions"].is_array()) {
-		scene_->uiManager_->selectedSimulationActionIndex_ = 0;
-		return;
-	}
-
-	for (const auto &actionData : root["actions"]) {
-		if (!actionData.is_object() || !actionData.contains("name") || !actionData["name"].is_string()) {
-			continue;
-		}
-
-		scene_->uiManager_->simulationActionNames_.push_back(actionData["name"].get<std::string>());
-	}
-
-	if (scene_->uiManager_->selectedSimulationActionIndex_ >= static_cast<int>(scene_->uiManager_->simulationActionNames_.size())) {
-		scene_->uiManager_->selectedSimulationActionIndex_ = scene_->uiManager_->simulationActionNames_.empty() ? 0 : static_cast<int>(scene_->uiManager_->simulationActionNames_.size()) - 1;
-	}
+	SimulationActionLibrary::RefreshActionNames(
+		kSimulationActionsFilePath,
+		scene_->uiManager_->simulationActionNames_,
+		scene_->uiManager_->selectedSimulationActionIndex_);
 }
 
 bool SimulationManager::SaveNamedSimulationAction(const std::string &filePath, const std::string &actionName) {
-	const std::string trimmedName = TrimActionName(actionName);
-	if (trimmedName.empty()) {
-		scene_->uiManager_->simulationActionMessage_ = "保存名を入力してください。";
-		return false;
-	}
-
-	json root;
-	{
-		std::ifstream ifs(filePath);
-		if (ifs.is_open()) {
-			try {
-				ifs >> root;
-			} catch (const std::exception& e) {
-				OutputDebugStringA((std::string("[SimulationManager] Resetting unreadable actions JSON: ") + e.what() + "\n").c_str());
-				root = json::object();
-			}
-		}
-	}
-
-	if (!root.is_object()) {
-		root = json::object();
-	}
-	if (!root.contains("actions") || !root["actions"].is_array()) {
-		root["actions"] = json::array();
-	}
-
-	json action;
-	action["name"] = trimmedName;
-
-	if (scene_->player_) {
-		json playerData;
-		playerData["position"] = ToVector3Json(scene_->player_->GetPosition());
-		playerData["rotation"] = ToVector3Json(EulerFromQuaternionXYZ(scene_->player_->GetQuaternion()));
-		playerData["mode"] = static_cast<int>(scene_->player_->GetCurrentMode());
-
-		json modeParams = json::array();
-		for (int modeIndex = 0; modeIndex < 3; ++modeIndex) {
-			modeParams.push_back(PlayerModeParamsToJson(scene_->player_->GetModeParams(static_cast<PlayerMode>(modeIndex))));
-		}
-		playerData["modeParams"] = modeParams;
-		action["player"] = playerData;
-	}
-
-	json missileData;
-	missileData["normalSpeed"] = scene_->missileNormalSpeed;
-	missileData["normalScale"] = scene_->missileNormalScale;
-	missileData["normalCollisionRadius"] = scene_->missileNormalCollisionRadius;
-	missileData["normalLifeTime"] = scene_->missileNormalLifeTime;
-	missileData["speed"] = scene_->missileSpeed;
-	missileData["ampX"] = scene_->missileAmpX;
-	missileData["ampZ"] = scene_->missileAmpZ;
-	missileData["ampY"] = scene_->missileAmpY;
-	missileData["freqY"] = scene_->missileFreqY;
-	missileData["baseY"] = scene_->missileBaseY;
-	missileData["homingStrength"] = scene_->missileHomingStrength;
-	missileData["homingScale"] = scene_->missileHomingScale;
-	missileData["homingCollisionRadius"] = scene_->missileHomingCollisionRadius;
-	missileData["trailWidth"] = scene_->missileTrailWidth;
-	missileData["lifeTime"] = scene_->missileLifeTime;
-	missileData["muzzleOffset"] = scene_->missileMuzzleOffset;
-	action["missile"] = missileData;
-
-	json enemiesData = json::array();
-	int generatedEnemyIndex = 1;
-	for (const auto &enemy : scene_->enemies_) {
-		if (!enemy || enemy->IsDead()) {
-			continue;
-		}
-
-		json enemyData;
-		const size_t spawnPointIndex = enemy->GetSpawnPointIndex();
-		if (spawnPointIndex < scene_->enemySpawns_.size()) {
-			const EnemySpawnData &spawnData = scene_->enemySpawns_[spawnPointIndex];
-			enemyData["name"] = spawnData.name;
-			enemyData["reinforcementTrigger"] = spawnData.reinforcementTriggerName;
-			enemyData["reinforcementDelay"] = spawnData.reinforcementDelayFrames;
-		} else {
-			enemyData["name"] = "SimEnemy" + std::to_string(generatedEnemyIndex++);
-		}
-
-		enemyData["position"] = ToVector3Json(enemy->GetPosition());
-		enemyData["rotation"] = ToVector3Json(enemy->GetRotation());
-		enemyData["scale"] = ToVector3Json(enemy->GetScale());
-		enemyData["initial"] = true;
-		enemiesData.push_back(enemyData);
-	}
-	action["enemies"] = enemiesData;
-
-	json obstaclesData = json::array();
-	for (const auto &obstacle : scene_->obstacles_) {
-		if (!obstacle) {
-			continue;
-		}
-
-		json obstacleData;
-		obstacleData["position"] = ToVector3Json(obstacle->GetPosition());
-		obstacleData["rotation"] = ToVector3Json(obstacle->GetRotation());
-		obstacleData["scale"] = ToVector3Json(obstacle->GetScale());
-		obstacleData["collisionOffset"] = ToVector3Json(obstacle->GetCollisionOffset());
-		obstacleData["collisionScale"] = ToVector3Json(obstacle->GetCollisionScale());
-		obstacleData["isCollisionEnabled"] = obstacle->IsCollisionEnabled();
-		obstacleData["useMeshCollider"] = obstacle->IsUseMeshCollider();
-		obstacleData["stageBounds"] = obstacle->IsStageBounds();
-		obstaclesData.push_back(obstacleData);
-	}
-	action["obstacles"] = obstaclesData;
-
-	if (scene_->explosionManager_) {
-		const auto &config = scene_->explosionManager_->GetConfig();
-		json explosionData;
-		explosionData["count"] = config.count;
-		explosionData["color"] = json::array({ config.color[0], config.color[1], config.color[2], config.color[3] });
-		explosionData["speed"] = config.speed;
-		explosionData["speedVariance"] = config.speedVariance;
-		explosionData["scale"] = config.scale;
-		explosionData["scaleVariance"] = config.scaleVariance;
-		explosionData["lifeTimeMin"] = config.lifeTimeMin;
-		explosionData["lifeTimeMax"] = config.lifeTimeMax;
-		explosionData["posVariance"] = config.posVariance;
-		explosionData["destructionParticleType"] = config.destructionParticleType;
-		explosionData["smokeColor"] = json::array({ config.smokeColor[0], config.smokeColor[1], config.smokeColor[2], config.smokeColor[3] });
-		explosionData["flameToSmokeScale"] = config.flameToSmokeScale;
-		explosionData["flameToSmokeTransition"] = config.flameToSmokeTransition;
-		action["explosion"] = explosionData;
-	}
-
-	json &actions = root["actions"];
-	bool updated = false;
-	for (auto &existingAction : actions) {
-		if (existingAction.is_object() && existingAction.value("name", "") == trimmedName) {
-			existingAction = action;
-			updated = true;
-			break;
-		}
-	}
-	if (!updated) {
-		actions.push_back(action);
-	}
-
-	std::ofstream ofs(filePath, std::ios::trunc);
-	if (!ofs.is_open()) {
-		scene_->uiManager_->simulationActionMessage_ = "名前付き行動を保存できませんでした。";
-		return false;
-	}
-
-	ofs << root.dump(4);
-	ofs.close();
-
-	RefreshSimulationActionNames();
-	for (size_t index = 0; index < scene_->uiManager_->simulationActionNames_.size(); ++index) {
-		if (scene_->uiManager_->simulationActionNames_[index] == trimmedName) {
-			scene_->uiManager_->selectedSimulationActionIndex_ = static_cast<int>(index);
-			break;
-		}
-	}
-
-	scene_->uiManager_->simulationActionMessage_ = "行動「" + trimmedName + "」を保存しました。";
-	return true;
+	return SimulationActionLibrary::SaveNamedAction(filePath, actionName, MakeActionContext());
 }
 
 bool SimulationManager::ApplySimulationAction(const std::string &filePath, const std::string &actionName) {
-	const std::string trimmedName = TrimActionName(actionName);
-	if (trimmedName.empty()) {
-		scene_->uiManager_->simulationActionMessage_ = "読み込む行動名がありません。";
-		return false;
-	}
-
-	std::ifstream ifs(filePath);
-	if (!ifs.is_open()) {
-		scene_->uiManager_->simulationActionMessage_ = "名前付き行動ファイルが見つかりません。";
-		return false;
-	}
-
-	json root;
-	try {
-		ifs >> root;
-	} catch (const std::exception& e) {
-		OutputDebugStringA((std::string("[SimulationManager] Failed to apply action JSON: ") + e.what() + "\n").c_str());
-		scene_->uiManager_->simulationActionMessage_ = "名前付き行動ファイルを読み込めませんでした。";
-		return false;
-	}
-
-	if (!root.contains("actions") || !root["actions"].is_array()) {
-		scene_->uiManager_->simulationActionMessage_ = "保存された行動がありません。";
-		return false;
-	}
-
-	const json *action = nullptr;
-	for (const auto &actionData : root["actions"]) {
-		if (actionData.is_object() && actionData.value("name", "") == trimmedName) {
-			action = &actionData;
-			break;
-		}
-	}
-
-	if (!action) {
-		scene_->uiManager_->simulationActionMessage_ = "選択した行動が見つかりません。";
-		return false;
-	}
-
-	scene_->targetSelection_.ClearAll();
-	scene_->lockOnManager_->CancelMultiLock();
-	scene_->ResetCinematicLockOnCamera();
-	scene_->gameOverSequence_.Reset();
-
-	if (scene_->player_ && action->contains("player") && (*action)["player"].is_object()) {
-		const json &playerData = (*action)["player"];
-		if (playerData.contains("modeParams") && playerData["modeParams"].is_array()) {
-			const json &modeParams = playerData["modeParams"];
-			for (int modeIndex = 0; modeIndex < 3 && modeIndex < static_cast<int>(modeParams.size()); ++modeIndex) {
-				PlayerModeParams params = scene_->player_->GetModeParams(static_cast<PlayerMode>(modeIndex));
-				ApplyPlayerModeParamsFromJson(modeParams[modeIndex], params);
-				scene_->player_->SetModeParams(static_cast<PlayerMode>(modeIndex), params);
-			}
-		}
-
-		const int modeIndex = std::clamp(ReadJsonInt(playerData, "mode", 0), 0, 2);
-		scene_->player_->ChangeMode(static_cast<PlayerMode>(modeIndex));
-		scene_->player_->SetPosition(ReadVector3Json(playerData.value("position", json::array()), scene_->player_->GetPosition()));
-		scene_->player_->SetRotation(ReadVector3Json(playerData.value("rotation", json::array()), { 0.0f, 0.0f, 0.0f }));
-	}
-
-	if (action->contains("missile") && (*action)["missile"].is_object()) {
-		const json &missileData = (*action)["missile"];
-		scene_->missileNormalSpeed = ReadJsonFloat(missileData, "normalSpeed", scene_->missileNormalSpeed);
-		scene_->missileNormalScale = ReadJsonFloat(missileData, "normalScale", scene_->missileNormalScale);
-		scene_->missileNormalCollisionRadius = ReadJsonFloat(missileData, "normalCollisionRadius", scene_->missileNormalCollisionRadius);
-		scene_->missileNormalLifeTime = ReadJsonInt(missileData, "normalLifeTime", scene_->missileNormalLifeTime);
-		scene_->missileSpeed = ReadJsonFloat(missileData, "speed", scene_->missileSpeed);
-		scene_->missileAmpX = ReadJsonFloat(missileData, "ampX", scene_->missileAmpX);
-		scene_->missileAmpZ = ReadJsonFloat(missileData, "ampZ", scene_->missileAmpZ);
-		scene_->missileAmpY = ReadJsonFloat(missileData, "ampY", scene_->missileAmpY);
-		scene_->missileFreqY = ReadJsonFloat(missileData, "freqY", scene_->missileFreqY);
-		scene_->missileBaseY = ReadJsonFloat(missileData, "baseY", scene_->missileBaseY);
-		scene_->missileHomingStrength = ReadJsonFloat(missileData, "homingStrength", scene_->missileHomingStrength);
-		scene_->missileHomingScale = ReadJsonFloat(missileData, "homingScale", scene_->missileHomingScale);
-		scene_->missileHomingCollisionRadius = ReadJsonFloat(missileData, "homingCollisionRadius", scene_->missileHomingCollisionRadius);
-		scene_->missileTrailWidth = ReadJsonFloat(missileData, "trailWidth", scene_->missileTrailWidth);
-		scene_->missileLifeTime = ReadJsonInt(missileData, "lifeTime", scene_->missileLifeTime);
-		scene_->missileMuzzleOffset = ReadJsonFloat(missileData, "muzzleOffset", scene_->missileMuzzleOffset);
-	}
-
-	if (scene_->explosionManager_ && action->contains("explosion") && (*action)["explosion"].is_object()) {
-		const json &explosionData = (*action)["explosion"];
-		auto &config = scene_->explosionManager_->GetConfig();
-		config.count = ReadJsonInt(explosionData, "count", config.count);
-		if (explosionData.contains("color") && explosionData["color"].is_array() && explosionData["color"].size() >= 4) {
-			for (int index = 0; index < 4; ++index) {
-				config.color[index] = explosionData["color"][index].get<float>();
-			}
-		}
-		config.speed = ReadJsonFloat(explosionData, "speed", config.speed);
-		config.speedVariance = ReadJsonFloat(explosionData, "speedVariance", config.speedVariance);
-		config.scale = ReadJsonFloat(explosionData, "scale", config.scale);
-		config.scaleVariance = ReadJsonFloat(explosionData, "scaleVariance", config.scaleVariance);
-		config.lifeTimeMin = ReadJsonFloat(explosionData, "lifeTimeMin", config.lifeTimeMin);
-		config.lifeTimeMax = ReadJsonFloat(explosionData, "lifeTimeMax", config.lifeTimeMax);
-		config.posVariance = ReadJsonFloat(explosionData, "posVariance", config.posVariance);
-		config.destructionParticleType = (std::clamp)(ReadJsonInt(explosionData, "destructionParticleType", config.destructionParticleType), 0, 3);
-		if (explosionData.contains("smokeColor") && explosionData["smokeColor"].is_array() && explosionData["smokeColor"].size() >= 4) {
-			for (int index = 0; index < 4; ++index) {
-				config.smokeColor[index] = explosionData["smokeColor"][index].get<float>();
-			}
-		}
-		config.flameToSmokeScale = ReadJsonFloat(explosionData, "flameToSmokeScale", config.flameToSmokeScale);
-		config.flameToSmokeTransition = ReadJsonFloat(explosionData, "flameToSmokeTransition", config.flameToSmokeTransition);
-	}
-
-	if (action->contains("obstacles") && (*action)["obstacles"].is_array()) {
-		auto obstacleIt = scene_->obstacles_.begin();
-		for (const auto &obstacleData : (*action)["obstacles"]) {
-			if (obstacleIt == scene_->obstacles_.end()) {
-				break;
-			}
-			if (!(*obstacleIt)) {
-				++obstacleIt;
-				continue;
-			}
-
-			(*obstacleIt)->SetPosition(ReadVector3Json(obstacleData.value("position", json::array()), (*obstacleIt)->GetPosition()));
-			(*obstacleIt)->SetRotation(ReadVector3Json(obstacleData.value("rotation", json::array()), (*obstacleIt)->GetRotation()));
-			(*obstacleIt)->SetScale(ReadVector3Json(obstacleData.value("scale", json::array()), (*obstacleIt)->GetScale()));
-			(*obstacleIt)->SetCollisionOffset(ReadVector3Json(obstacleData.value("collisionOffset", json::array()), (*obstacleIt)->GetCollisionOffset()));
-			(*obstacleIt)->SetCollisionScale(ReadVector3Json(obstacleData.value("collisionScale", json::array()), (*obstacleIt)->GetCollisionScale()));
-			(*obstacleIt)->SetCollisionEnabled(obstacleData.value("isCollisionEnabled", (*obstacleIt)->IsCollisionEnabled()));
-			(*obstacleIt)->SetUseMeshCollider(obstacleData.value("useMeshCollider", (*obstacleIt)->IsUseMeshCollider()));
-			(*obstacleIt)->Update();
-			++obstacleIt;
-		}
-	}
-
-	if (action->contains("enemies") && (*action)["enemies"].is_array()) {
-		scene_->enemies_.clear();
-		scene_->enemySpawns_.clear();
-
-		for (const auto &enemyData : (*action)["enemies"]) {
-			if (!enemyData.is_object()) {
-				continue;
-			}
-
-			EnemySpawnData spawnData;
-			spawnData.name = enemyData.value("name", "SavedEnemy");
-			spawnData.position = ReadVector3Json(enemyData.value("position", json::array()), { 0.0f, 0.0f, 0.0f });
-			spawnData.rotation = ReadVector3Json(enemyData.value("rotation", json::array()), { 0.0f, 0.0f, 0.0f });
-			spawnData.isInitialSpawn = enemyData.value("initial", true);
-			spawnData.reinforcementTriggerName = enemyData.value("reinforcementTrigger", "");
-			spawnData.reinforcementDelayFrames = ReadJsonInt(enemyData, "reinforcementDelay", 0);
-			scene_->enemySpawns_.push_back(spawnData);
-
-			if (spawnData.isInitialSpawn) {
-				EnemyFactory factory;
-				if (auto enemy = factory.Create(spawnData, scene_->enemySpawns_.size() - 1, scene_->obstacles_)) {
-					enemy->SetScale(ReadVector3Json(enemyData.value("scale", json::array()), enemy->GetScale()));
-					scene_->enemies_.push_back(std::move(enemy));
-				}
-			}
-		}
-		scene_->enemySpawnManager_.Reset(scene_->enemySpawns_);
-	}
-
-	if (scene_->missileManager_) {
-		scene_->missileManager_->Initialize(scene_->environmentRenderer_->GetParticleManager());
-	}
-	if (scene_->enemyBulletManager_) {
-		scene_->enemyBulletManager_->Initialize();
-	}
-
-	if (!scene_->isDebugCameraActive_ && scene_->camera && scene_->player_) {
-		Vector3 *targetPos = nullptr;
-		Vector3 enemyPos;
-		if (Enemy* lockedEnemy = scene_->targetSelection_.GetLockedEnemy()) {
-			enemyPos = lockedEnemy->GetPosition();
-			targetPos = &enemyPos;
-		}
-		scene_->player_->UpdateCamera(scene_->camera.get(), targetPos);
-		scene_->camera->Update();
-	} else if (scene_->debugFlyCamera_) {
-		scene_->debugFlyCamera_->Camera::Update();
-	}
-
-	Camera *activeCamera = scene_->isDebugCameraActive_ ? static_cast<Camera *>(scene_->debugFlyCamera_.get()) : scene_->camera.get();
-	if (scene_->player_) {
-		scene_->player_->UpdateModel();
-	}
-	for (auto &enemy : scene_->enemies_) {
-		enemy->UpdateModel();
-	}
-	for (auto &obstacle : scene_->obstacles_) {
-		obstacle->Update();
-	}
-	if (scene_->missileManager_) {
-		scene_->missileManager_->UpdateModels(activeCamera);
-	}
-
-	scene_->uiManager_->simulationActionMessage_ = "設定「" + trimmedName + "」をゲームに読み込みました。";
-	return true;
+	return SimulationActionLibrary::ApplyAction(filePath, actionName, MakeActionContext());
 }
 
 bool SimulationManager::SaveBossThrusterSettings(const std::string& filePath) {
 	if (!scene_ || !scene_->uiManager_) return false;
-
-	// 出現中のボスがいる場合は、最新のボスの位置とチューニングを即座に取り込む
-	for (const auto& enemy : scene_->enemies_) {
-		if (auto* boss = dynamic_cast<Boss*>(enemy.get()); boss && !boss->IsDead()) {
-			const Vector3 pos = boss->GetPosition();
-			scene_->uiManager_->bossBattlePosition_[0] = pos.x;
-			scene_->uiManager_->bossBattlePosition_[1] = pos.y;
-			scene_->uiManager_->bossBattlePosition_[2] = pos.z;
-			scene_->uiManager_->bossTuning_ = boss->GetTuning();
-			break;
-		}
-	}
-
-	const Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
-	json offsets = json::array();
-	for (const Vector3& offset : tuning.rearThrusterIndividualOffsets) {
-		offsets.push_back({ offset.x, offset.y, offset.z });
-	}
-	json root = {
-		{ "version", 1 },
-		{ "bossPosition", {
-			scene_->uiManager_->bossBattlePosition_[0],
-			scene_->uiManager_->bossBattlePosition_[1],
-			scene_->uiManager_->bossBattlePosition_[2],
-		} },
-		{ "tuning", {
-			{ "maxHP", tuning.maxHP },
-			{ "mainTurretYawTracking", tuning.mainTurretYawTracking },
-			{ "mainTurretPitchTracking", tuning.mainTurretPitchTracking },
-			{ "mainTurretYawFollow", tuning.mainTurretYawFollow },
-			{ "mainTurretPitchFollow", tuning.mainTurretPitchFollow },
-			{ "mainTurretMaxPitch", tuning.mainTurretMaxPitch },
-			{ "forwardTurretsVerticalSlide", tuning.forwardTurretsVerticalSlide },
-			{ "forwardTurretSlideAmount", tuning.forwardTurretSlideAmount },
-			{ "forwardTurretSlideSpeed", tuning.forwardTurretSlideSpeed },
-			{ "forwardTurretAimSlide", tuning.forwardTurretAimSlide },
-			{ "rearThrusterCount", tuning.rearThrusterCount },
-			{ "rearThrusterOffset", { tuning.rearThrusterOffset.x, tuning.rearThrusterOffset.y, tuning.rearThrusterOffset.z } },
-			{ "rearThrusterSpacing", tuning.rearThrusterSpacing },
-			{ "rearThrusterRadius", tuning.rearThrusterRadius },
-			{ "rearThrusterLength", tuning.rearThrusterLength },
-			{ "rearThrusterBrightness", tuning.rearThrusterBrightness },
-			{ "rearThrusterFlareRadius", tuning.rearThrusterFlareRadius },
-			{ "rearThrusterIndividualOffsets", offsets },
-			{ "sideShieldOpacity", tuning.sideShieldOpacity },
-		} },
-	};
-
-	const std::string dumpStr = root.dump(4);
-	std::ofstream ofs(filePath, std::ios::trunc);
-	if (!ofs.is_open()) {
-		scene_->uiManager_->bossTuningMessage_ = "ボスの位置・設定を保存できませんでした。";
-		return false;
-	}
-	ofs << dumpStr;
-
-	// プロジェクトソース側の resources フォルダが存在していれば、クリーンビルド後も保持されるよう保存する
-	const std::vector<std::string> secondaryPaths = {
-		"project/resources/boss_thruster_settings.json",
-		"../project/resources/boss_thruster_settings.json",
-	};
-	for (const auto& secPath : secondaryPaths) {
-		std::ofstream secOfs(secPath, std::ios::trunc);
-		if (secOfs.is_open()) {
-			secOfs << dumpStr;
-		}
-	}
-
-	scene_->uiManager_->bossTuningMessage_ = "ボスの位置・設定を保存しました。";
-	return true;
+	return SimulationBossEditor::SaveSettings(filePath, MakeBossEditorContext());
 }
 
 bool SimulationManager::LoadBossThrusterSettings(const std::string& filePath, bool verbose) {
 	if (!scene_ || !scene_->uiManager_) return false;
-	std::ifstream ifs(filePath);
-	if (!ifs.is_open()) {
-		// カレントにない場合はプロジェクト側も検索
-		const std::vector<std::string> fallbackPaths = {
-			"project/resources/boss_thruster_settings.json",
-			"../project/resources/boss_thruster_settings.json",
-		};
-		for (const auto& fbPath : fallbackPaths) {
-			ifs.open(fbPath);
-			if (ifs.is_open()) break;
-		}
-		if (!ifs.is_open()) {
-			if (verbose) {
-				scene_->uiManager_->bossTuningMessage_ = "保存済みのボス設定がありません。";
-			}
-			return false;
-		}
-	}
-
-	json root;
-	try {
-		ifs >> root;
-	} catch (const std::exception& e) {
-		OutputDebugStringA((std::string("[SimulationManager] Failed to load boss settings JSON: ") + e.what() + "\n").c_str());
-		if (verbose) {
-			scene_->uiManager_->bossTuningMessage_ = "ボス設定の読み込みに失敗しました。";
-		}
-		return false;
-	}
-	if (!root.is_object() || !root.contains("tuning") || !root["tuning"].is_object()) {
-		if (verbose) {
-			scene_->uiManager_->bossTuningMessage_ = "ボス設定の形式が正しくありません。";
-		}
-		return false;
-	}
-
-	Boss::Tuning tuning = scene_->uiManager_->bossTuning_;
-	const json& data = root["tuning"];
-	tuning.maxHP = std::clamp(data.value("maxHP", Boss::kMaxHP), 1, 1000000);
-	tuning.mainTurretYawTracking = data.value("mainTurretYawTracking", tuning.mainTurretYawTracking);
-	tuning.mainTurretPitchTracking = data.value("mainTurretPitchTracking", tuning.mainTurretPitchTracking);
-	tuning.mainTurretYawFollow = data.value("mainTurretYawFollow", tuning.mainTurretYawFollow);
-	tuning.mainTurretPitchFollow = data.value("mainTurretPitchFollow", tuning.mainTurretPitchFollow);
-	tuning.mainTurretMaxPitch = data.value("mainTurretMaxPitch", tuning.mainTurretMaxPitch);
-	tuning.forwardTurretsVerticalSlide = data.value("forwardTurretsVerticalSlide", tuning.forwardTurretsVerticalSlide);
-	tuning.forwardTurretSlideAmount = data.value("forwardTurretSlideAmount", tuning.forwardTurretSlideAmount);
-	tuning.forwardTurretSlideSpeed = data.value("forwardTurretSlideSpeed", tuning.forwardTurretSlideSpeed);
-	tuning.forwardTurretAimSlide = data.value("forwardTurretAimSlide", tuning.forwardTurretAimSlide);
-	tuning.rearThrusterCount = data.value("rearThrusterCount", tuning.rearThrusterCount);
-	tuning.rearThrusterSpacing = data.value("rearThrusterSpacing", tuning.rearThrusterSpacing);
-	tuning.rearThrusterRadius = data.value("rearThrusterRadius", tuning.rearThrusterRadius);
-	tuning.rearThrusterLength = data.value("rearThrusterLength", tuning.rearThrusterLength);
-	tuning.rearThrusterBrightness = data.value("rearThrusterBrightness", tuning.rearThrusterBrightness);
-	tuning.rearThrusterFlareRadius = data.value("rearThrusterFlareRadius", tuning.rearThrusterFlareRadius);
-	tuning.sideShieldOpacity = data.value("sideShieldOpacity", tuning.sideShieldOpacity);
-	if (data.contains("rearThrusterOffset") && data["rearThrusterOffset"].is_array() && data["rearThrusterOffset"].size() >= 3) {
-		tuning.rearThrusterOffset = { data["rearThrusterOffset"][0].get<float>(), data["rearThrusterOffset"][1].get<float>(), data["rearThrusterOffset"][2].get<float>() };
-	}
-	if (data.contains("rearThrusterIndividualOffsets") && data["rearThrusterIndividualOffsets"].is_array()) {
-		const json& offsets = data["rearThrusterIndividualOffsets"];
-		for (size_t index = 0; index < tuning.rearThrusterIndividualOffsets.size() && index < offsets.size(); ++index) {
-			if (offsets[index].is_array() && offsets[index].size() >= 3) {
-				tuning.rearThrusterIndividualOffsets[index] = { offsets[index][0].get<float>(), offsets[index][1].get<float>(), offsets[index][2].get<float>() };
-			}
-		}
-	}
-
-	if (root.contains("bossPosition") && root["bossPosition"].is_array() && root["bossPosition"].size() >= 3) {
-		scene_->uiManager_->bossBattlePosition_[0] = root["bossPosition"][0].get<float>();
-		scene_->uiManager_->bossBattlePosition_[1] = root["bossPosition"][1].get<float>();
-		scene_->uiManager_->bossBattlePosition_[2] = root["bossPosition"][2].get<float>();
-	}
-	scene_->uiManager_->bossTuning_ = tuning;
-	for (const auto& enemy : scene_->enemies_) {
-		if (auto* boss = dynamic_cast<Boss*>(enemy.get()); boss && !boss->IsDead()) {
-			boss->SetTuning(tuning);
-			boss->SetPosition({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
-			boss->UpdateModel();
-			break;
-		}
-	}
-	if (verbose) {
-		scene_->uiManager_->bossTuningMessage_ = "保存したボスの位置・設定を読み込みました。";
-	}
-	return true;
+	return SimulationBossEditor::LoadSettings(filePath, verbose, MakeBossEditorContext());
 }
 
 void SimulationManager::DrawBossBattleControls() {
-#ifdef ENABLE_IMGUI
-	ImGui::Text("=== ボス戦テスト / ボス調整 ===");
-	ImGui::TextDisabled("開始すると現在の敵を入れ替え、指定位置にボスを1体だけ出現させます。");
-	ImGui::DragFloat3("ボス出現座標 (X,Y,Z)##boss", scene_->uiManager_->bossBattlePosition_, 0.25f, -100.0f, 100.0f, "%.2f");
-	ImGui::SameLine();
-	if (ImGui::Button("座標を保存##saveBossPosQuick")) {
-		SaveBossThrusterSettings("resources/boss_thruster_settings.json");
-	}
-
-	auto findActiveBoss = [&]() -> Boss* {
-		for (const auto& enemy : scene_->enemies_) {
-			if (auto* boss = dynamic_cast<Boss*>(enemy.get()); boss && !boss->IsDead()) return boss;
-		}
-		return nullptr;
-	};
-
-	Boss* activeBoss = findActiveBoss();
-	if (ImGui::Button("この位置でボス戦を開始##boss")) {
-		scene_->ClearAllEnemyReferences();
-		scene_->enemies_.clear();
-		BossSpawnController bossSpawner;
-		bossSpawner.Spawn(
-			{ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] },
-			&scene_->uiManager_->bossTuning_,
-			scene_->obstacles_,
-			scene_->enemies_);
-		scene_->bossEncounterState_.MarkBossSpawned();
-		scene_->gameOverSequence_.Reset();
-		scene_->isEditorPreviewPlaying_ = true;
-		scene_->uiManager_->bossTuningMessage_ = "ボス戦を開始しました。再生中のまま砲台とスラスターを調整できます。";
-		activeBoss = findActiveBoss();
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("現在のボス位置を取得##boss") && activeBoss) {
-		const Vector3 position = activeBoss->GetPosition();
-		scene_->uiManager_->bossBattlePosition_[0] = position.x;
-		scene_->uiManager_->bossBattlePosition_[1] = position.y;
-		scene_->uiManager_->bossBattlePosition_[2] = position.z;
-	}
-	if (activeBoss) {
-		if (ImGui::Button("設定した座標へボスを移動##boss")) {
-			activeBoss->SetPosition({ scene_->uiManager_->bossBattlePosition_[0], scene_->uiManager_->bossBattlePosition_[1], scene_->uiManager_->bossBattlePosition_[2] });
-			activeBoss->UpdateModel();
-		}
-		ImGui::SameLine();
-		ImGui::TextColored(ImVec4(0.25f, 1.0f, 0.45f, 1.0f), "ボス出現中  HP: %d/%d", activeBoss->GetHP(), activeBoss->GetMaxHP());
-		if (ImGui::Button("ボスを即時撃破##boss")) {
-			// 通常のダメージ経路を通すことで、ゲーム側の撃破演出・クリア処理も同じように検証できる。
-			activeBoss->TakeDamage(activeBoss->GetHP());
-			scene_->uiManager_->bossTuningMessage_ = "ボスを即時撃破しました。通常ゲームではクリア演出が始まります。";
-		}
-		ImGui::TextDisabled("ボス本体を即時撃破し、撃破演出を確認します。");
-	}
-
-	bool changed = false;
-	Boss::Tuning& tuning = scene_->uiManager_->bossTuning_;
-	if (ImGui::InputInt("ボス最大HP##boss", &tuning.maxHP)) {
-		tuning.maxHP = std::clamp(tuning.maxHP, 1, 1000000);
-		changed = true;
-	}
-	ImGui::TextDisabled("HP変更時は出現中のボスも満タンに更新します。下の保存ボタンで次回起動にも反映します。");
-	if (ImGui::CollapsingHeader("砲台の回転・スライド##boss", ImGuiTreeNodeFlags_DefaultOpen)) {
-		changed |= ImGui::Checkbox("主砲の横追尾 (ヨー)##boss", &tuning.mainTurretYawTracking);
-		changed |= ImGui::Checkbox("主砲の縦追尾 (ピッチ)##boss", &tuning.mainTurretPitchTracking);
-		changed |= ImGui::SliderFloat("主砲 横追尾の速さ##boss", &tuning.mainTurretYawFollow, 0.0f, 0.35f, "%.3f");
-		changed |= ImGui::SliderFloat("主砲 縦追尾の速さ##boss", &tuning.mainTurretPitchFollow, 0.0f, 0.35f, "%.3f");
-		changed |= ImGui::SliderFloat("主砲 最大仰角##boss", &tuning.mainTurretMaxPitch, 0.0f, 1.20f, "%.2f rad");
-		ImGui::TextDisabled("艦首の左右2砲台: 横回転なし、ピッチ（上下回転）だけで照準します。中央砲・主砲は従来どおり横回転します。");
-	}
-	if (ImGui::CollapsingHeader("後部スラスター##boss", ImGuiTreeNodeFlags_DefaultOpen)) {
-		changed |= ImGui::SliderInt("スラスター数##boss", &tuning.rearThrusterCount, 0, 12);
-		changed |= ImGui::DragFloat3("スラスター位置補正##boss", &tuning.rearThrusterOffset.x, 0.02f, -2.0f, 2.0f, "%.2f");
-		changed |= ImGui::SliderFloat("スラスター間隔調整##boss", &tuning.rearThrusterSpacing, 0.05f, 1.20f, "%.2f");
-		changed |= ImGui::SliderFloat("炎の太さ##boss", &tuning.rearThrusterRadius, 0.02f, 1.20f, "%.2f");
-		changed |= ImGui::SliderFloat("炎の長さ##boss", &tuning.rearThrusterLength, 0.05f, 6.00f, "%.2f");
-		changed |= ImGui::SliderFloat("炎の明るさ##boss", &tuning.rearThrusterBrightness, 0.0f, 2.50f, "%.2f");
-		changed |= ImGui::SliderFloat("根元フレア半径##boss", &tuning.rearThrusterFlareRadius, 0.02f, 1.50f, "%.2f");
-		ImGui::TextDisabled("中央・左・右パネルの各4穴へ、合計12基を配置できます。");
-	}
-	if (ImGui::CollapsingHeader("側面シールド##boss", ImGuiTreeNodeFlags_DefaultOpen)) {
-		changed |= ImGui::SliderFloat("シールド不透明度##boss", &tuning.sideShieldOpacity, 0.05f, 1.0f, "%.2f");
-		ImGui::TextDisabled("値を上げるほど六角形シールドが濃く見えます。保存すると次回のボス戦にも反映されます。");
-	}
-	if (changed) {
-		if (activeBoss) {
-			activeBoss->SetTuning(tuning);
-			activeBoss->UpdateModel();
-			scene_->uiManager_->bossTuningMessage_ = "出現中のボスへ設定を反映しました。";
-		} else {
-			scene_->uiManager_->bossTuningMessage_ = "設定しました。次のボス戦開始時に反映されます。";
-		}
-	}
-	ImGui::Separator();
-	if (ImGui::Button("ボスの位置・設定を保存##boss")) {
-		SaveBossThrusterSettings("resources/boss_thruster_settings.json");
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("保存したボスの位置・設定を読み込む##boss")) {
-		LoadBossThrusterSettings("resources/boss_thruster_settings.json");
-	}
-	ImGui::TextDisabled("保存先: resources/boss_thruster_settings.json (ボスHP・出現座標・砲台・スラスター・シールド設定)");
-	if (!scene_->uiManager_->bossTuningMessage_.empty()) ImGui::TextWrapped("%s", scene_->uiManager_->bossTuningMessage_.c_str());
-#endif
+	if (!scene_ || !scene_->uiManager_) return;
+	SimulationBossEditor::DrawControls(MakeBossEditorContext());
 }
 
 void SimulationManager::DrawSimulationScreenUI() {
@@ -1576,347 +757,38 @@ void SimulationManager::DrawSimulationSaveControls() {
 #endif
 }
 void SimulationManager::RefreshActionAnimationsList() {
-	availableActionAnimations_.clear();
-	std::string path = "resources/animations";
-	if (std::filesystem::exists(path)) {
-		for (const auto& entry : std::filesystem::directory_iterator(path)) {
-			if (entry.path().extension() == ".bana") {
-				availableActionAnimations_.push_back(entry.path().stem().string());
-			}
-		}
-	}
+	animationEditorPanel_.RefreshActionAnimationsList();
 }
 
-
 void SimulationManager::DrawAnimationEditorUI() {
-#ifdef ENABLE_IMGUI
-	ImGui::Text("=== アニメーション編集ツール ===");
-	ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "[Shortcuts] Space:Play/Pause | Esc:Deselect | Del:Clear Key | Ctrl+Z/Y:Undo/Redo");
-
-	if (!scene_->player_) {
-		ImGui::TextColored(ImVec4(1, 0, 0, 1), "プレイヤーがいません");
-		return;
-	}
-
-	ImGui::InputText("アクション名", actionName_, IM_ARRAYSIZE(actionName_));
-	std::string currentPath = "resources/animations/" + std::string(actionName_) + ".bana";
-
-	if (ImGui::Button("バイナリからロード")) {
-		if (LoadAnimationFromBinary(customAnimation_, currentPath)) {
-			scene_->player_->SetOverrideAnimation(&customAnimation_);
-			scene_->player_->SetAnimDebugActive(true);
-		} else {
-			OutputDebugStringA(("Failed to load animation binary: " + currentPath + "\n").c_str());
-		}
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("バイナリへ保存")) {
-		if (SaveAnimationToBinary(customAnimation_, currentPath)) {
-			RefreshActionAnimationsList();
-		} else {
-			OutputDebugStringA(("Failed to save animation binary: " + currentPath + "\n").c_str());
-		}
-	}
-
-	if (!availableActionAnimations_.empty()) {
-		if (ImGui::BeginCombo("既存ファイル", "")) {
-			for (const auto& name : availableActionAnimations_) {
-				if (ImGui::Selectable(name.c_str())) {
-					strcpy_s(actionName_, name.c_str());
-				}
-			}
-			ImGui::EndCombo();
-		}
-	}
-
-
-	ImGui::Separator();
-	ImGui::Checkbox("再生する", &isAnimationPlaying_);
-	ImGui::SameLine();
-	ImGui::Checkbox("ループ", &isLooping_);
-
-	if (customAnimation_.duration <= 0.0f) {
-		ImGui::Text("カスタムアニメーションがロードされていません");
-		if (ImGui::Button("現在の状態から新規作成")) {
-			customAnimation_ = Animation();
-			customAnimation_.duration = 2.0f; // 2秒の空アニメーション
-			scene_->player_->SetOverrideAnimation(&customAnimation_);
-			scene_->player_->SetAnimDebugActive(true);
-		}
-		return;
-	}
-
-	ImGui::SliderFloat("全体の尺 (秒)", &customAnimation_.duration, 0.1f, 10.0f);
-
-	// 編集モード停止中は、アニメーション編集のタイムラインも進めない。
-	if (isAnimationPlaying_ && scene_->isEditorPreviewPlaying_) {
-		currentFrameTime_ += 1.0f / 60.0f;
-		if (currentFrameTime_ > customAnimation_.duration) {
-			currentFrameTime_ = isLooping_ ? 0.0f : customAnimation_.duration;
-			if (!isLooping_) isAnimationPlaying_ = false;
-		}
-	}
-	ImGui::SliderFloat("タイムライン", &currentFrameTime_, 0.0f, customAnimation_.duration, "%.3f秒");
-	scene_->player_->SetTargetAnimationTime(currentFrameTime_);
-
-	ImGui::Separator();
-	ImGui::Text("ボーン選択とキーフレーム編集");
-
-	// 複数選択用の表示文字列を作成
-	std::string selectedNamesStr = "";
-	if (selectedBoneNames_.empty()) {
-		selectedNamesStr = "(未選択)";
-	} else if (selectedBoneNames_.size() == 1) {
-		selectedNamesStr = *selectedBoneNames_.begin();
-	} else {
-		selectedNamesStr = std::to_string(selectedBoneNames_.size()) + "個のボーンを選択中";
-	}
-
-	// 簡略化のためノード一覧をドロップダウンで表示（コンボ内では複数選択可能）
-	if (ImGui::BeginCombo("編集するボーン", selectedNamesStr.c_str())) {
-		// すでにキーがあるノード
-		for (const auto& pair : customAnimation_.nodeAnimations) {
-			bool is_selected = (selectedBoneNames_.count(pair.first) > 0);
-			if (ImGui::Selectable(pair.first.c_str(), is_selected, ImGuiSelectableFlags_DontClosePopups)) {
-				if (ImGui::GetIO().KeyShift) {
-					if (is_selected) selectedBoneNames_.erase(pair.first);
-					else selectedBoneNames_.insert(pair.first);
-				} else {
-					selectedBoneNames_.clear();
-					selectedBoneNames_.insert(pair.first);
-				}
-			}
-		}
-		ImGui::EndCombo();
-	}
-
-	static char newBoneName[128] = "";
-	ImGui::InputText("新規ボーン名", newBoneName, IM_ARRAYSIZE(newBoneName));
-	ImGui::SameLine();
-	if (ImGui::Button("ボーン追加")) {
-		if (strlen(newBoneName) > 0) {
-			customAnimation_.nodeAnimations[newBoneName] = NodeAnimation();
-			selectedBoneNames_.clear();
-			selectedBoneNames_.insert(newBoneName);
-		}
-	}
-
-	if (!selectedBoneNames_.empty()) {
-		std::string previewName = *selectedBoneNames_.begin();
-		if (customAnimation_.nodeAnimations.count(previewName)) {
-			NodeAnimation& nodeAnim = customAnimation_.nodeAnimations[previewName];
-			ImGui::Text("--- %s %s の編集 ---", previewName.c_str(), selectedBoneNames_.size() > 1 ? "他" : "");
-
-			// Translate
-			ImGui::Text("Translate (キー数: %d)", (int)nodeAnim.translate.keyframes.size());
-			static float tVal[3] = {0,0,0};
-			ImGui::DragFloat3("位置", tVal, 0.01f);
-			if (ImGui::Button("現在時刻にTranslateキーを打つ")) {
-				KeyframeVector3 kf;
-				kf.time = currentFrameTime_;
-				kf.value = {tVal[0], tVal[1], tVal[2]};
-				nodeAnim.translate.keyframes.push_back(kf);
-				// ソートしておく
-				std::sort(nodeAnim.translate.keyframes.begin(), nodeAnim.translate.keyframes.end(), [](auto& a, auto& b){ return a.time < b.time; });
-			}
-
-			// Rotate
-			ImGui::Text("Rotate (キー数: %d)", (int)nodeAnim.rotate.keyframes.size());
-			static float rVal[3] = {0,0,0}; // Euler angles for easy editing
-			ImGui::DragFloat3("回転 (XYZ度)", rVal, 1.0f);
-			if (ImGui::Button("現在時刻にRotateキーを打つ")) {
-				KeyframeQuaternion kf;
-				kf.time = currentFrameTime_;
-				// 簡単なEuler to Quaternion変換
-				Quaternion qPitch = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, rVal[0] * 3.141592f / 180.0f);
-				Quaternion qYaw   = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, rVal[1] * 3.141592f / 180.0f);
-				Quaternion qRoll  = MyMath::MakeAxisAngle({ 0.0f, 0.0f, 1.0f }, rVal[2] * 3.141592f / 180.0f);
-				kf.value = MyMath::Normalize(MyMath::Multiply(MyMath::Multiply(qYaw, qPitch), qRoll));
-				nodeAnim.rotate.keyframes.push_back(kf);
-				std::sort(nodeAnim.rotate.keyframes.begin(), nodeAnim.rotate.keyframes.end(), [](auto& a, auto& b){ return a.time < b.time; });
-			}
-
-			// Scale
-			ImGui::Text("Scale (キー数: %d)", (int)nodeAnim.scale.keyframes.size());
-			static float sVal[3] = {1,1,1};
-			ImGui::DragFloat3("スケール", sVal, 0.01f);
-			if (ImGui::Button("現在時刻にScaleキーを打つ")) {
-				KeyframeVector3 kf;
-				kf.time = currentFrameTime_;
-				kf.value = {sVal[0], sVal[1], sVal[2]};
-				nodeAnim.scale.keyframes.push_back(kf);
-				std::sort(nodeAnim.scale.keyframes.begin(), nodeAnim.scale.keyframes.end(), [](auto& a, auto& b){ return a.time < b.time; });
-			}
-		}
-	}
-#endif
+	animationEditorPanel_.DrawUI(scene_ ? scene_->player_.get() : nullptr, scene_ && scene_->isEditorPreviewPlaying_);
 }
 
 void SimulationManager::AddBoneRotationFromDrag(const std::string& boneName, float deltaX, float deltaY) {
-    if (boneName.empty()) return;
-
-    // まだアニメーションに登録されていないボーンなら自動で登録する
-    if (customAnimation_.nodeAnimations.count(boneName) == 0) {
-        customAnimation_.nodeAnimations[boneName] = NodeAnimation();
-    }
-
-    NodeAnimation& nodeAnim = customAnimation_.nodeAnimations[boneName];
-
-    Quaternion currentRot = { 0.0f, 0.0f, 0.0f, 1.0f };
-    if (!nodeAnim.rotate.keyframes.empty()) {
-        currentRot = CalculateValue(nodeAnim.rotate.keyframes, currentFrameTime_);
-    }
-
-    float speed = 0.01f;
-    Quaternion qYaw = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, deltaX * speed);
-    Quaternion qPitch = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, deltaY * speed);
-
-    Quaternion deltaRot = MyMath::Multiply(qYaw, qPitch);
-    currentRot = MyMath::Normalize(MyMath::Multiply(currentRot, deltaRot));
-
-    bool found = false;
-    for (auto& kf : nodeAnim.rotate.keyframes) {
-        if (std::abs(kf.time - currentFrameTime_) < 0.001f) {
-            kf.value = currentRot;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        KeyframeQuaternion newKf;
-        newKf.time = currentFrameTime_;
-        newKf.value = currentRot;
-        nodeAnim.rotate.keyframes.push_back(newKf);
-        std::sort(nodeAnim.rotate.keyframes.begin(), nodeAnim.rotate.keyframes.end(), [](auto& a, auto& b){ return a.time < b.time; });
-    }
+	animationEditorPanel_.AddBoneRotationFromDrag(boneName, deltaX, deltaY);
 }
 
 void SimulationManager::AddBoneTranslationFromDrag(const std::string& boneName, float deltaX, float deltaY) {
-    if (boneName.empty()) return;
-
-    // まだアニメーションに登録されていないボーンなら自動で登録する
-    if (customAnimation_.nodeAnimations.count(boneName) == 0) {
-        customAnimation_.nodeAnimations[boneName] = NodeAnimation();
-    }
-
-    NodeAnimation& nodeAnim = customAnimation_.nodeAnimations[boneName];
-
-    Vector3 currentTrans = { 0.0f, 0.0f, 0.0f };
-    if (!nodeAnim.translate.keyframes.empty()) {
-        currentTrans = CalculateValue(nodeAnim.translate.keyframes, currentFrameTime_);
-    }
-
-    float speed = 0.05f;
-    currentTrans.x += deltaX * speed;
-    currentTrans.y -= deltaY * speed; // 画面のY軸は下向きなので反転させる
-
-    bool found = false;
-    for (auto& kf : nodeAnim.translate.keyframes) {
-        if (std::abs(kf.time - currentFrameTime_) < 0.001f) {
-            kf.value = currentTrans;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        KeyframeVector3 newKf;
-        newKf.time = currentFrameTime_;
-        newKf.value = currentTrans;
-        nodeAnim.translate.keyframes.push_back(newKf);
-        std::sort(nodeAnim.translate.keyframes.begin(), nodeAnim.translate.keyframes.end(), [](auto& a, auto& b){ return a.time < b.time; });
-    }
+	animationEditorPanel_.AddBoneTranslationFromDrag(boneName, deltaX, deltaY);
 }
 
-
 void SimulationManager::UpdateShortcuts() {
-	if (!scene_ || !scene_->uiManager_ || scene_->uiManager_->currentSimulationTarget_ != 5) return;
-
-	ImGuiIO& io = ImGui::GetIO();
-
-	// ドラッグ中かどうかの判定とUndoへの記録
-	if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-		if (!isDragging_ && !selectedBoneNames_.empty()) {
-			isDragging_ = true;
-			PushUndo(); // ドラッグ開始時に状態を保存
-		}
-	} else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-		if (isDragging_) {
-			isDragging_ = false;
-		}
-	}
-
-	// Space: Play/Pause (UI入力中でない時)
-	if (ImGui::IsKeyPressed(ImGuiKey_Space) && !io.WantTextInput) {
-		isAnimationPlaying_ = !isAnimationPlaying_;
-	}
-
-	// Esc: Deselect all
-	if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-		selectedBoneNames_.clear();
-	}
-
-	// Delete/Backspace: Delete current keyframe for selected bones
-	if ((ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) && !io.WantTextInput) {
-		PushUndo();
-		DeleteSelectedBonesKeyframes();
-	}
-
-	// Ctrl+Z: Undo
-	if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z)) {
-		Undo();
-	}
-
-	// Ctrl+Y: Redo
-	if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y)) {
-		Redo();
-	}
+	const bool isAnimationTabActive = scene_ && scene_->uiManager_ && scene_->uiManager_->currentSimulationTarget_ == 5;
+	animationEditorPanel_.UpdateShortcuts(isAnimationTabActive, scene_ ? scene_->player_.get() : nullptr);
 }
 
 void SimulationManager::PushUndo() {
-	undoHistory_.push_back(customAnimation_);
-	if (undoHistory_.size() > 50) { // 最大50履歴
-		undoHistory_.erase(undoHistory_.begin());
-	}
-	redoHistory_.clear(); // 新しい操作をしたらRedo履歴は消去
+	animationEditorPanel_.PushUndo();
 }
 
 void SimulationManager::Undo() {
-	if (undoHistory_.empty()) return;
-
-	redoHistory_.push_back(customAnimation_);
-	customAnimation_ = undoHistory_.back();
-	undoHistory_.pop_back();
-
-	if (scene_ && scene_->player_) {
-		scene_->player_->SetOverrideAnimation(&customAnimation_);
-	}
+	animationEditorPanel_.Undo(scene_ ? scene_->player_.get() : nullptr);
 }
 
 void SimulationManager::Redo() {
-	if (redoHistory_.empty()) return;
-
-	undoHistory_.push_back(customAnimation_);
-	customAnimation_ = redoHistory_.back();
-	redoHistory_.pop_back();
-
-	if (scene_ && scene_->player_) {
-		scene_->player_->SetOverrideAnimation(&customAnimation_);
-	}
+	animationEditorPanel_.Redo(scene_ ? scene_->player_.get() : nullptr);
 }
 
 void SimulationManager::DeleteSelectedBonesKeyframes() {
-	for (const auto& boneName : selectedBoneNames_) {
-		if (customAnimation_.nodeAnimations.count(boneName)) {
-			auto& keys = customAnimation_.nodeAnimations[boneName].rotate.keyframes;
-			for (auto it = keys.begin(); it != keys.end(); ) {
-				if (std::abs(it->time - currentFrameTime_) < 0.001f) {
-					it = keys.erase(it);
-				} else {
-					++it;
-				}
-			}
-		}
-	}
+	animationEditorPanel_.DeleteSelectedBonesKeyframes();
 }

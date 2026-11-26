@@ -16,6 +16,9 @@
 class Obstacle;
 class PlayerMovementController;
 class PlayerActionController;
+class PlayerCollisionController;
+class PlayerCameraController;
+class PlayerAnimationController;
 
 enum class PlayerMode {
     Fighter,  // 高速飛行
@@ -172,6 +175,9 @@ public:
 private:
     friend class PlayerMovementController;
     friend class PlayerActionController;
+    friend class PlayerCollisionController;
+    friend class PlayerCameraController;
+    friend class PlayerAnimationController;
 
     // Update() からのみ使う内部の更新手順。外部の Scene や UI から
     // プレイヤーの状態を途中で変更できないよう、公開 API には含めない。

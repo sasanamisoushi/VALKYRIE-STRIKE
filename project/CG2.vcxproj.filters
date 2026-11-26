@@ -102,6 +102,12 @@
     <ClCompile Include="3D\Model.cpp">
       <Filter>ソース ファイル\3d</Filter>
     </ClCompile>
+    <ClCompile Include="3D\ModelFileLoader.cpp">
+      <Filter>ソース ファイル\3d</Filter>
+    </ClCompile>
+    <ClCompile Include="3D\ModelPrimitiveBuilder.cpp">
+      <Filter>ソース ファイル\3d</Filter>
+    </ClCompile>
     <ClCompile Include="3D\Animation.cpp">
       <Filter>ソース ファイル\3d</Filter>
     </ClCompile>
@@ -121,6 +127,12 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="engine\Particle\ParticleManager.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\Particle\ParticleBurstEmitter.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\Particle\ParticlePipelineBuilder.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="engine\Particle\ParticleEmitter.cpp">
@@ -217,6 +229,54 @@
 	  <Filter>Game\Scene</Filter>
 	</ClCompile>
 	<ClCompile Include="Game\Scene\EnemyUpdateCoordinator.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EnemyDefeatEffectController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameplayOverlayCoordinator.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GamePlaySceneResourceInitializer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameplayAudioController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameplayUpdateCoordinator.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameplaySessionFlowController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\GameplayWorldRenderer.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SimulationSceneJsonEditor.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SimulationActionLibrary.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SimulationBossEditor.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\AnimationEditorPanel.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\StageEditorPanel.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\EffectTuningPanel.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\SystemSettingsPanel.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\MultiLockController.cpp">
+	  <Filter>Game\Scene</Filter>
+	</ClCompile>
+	<ClCompile Include="Game\Scene\TitleOverlayRenderer.cpp">
 	  <Filter>Game\Scene</Filter>
 	</ClCompile>
 	<ClCompile Include="Game\Scene\PlayerWeaponController.cpp">
@@ -396,6 +456,9 @@
     <ClCompile Include="engine\Graphics\DirectXCommon.cpp">
       <Filter>ソース ファイル\Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="engine\Graphics\DirectXResourceHelper.cpp">
+      <Filter>ソース ファイル\Graphics</Filter>
+    </ClCompile>
     <ClCompile Include="engine\Graphics\D3DResourceLeakChecker.cpp">
       <Filter>ソース ファイル\Graphics</Filter>
     </ClCompile>
@@ -429,6 +492,9 @@
     <ClCompile Include="3D\Trail.cpp">
       <Filter>ソース ファイル\3d</Filter>
     </ClCompile>
+    <ClCompile Include="3D\ThrusterTrailMeshBuilder.cpp">
+      <Filter>ソース ファイル\3d</Filter>
+    </ClCompile>
     <ClCompile Include="Game\Player\Player.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
@@ -436,6 +502,18 @@
       <Filter>Game\Player</Filter>
     </ClCompile>
     <ClCompile Include="Game\Player\PlayerActionController.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Player\PlayerCollisionController.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Player\PlayerMovementController.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Player\PlayerCameraController.cpp">
+      <Filter>Game\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Player\PlayerAnimationController.cpp">
       <Filter>Game\Player</Filter>
     </ClCompile>
     <ClCompile Include="Game\Player\BoosterEffect.cpp">
@@ -459,7 +537,22 @@
     <ClCompile Include="Game\enemy\Boss.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="Game\enemy\BossCinematicDebrisController.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\enemy\BossSideShieldController.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\enemy\BossTurretController.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="Game\enemy\GroundEnemy.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\enemy\GroundEnemyDestructionController.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\enemy\GroundEnemyMovementController.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="Game\enemy\JammerEnemy.cpp">
@@ -503,6 +596,9 @@
     <ClInclude Include="engine\Graphics\DirectXCommon.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="engine\Graphics\DirectXResourceHelper.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
     <ClInclude Include="engine\base\StringUtility.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
@@ -527,6 +623,12 @@
     <ClInclude Include="3D\Model.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="3D\ModelFileLoader.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="3D\ModelPrimitiveBuilder.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
     <ClInclude Include="3D\Animation.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
@@ -546,6 +648,12 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="engine\Particle\ParticleManager.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\Particle\ParticleBurstEmitter.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\Particle\ParticlePipelineBuilder.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="engine\Particle\ParticleEmitter.h">
@@ -645,6 +753,54 @@
 	  <Filter>Game\Scene</Filter>
 	</ClInclude>
 	<ClInclude Include="Game\Scene\EnemyUpdateCoordinator.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\EnemyDefeatEffectController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameplayOverlayCoordinator.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GamePlaySceneResourceInitializer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameplayAudioController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameplayUpdateCoordinator.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameplaySessionFlowController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\GameplayWorldRenderer.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SimulationSceneJsonEditor.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SimulationActionLibrary.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SimulationBossEditor.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\AnimationEditorPanel.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\StageEditorPanel.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\EffectTuningPanel.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\SystemSettingsPanel.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\MultiLockController.h">
+	  <Filter>Game\Scene</Filter>
+	</ClInclude>
+	<ClInclude Include="Game\Scene\TitleOverlayRenderer.h">
 	  <Filter>Game\Scene</Filter>
 	</ClInclude>
 	<ClInclude Include="Game\Scene\PlayerWeaponController.h">
@@ -860,6 +1016,9 @@
     <ClInclude Include="3D\Trail.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="3D\ThrusterTrailMeshBuilder.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
     <ClInclude Include="Game\Player\Player.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
@@ -870,6 +1029,15 @@
       <Filter>Game\Player</Filter>
     </ClInclude>
     <ClInclude Include="Game\Player\PlayerActionController.h">
+      <Filter>Game\Player</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Player\PlayerCollisionController.h">
+      <Filter>Game\Player</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Player\PlayerCameraController.h">
+      <Filter>Game\Player</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Player\PlayerAnimationController.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
     <ClInclude Include="Game\Player\BoosterEffect.h">
@@ -890,7 +1058,22 @@
     <ClInclude Include="Game\enemy\Boss.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="Game\enemy\BossCinematicDebrisController.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\enemy\BossSideShieldController.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\enemy\BossTurretController.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
     <ClInclude Include="Game\enemy\GroundEnemy.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\enemy\GroundEnemyDestructionController.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\enemy\GroundEnemyMovementController.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Game\enemy\JammerEnemy.h">
