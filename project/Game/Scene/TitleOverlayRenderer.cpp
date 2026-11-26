@@ -22,16 +22,16 @@ Matrix4x4 MakeCenteredUVRotation(float radians) {
 
 void TitleOverlayRenderer::DrawAttractDemoStartPrompt(const TitleScene& scene, float screenWidth, float screenHeight) const {
 #if defined(CG2_RELEASE_BUILD) && defined(CG2_ENABLE_GAME_UI)
-	if (!TitleScene::isAttractDemoAvailable_ || scene.isSettingsOpen_ || !ImGui::GetCurrentContext()) {
+	if (!TitleScene::IsAttractDemoAvailable() || scene.IsSettingsOpen() || !ImGui::GetCurrentContext()) {
 		return;
 	}
 
 	const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
 	const float width = displaySize.x > 1.0f ? displaySize.x : screenWidth;
 	const float height = displaySize.y > 1.0f ? displaySize.y : screenHeight;
-	const char* prompt = TitleScene::isAttractDemoEnabled_
+	const char* prompt = TitleScene::IsAttractDemoEnabled()
 		? "[ TAB ]  STOP ATTRACT DEMO"
-		: (TitleScene::playClearCinematicDemo_ ? "[ TAB ]  START CLEAR CINEMATIC DEMO" : "[ TAB ]  START ATTRACT DEMO");
+		: (TitleScene::ShouldPlayClearCinematicDemo() ? "[ TAB ]  START CLEAR CINEMATIC DEMO" : "[ TAB ]  START ATTRACT DEMO");
 	ImFont* font = ImGuiManager::GetGameOverFont();
 	if (!font) {
 		font = ImGui::GetFont();
@@ -58,17 +58,15 @@ void TitleOverlayRenderer::DrawAttractDemoStartPrompt(const TitleScene& scene, f
 #endif
 }
 
-void TitleOverlayRenderer::DrawWarpCloudLayers(
-	const TitleScene& scene,
+void TitleScene::DrawWarpCloudLayers(
 	float screenWidth,
-	float screenHeight,
-	int launchDurationFrames) const {
-	if (!scene.warpCloudRearSprite_ || !scene.warpCloudFrontSprite_) {
+	float screenHeight) {
+	if (!warpCloudRearSprite_ || !warpCloudFrontSprite_) {
 		return;
 	}
 
 	const float progress = std::clamp(
-		static_cast<float>(scene.launchFrame_) / static_cast<float>(launchDurationFrames), 0.0f, 1.0f);
+		static_cast<float>(launchFrame_) / static_cast<float>(kLaunchDurationFrames), 0.0f, 1.0f);
 	const float rampIn = std::clamp((progress - 0.12f) / 0.28f, 0.0f, 1.0f);
 	const float rampOut = 1.0f - std::clamp((progress - 0.76f) / 0.22f, 0.0f, 1.0f);
 	const float visibility = rampIn * rampIn * (3.0f - 2.0f * rampIn) * rampOut;
@@ -92,31 +90,29 @@ void TitleOverlayRenderer::DrawWarpCloudLayers(
 	};
 
 	// 奥はゆっくり時計回り、手前は速く反時計回りに動かし、同じ雲でも別の渦に見せる。
-	prepareRing(scene.warpCloudRearSprite_.get(), minDimension * (0.52f + rearProgress * 1.12f),
+	prepareRing(warpCloudRearSprite_.get(), minDimension * (0.52f + rearProgress * 1.12f),
 		-progress * 3.4f, { 0.24f, 0.72f, 1.0f, visibility * 0.36f });
-	prepareRing(scene.warpCloudFrontSprite_.get(), minDimension * (0.30f + frontProgress * 1.48f),
+	prepareRing(warpCloudFrontSprite_.get(), minDimension * (0.30f + frontProgress * 1.48f),
 		progress * 5.8f + std::sin(progress * 12.0f) * 0.16f,
 		{ 0.58f, 0.94f, 1.0f, visibility * 0.46f });
 
 	SpriteCommon::GetInstance()->SetAdditivePipelineState();
-	scene.warpCloudRearSprite_->Draw();
-	scene.warpCloudFrontSprite_->Draw();
+	warpCloudRearSprite_->Draw();
+	warpCloudFrontSprite_->Draw();
 	// この後に描くフォールド粒子とUIは、従来のアルファ合成へ戻す。
 	SpriteCommon::GetInstance()->SetCommonPipelineState();
 }
 
-void TitleOverlayRenderer::DrawFoldTransition(
-	const TitleScene& scene,
+void TitleScene::DrawFoldTransition(
 	float screenWidth,
-	float screenHeight,
-	int launchDurationFrames) const {
-	if (!scene.foldVeilSprite_ || !scene.foldDepthSprite_ || !scene.foldPurpleCoreSprite_ ||
-		!scene.foldCoreSprite_ || !scene.foldBeamSprite_ || !scene.foldFlashSprite_) {
+	float screenHeight) {
+	if (!foldVeilSprite_ || !foldDepthSprite_ || !foldPurpleCoreSprite_ ||
+		!foldCoreSprite_ || !foldBeamSprite_ || !foldFlashSprite_) {
 		return;
 	}
 
 	const float progress = std::clamp(
-		static_cast<float>(scene.launchFrame_) / static_cast<float>(launchDurationFrames), 0.0f, 1.0f);
+		static_cast<float>(launchFrame_) / static_cast<float>(kLaunchDurationFrames), 0.0f, 1.0f);
 	// 0.22 から航法光が集まり、0.75 付近で跳躍光へ変化する。
 	const float streakProgress = std::clamp((progress - 0.22f) / 0.54f, 0.0f, 1.0f);
 	const float streakAlpha = std::clamp(streakProgress * 2.8f, 0.0f, 1.0f) *
@@ -127,35 +123,35 @@ void TitleOverlayRenderer::DrawFoldTransition(
 	const float maxRadius = (std::min)(screenWidth, screenHeight) * 0.78f;
 
 	// 静止画は使わず、薄い水色の空間色と多数の発光球を毎フレーム計算して重ねる。
-	scene.foldVeilSprite_->SetPosition({ 0.0f, 0.0f });
-	scene.foldVeilSprite_->SetAnchorPoint({ 0.0f, 0.0f });
-	scene.foldVeilSprite_->SetSize({ screenWidth, screenHeight });
-	scene.foldVeilSprite_->SetColor({ 0.02f, 0.34f, 0.58f, streakAlpha * 0.30f });
-	scene.foldVeilSprite_->Update();
-	scene.foldVeilSprite_->Draw();
+	foldVeilSprite_->SetPosition({ 0.0f, 0.0f });
+	foldVeilSprite_->SetAnchorPoint({ 0.0f, 0.0f });
+	foldVeilSprite_->SetSize({ screenWidth, screenHeight });
+	foldVeilSprite_->SetColor({ 0.02f, 0.34f, 0.58f, streakAlpha * 0.30f });
+	foldVeilSprite_->Update();
+	foldVeilSprite_->Draw();
 
 	const float depthProgress = std::clamp((progress - 0.26f) / 0.42f, 0.0f, 1.0f);
 	const float depthEase = depthProgress * depthProgress * (3.0f - 2.0f * depthProgress);
 	const float depthFade = 1.0f - std::clamp((progress - 0.72f) / 0.20f, 0.0f, 1.0f);
 	const float depthAlpha = depthEase * depthFade;
 	const float apertureSize = 38.0f + maxRadius * (0.12f + depthEase * 0.20f);
-	scene.foldDepthSprite_->SetPosition({ centerX, centerY });
-	scene.foldDepthSprite_->SetSize({ apertureSize * 1.20f, apertureSize * 1.20f });
-	scene.foldDepthSprite_->SetRotation(-progress * 0.7f);
-	scene.foldDepthSprite_->SetColor({ 0.015f, 0.055f, 0.26f, depthAlpha * 0.70f });
-	scene.foldDepthSprite_->Update();
-	scene.foldDepthSprite_->Draw();
+	foldDepthSprite_->SetPosition({ centerX, centerY });
+	foldDepthSprite_->SetSize({ apertureSize * 1.20f, apertureSize * 1.20f });
+	foldDepthSprite_->SetRotation(-progress * 0.7f);
+	foldDepthSprite_->SetColor({ 0.015f, 0.055f, 0.26f, depthAlpha * 0.70f });
+	foldDepthSprite_->Update();
+	foldDepthSprite_->Draw();
 
-	scene.foldPurpleCoreSprite_->SetPosition({ centerX, centerY });
-	scene.foldPurpleCoreSprite_->SetSize({ apertureSize * 0.76f, apertureSize * 0.76f });
-	scene.foldPurpleCoreSprite_->SetRotation(progress * 1.1f);
-	scene.foldPurpleCoreSprite_->SetColor({ 0.16f, 0.025f, 0.34f, depthAlpha * 0.62f });
-	scene.foldPurpleCoreSprite_->Update();
-	scene.foldPurpleCoreSprite_->Draw();
+	foldPurpleCoreSprite_->SetPosition({ centerX, centerY });
+	foldPurpleCoreSprite_->SetSize({ apertureSize * 0.76f, apertureSize * 0.76f });
+	foldPurpleCoreSprite_->SetRotation(progress * 1.1f);
+	foldPurpleCoreSprite_->SetColor({ 0.16f, 0.025f, 0.34f, depthAlpha * 0.62f });
+	foldPurpleCoreSprite_->Update();
+	foldPurpleCoreSprite_->Draw();
 
 	SpriteCommon::GetInstance()->SetAdditivePipelineState();
-	for (size_t i = 0; i < scene.foldStreakSprites_.size(); ++i) {
-		Sprite* particle = scene.foldStreakSprites_[i].get();
+	for (size_t i = 0; i < foldStreakSprites_.size(); ++i) {
+		Sprite* particle = foldStreakSprites_[i].get();
 		if (!particle) {
 			continue;
 		}
@@ -191,40 +187,39 @@ void TitleOverlayRenderer::DrawFoldTransition(
 	}
 
 	const float coreSize = 54.0f + streakProgress * (screenHeight * 0.22f);
-	scene.foldCoreSprite_->SetPosition({ centerX, centerY });
-	scene.foldCoreSprite_->SetSize({ coreSize * 1.42f, coreSize * 0.74f });
-	scene.foldCoreSprite_->SetRotation(-progress * 3.4f);
-	scene.foldCoreSprite_->SetColor({ 0.70f, 0.96f, 1.0f, streakAlpha * 0.68f });
-	scene.foldCoreSprite_->Update();
-	scene.foldCoreSprite_->Draw();
+	foldCoreSprite_->SetPosition({ centerX, centerY });
+	foldCoreSprite_->SetSize({ coreSize * 1.42f, coreSize * 0.74f });
+	foldCoreSprite_->SetRotation(-progress * 3.4f);
+	foldCoreSprite_->SetColor({ 0.70f, 0.96f, 1.0f, streakAlpha * 0.68f });
+	foldCoreSprite_->Update();
+	foldCoreSprite_->Draw();
 	SpriteCommon::GetInstance()->SetCommonPipelineState();
 
-	scene.foldBeamSprite_->SetPosition({ centerX, centerY });
-	scene.foldBeamSprite_->SetSize({ screenWidth * (0.08f + streakProgress * 1.04f), 2.0f + streakProgress * 11.0f });
-	scene.foldBeamSprite_->SetRotation(std::sin(progress * 7.0f) * 0.025f);
-	scene.foldBeamSprite_->SetColor({ 0.58f, 0.96f, 1.0f, streakAlpha * 0.74f });
-	scene.foldBeamSprite_->Update();
-	scene.foldBeamSprite_->Draw();
+	foldBeamSprite_->SetPosition({ centerX, centerY });
+	foldBeamSprite_->SetSize({ screenWidth * (0.08f + streakProgress * 1.04f), 2.0f + streakProgress * 11.0f });
+	foldBeamSprite_->SetRotation(std::sin(progress * 7.0f) * 0.025f);
+	foldBeamSprite_->SetColor({ 0.58f, 0.96f, 1.0f, streakAlpha * 0.74f });
+	foldBeamSprite_->Update();
+	foldBeamSprite_->Draw();
 
-	scene.foldFlashSprite_->SetPosition({ 0.0f, 0.0f });
-	scene.foldFlashSprite_->SetAnchorPoint({ 0.0f, 0.0f });
-	scene.foldFlashSprite_->SetSize({ screenWidth, screenHeight });
-	scene.foldFlashSprite_->SetColor({
+	foldFlashSprite_->SetPosition({ 0.0f, 0.0f });
+	foldFlashSprite_->SetAnchorPoint({ 0.0f, 0.0f });
+	foldFlashSprite_->SetSize({ screenWidth, screenHeight });
+	foldFlashSprite_->SetColor({
 		0.46f + flashAlpha * 0.54f,
 		0.86f + flashAlpha * 0.14f,
 		1.00f,
 		flashAlpha * 0.88f,
 	});
-	scene.foldFlashSprite_->Update();
-	scene.foldFlashSprite_->Draw();
+	foldFlashSprite_->Update();
+	foldFlashSprite_->Draw();
 }
 
-void TitleOverlayRenderer::DrawMenuOverlay(
-	const TitleScene& scene,
+void TitleScene::DrawMenuOverlay(
 	float screenWidth,
 	float screenHeight,
-	float opacity) const {
-	if (!scene.menuPanelSprite_ || !scene.menuRowSprite_) {
+	float opacity) {
+	if (!menuPanelSprite_ || !menuRowSprite_) {
 		return;
 	}
 
@@ -245,12 +240,12 @@ void TitleOverlayRenderer::DrawMenuOverlay(
 		{ 245.0f, 1100.0f, 725.0f, 145.0f }, // ON / OFF
 	}};
 	const auto drawLabel = [&](size_t labelIndex, float centerX, float topY, float targetHeight, float alpha = 1.0f) {
-		if (labelIndex >= scene.menuLabelSprites_.size() || !scene.menuLabelSprites_[labelIndex]) {
+		if (labelIndex >= menuLabelSprites_.size() || !menuLabelSprites_[labelIndex]) {
 			return;
 		}
 		const LabelRegion& region = kLabelRegions[labelIndex];
 		const float targetWidth = targetHeight * region.width / region.height;
-		Sprite* label = scene.menuLabelSprites_[labelIndex].get();
+		Sprite* label = menuLabelSprites_[labelIndex].get();
 		label->SetTextureLeftTop({ region.x, region.y });
 		label->SetTextureSize({ region.width, region.height });
 		label->SetPosition({ centerX - targetWidth * 0.5f, topY });
@@ -259,31 +254,31 @@ void TitleOverlayRenderer::DrawMenuOverlay(
 		label->Update();
 		label->Draw();
 	};
-	if (!scene.isSettingsOpen_) {
-		const auto drawMainMenuLabel = [&](size_t labelIndex, TitleScene::MenuItem item, float topY) {
-			const bool selected = scene.selectedMenuItem_ == item;
+	if (!isSettingsOpen_) {
+		const auto drawMainMenuLabel = [&](size_t labelIndex, MenuItem item, float topY) {
+			const bool selected = selectedMenuItem_ == item;
 			if (selected) {
 				const float rowLeft = screenWidth * 0.5f - 202.0f;
-				scene.menuRowSprite_->SetPosition({ rowLeft, topY - 10.0f });
-				scene.menuRowSprite_->SetSize({ 404.0f, 62.0f });
-				scene.menuRowSprite_->SetColor({ 0.02f, 0.09f, 0.15f, 0.78f * opacity });
-				scene.menuRowSprite_->Update();
-				scene.menuRowSprite_->Draw();
+				menuRowSprite_->SetPosition({ rowLeft, topY - 10.0f });
+				menuRowSprite_->SetSize({ 404.0f, 62.0f });
+				menuRowSprite_->SetColor({ 0.02f, 0.09f, 0.15f, 0.78f * opacity });
+				menuRowSprite_->Update();
+				menuRowSprite_->Draw();
 
-				scene.menuRowSprite_->SetPosition({ rowLeft, topY - 10.0f });
-				scene.menuRowSprite_->SetSize({ 4.0f, 62.0f });
-				scene.menuRowSprite_->SetColor({ 0.28f, 0.86f, 0.96f, opacity });
-				scene.menuRowSprite_->Update();
-				scene.menuRowSprite_->Draw();
+				menuRowSprite_->SetPosition({ rowLeft, topY - 10.0f });
+				menuRowSprite_->SetSize({ 4.0f, 62.0f });
+				menuRowSprite_->SetColor({ 0.28f, 0.86f, 0.96f, opacity });
+				menuRowSprite_->Update();
+				menuRowSprite_->Draw();
 			}
 			const float labelHeight = selected ? 48.0f : 42.0f;
 			drawLabel(labelIndex, screenWidth * 0.5f,
 				topY - (labelHeight - 42.0f) * 0.5f, labelHeight,
 				selected ? 1.0f : 0.58f);
 		};
-		drawMainMenuLabel(0, TitleScene::MenuItem::Start, screenHeight - 225.0f);
-		drawMainMenuLabel(1, TitleScene::MenuItem::Settings, screenHeight - 145.0f);
-		drawMainMenuLabel(2, TitleScene::MenuItem::Exit, screenHeight - 75.0f);
+		drawMainMenuLabel(0, MenuItem::Start, screenHeight - 225.0f);
+		drawMainMenuLabel(1, MenuItem::Settings, screenHeight - 145.0f);
+		drawMainMenuLabel(2, MenuItem::Exit, screenHeight - 75.0f);
 		return;
 	}
 
@@ -296,7 +291,7 @@ void TitleOverlayRenderer::DrawMenuOverlay(
 	const float sliderWidth = screenWidth * 0.30f;
 
 	const auto drawSettingLabel = [&](int index, size_t labelIndex, float topY) {
-		const bool selected = index == static_cast<int>(scene.selectedSettingsItem_);
+		const bool selected = index == static_cast<int>(selectedSettingsItem_);
 		const float labelHeight = selected ? 54.0f : 46.0f;
 		drawLabel(labelIndex, labelCenterX, topY - (labelHeight - 46.0f) * 0.5f,
 			labelHeight, selected ? 1.0f : 0.58f);
@@ -311,7 +306,7 @@ void TitleOverlayRenderer::DrawMenuOverlay(
 			static_cast<float>(kSegmentCount);
 		const float segmentY = topY + 17.0f;
 		for (int index = 0; index < kSegmentCount; ++index) {
-			Sprite* segment = scene.settingMeterSegments_[meterIndex * kSegmentCount + index].get();
+			Sprite* segment = settingMeterSegments_[meterIndex * kSegmentCount + index].get();
 			segment->SetPosition({ sliderX + static_cast<float>(index) * (segmentWidth + segmentGap), segmentY });
 			segment->SetSize({ segmentWidth, 20.0f });
 			const bool isLit = index < litSegmentCount;
@@ -329,8 +324,8 @@ void TitleOverlayRenderer::DrawMenuOverlay(
 		const float digitWidth = 20.0f;
 		const float digitHeight = 26.0f;
 		const float digitStartX = sliderX + sliderWidth + 18.0f;
-		for (size_t index = 0; index < levelText.size() && index < scene.settingValueDigitSprites_[meterIndex].size(); ++index) {
-			Sprite* digit = scene.settingValueDigitSprites_[meterIndex][index].get();
+		for (size_t index = 0; index < levelText.size() && index < settingValueDigitSprites_[meterIndex].size(); ++index) {
+			Sprite* digit = settingValueDigitSprites_[meterIndex][index].get();
 			const int glyphIndex = levelText[index] == '/' ? 10 : levelText[index] - '0';
 			digit->SetTextureLeftTop({ static_cast<float>(glyphIndex * 64), 0.0f });
 			digit->SetTextureSize({ 64.0f, 80.0f });
@@ -347,16 +342,16 @@ void TitleOverlayRenderer::DrawMenuOverlay(
 	const int sensitivityStep = static_cast<int>(sensitivityRatio * 19.0f + 0.5f);
 	drawSettingLabel(0, 3, rowStartY);
 	drawLevelMeter(0, rowStartY, settings.GetMasterVolume(), volumeStep, 20,
-		scene.selectedSettingsItem_ == TitleScene::SettingsItem::MasterVolume);
+		selectedSettingsItem_ == SettingsItem::MasterVolume);
 	drawSettingLabel(1, 4, rowStartY + rowSpacing);
 	drawLevelMeter(1, rowStartY + rowSpacing, sensitivityRatio, sensitivityStep, 19,
-		scene.selectedSettingsItem_ == TitleScene::SettingsItem::MouseSensitivity);
+		selectedSettingsItem_ == SettingsItem::MouseSensitivity);
 	drawSettingLabel(2, 5, rowStartY + rowSpacing * 2.0f);
-	const bool guideSelected = scene.selectedSettingsItem_ == TitleScene::SettingsItem::ControlGuide;
+	const bool guideSelected = selectedSettingsItem_ == SettingsItem::ControlGuide;
 	drawLabel(7, screenWidth * 0.75f, rowStartY + rowSpacing * 2.0f + 3.0f,
 		guideSelected ? 42.0f : 36.0f,
 		guideSelected ? 1.0f : (settings.IsControlGuideVisible() ? 0.74f : 0.40f));
-	const bool backSelected = scene.selectedSettingsItem_ == TitleScene::SettingsItem::Back;
+	const bool backSelected = selectedSettingsItem_ == SettingsItem::Back;
 	drawLabel(6, screenWidth * 0.5f, rowStartY + rowSpacing * 3.0f,
 		backSelected ? 54.0f : 46.0f, backSelected ? 1.0f : 0.58f);
 }

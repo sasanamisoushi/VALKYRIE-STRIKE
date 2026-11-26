@@ -7,8 +7,8 @@ void JammerEnemy::Initialize(const Vector3 &position) {
     Enemy::Initialize(position);
 
     // 見た目を少し変える（黄色にするなど）
-    if (object_ && object_->GetModel()) {
-        object_->GetModel()->SetColor({ 0.8f, 0.8f, 0.1f, 1.0f });
+    if (Object3d* obj = GetObject3d(); obj && obj->GetModel()) {
+        obj->GetModel()->SetColor({ 0.8f, 0.8f, 0.1f, 1.0f });
     }
 
     // ジャミングフィールドの球体エフェクトを初期化
@@ -20,7 +20,7 @@ void JammerEnemy::Initialize(const Vector3 &position) {
     }
     // 半径に合わせてスケールを設定
     jammingSphere_->SetScale({ jammingRadius_, jammingRadius_, jammingRadius_ });
-    jammingSphere_->SetTranslate(position_);
+    jammingSphere_->SetTranslate(GetPosition());
     jammingSphere_->Update();
 }
 
@@ -29,11 +29,11 @@ void JammerEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletMan
     Enemy::Update(playerPos, bulletManager, obstacles);
     
     // 攻撃タイマーをリセットし続けることで弾を撃たなくする
-    attackTimer_ = 0;
+    ResetAttackTimer(0);
 
     // ジャミングフィールドの位置を敵に追従させる
     if (jammingSphere_) {
-        jammingSphere_->SetTranslate(position_);
+        jammingSphere_->SetTranslate(GetPosition());
         jammingSphere_->Update();
     }
 }
@@ -41,7 +41,7 @@ void JammerEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletMan
 void JammerEnemy::Draw() {
     Enemy::Draw();
 
-    if (jammingSphere_ && !isDead_) {
+    if (jammingSphere_ && !IsDead()) {
         jammingSphere_->Draw();
     }
 }
@@ -49,7 +49,7 @@ void JammerEnemy::Draw() {
 void JammerEnemy::UpdateModel() {
     Enemy::UpdateModel();
     if (jammingSphere_) {
-        jammingSphere_->SetTranslate(position_);
+        jammingSphere_->SetTranslate(GetPosition());
         jammingSphere_->Update();
     }
 }

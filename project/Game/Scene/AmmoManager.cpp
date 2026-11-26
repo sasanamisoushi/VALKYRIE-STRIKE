@@ -95,7 +95,7 @@ bool AmmoManager::LoadSettings(const std::string& filePath) {
     try {
         ifs >> root;
     } catch (const std::exception& e) {
-        logger.Log("[AmmoManager] Failed to load " + filePath + ": " + e.what());
+        GetLogger().Log("[AmmoManager] Failed to load " + filePath + ": " + e.what());
         return false;
     }
     if (!root.is_object()) {

@@ -58,7 +58,7 @@ void GamePlaySceneResourceInitializer::InitializeBaseModelsAndPrimitives(const G
 		if (!targets.skeleton->joints.empty()) {
 			targets.skeleton->joints[targets.skeleton->root].transform.translate = { 0.0f, 0.0f, 0.0f };
 		}
-		(*targets.animatedCube)->skinCluster = (*targets.animatedCube)->GetModel()->CreateSkinCluster(*targets.skeleton);
+		(*targets.animatedCube)->CreateSkinCluster(*targets.skeleton);
 	}
 
 	modelManager->CreateLineModel("SkeletonLines");

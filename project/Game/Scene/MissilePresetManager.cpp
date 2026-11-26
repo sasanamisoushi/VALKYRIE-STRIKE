@@ -26,7 +26,7 @@ void MissilePresetManager::RefreshMissilePresetNames() {
 	try {
 		ifs >> root;
 	} catch (const std::exception& e) {
-		logger.Log(std::string("[MissilePresetManager] Failed to parse presets: ") + e.what());
+		GetLogger().Log(std::string("[MissilePresetManager] Failed to parse presets: ") + e.what());
 		selectedMissilePresetIndex_[0] = 0;
 		selectedMissilePresetIndex_[1] = 0;
 		return;
@@ -67,7 +67,7 @@ bool MissilePresetManager::SaveMissilePreset(const std::string &filePath, int mi
 			try {
 				ifs >> root;
 			} catch (const std::exception& e) {
-				logger.Log(std::string("[MissilePresetManager] Resetting unreadable preset file: ") + e.what());
+				GetLogger().Log(std::string("[MissilePresetManager] Resetting unreadable preset file: ") + e.what());
 				root = json::object();
 			}
 		}
@@ -157,7 +157,7 @@ bool MissilePresetManager::ApplyMissilePreset(const std::string &filePath, int m
 	try {
 		ifs >> root;
 	} catch (const std::exception& e) {
-		logger.Log(std::string("[MissilePresetManager] Failed to apply preset: ") + e.what());
+		GetLogger().Log(std::string("[MissilePresetManager] Failed to apply preset: ") + e.what());
 		missilePresetMessage_ = "ミサイル設定ファイルを読み込めませんでした。";
 		return false;
 	}

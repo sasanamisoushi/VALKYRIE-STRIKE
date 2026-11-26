@@ -1,5 +1,3 @@
-#include "PlayerCameraController.h"
-
 #include "Player.h"
 #include "engine/Camera/Camera.h"
 #include "engine/Input/Input.h"
@@ -67,8 +65,8 @@ namespace {
 	}
 }
 
-void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const Vector3* targetPos, bool allowInput) const {
-	Vector3 playerForward = NormalizeOrZero(GetForwardVector(player));
+void Player::UpdateCamera(Camera* camera, const Vector3* targetPos, bool allowInput) {
+	Vector3 playerForward = NormalizeOrZero(GetForwardVector());
 	if (LengthSq(playerForward) <= 0.0001f) {
 		playerForward = { 0.0f, 0.0f, 1.0f };
 	}
@@ -78,10 +76,10 @@ void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const 
 	}
 
 	Vector3 cameraDirection;
-	Vector3 lookTarget = player.GetOBB().center;
+	Vector3 lookTarget = GetOBB().center;
 
-	if (player.isSpecialAttackActive_) {
-		cameraDirection = GetAttackDirection(player);
+	if (isSpecialAttackActive_) {
+		cameraDirection = GetAttackDirection();
 	} else if (targetPos) {
 		Vector3 toTarget = { targetPos->x - lookTarget.x, targetPos->y - lookTarget.y, targetPos->z - lookTarget.z };
 		Vector3 flatToTarget = { toTarget.x, 0.0f, toTarget.z };
@@ -139,36 +137,36 @@ void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const 
 
 	// 敵をロックしていた視線を解除と同時に自機の正面へ戻すと、注視点とカメラ位置が
 	// 同フレームに大きく飛んでしまう。最後のロックオン視線を短時間だけ残して自然に戻す。
-	const bool isNormalLockOnCamera = targetPos && !player.isSpecialAttackActive_;
+	const bool isNormalLockOnCamera = targetPos && !isSpecialAttackActive_;
 	if (isNormalLockOnCamera) {
-		player.wasCameraLockOnActive_ = true;
-		player.cameraLockReleaseProgress_ = 1.0f;
-		player.cameraLockReleaseDirection_ = cameraDirection;
-		const Vector3 playerCenter = player.GetOBB().center;
-		player.cameraLockReleaseFocusOffset_ = {
+		wasCameraLockOnActive_ = true;
+		cameraLockReleaseProgress_ = 1.0f;
+		cameraLockReleaseDirection_ = cameraDirection;
+		const Vector3 playerCenter = GetOBB().center;
+		cameraLockReleaseFocusOffset_ = {
 			lookTarget.x - playerCenter.x,
 			lookTarget.y - playerCenter.y,
 			lookTarget.z - playerCenter.z,
 		};
-	} else if (player.wasCameraLockOnActive_ && !player.isSpecialAttackActive_) {
-		player.wasCameraLockOnActive_ = false;
-		player.cameraLockReleaseProgress_ = 0.0f;
+	} else if (wasCameraLockOnActive_ && !isSpecialAttackActive_) {
+		wasCameraLockOnActive_ = false;
+		cameraLockReleaseProgress_ = 0.0f;
 	}
 
-	if (!player.isSpecialAttackActive_ && player.cameraLockReleaseProgress_ < 1.0f) {
+	if (!isSpecialAttackActive_ && cameraLockReleaseProgress_ < 1.0f) {
 		constexpr float kLockReleaseCameraBlendSpeed = 0.14f;
-		player.cameraLockReleaseProgress_ = (std::min)(
-			1.0f, player.cameraLockReleaseProgress_ + kLockReleaseCameraBlendSpeed);
-		const float t = player.cameraLockReleaseProgress_ * player.cameraLockReleaseProgress_ *
-			(3.0f - 2.0f * player.cameraLockReleaseProgress_);
+		cameraLockReleaseProgress_ = (std::min)(
+			1.0f, cameraLockReleaseProgress_ + kLockReleaseCameraBlendSpeed);
+		const float t = cameraLockReleaseProgress_ * cameraLockReleaseProgress_ *
+			(3.0f - 2.0f * cameraLockReleaseProgress_);
 
 		cameraDirection = NormalizeOrZero(Add(
-			Scale(player.cameraLockReleaseDirection_, 1.0f - t),
+			Scale(cameraLockReleaseDirection_, 1.0f - t),
 			Scale(cameraDirection, t)));
 		if (LengthSq(cameraDirection) <= 0.0001f) {
 			cameraDirection = flatForward;
 		}
-		lookTarget = Add(player.GetOBB().center, Scale(player.cameraLockReleaseFocusOffset_, 1.0f - t));
+		lookTarget = Add(GetOBB().center, Scale(cameraLockReleaseFocusOffset_, 1.0f - t));
 	}
 
 	// 必殺技中を含め、カメラ位置に使う上下方向を常に穏やかに保つ。
@@ -179,19 +177,19 @@ void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const 
 		cameraDirection = flatForward;
 	}
 
-	player.lastCameraDirection_ = cameraDirection;
+	lastCameraDirection_ = cameraDirection;
 
 	float backDistance = 12.0f;
 	const float heightOffset = 2.5f;
-	float speed = Length(player.velocity_);
+	float speed = Length(velocity_);
 
-	if (player.currentMode_ == PlayerMode::Fighter) {
+	if (currentMode_ == PlayerMode::Fighter) {
 		backDistance = 12.0f + (speed * 1.5f);
 	}
 
 	// 狭すぎる画角は高速移動時に周辺視野が失われ、酔いにつながりやすい。
 	float targetFov = 0.60f;
-	if (player.currentMode_ == PlayerMode::Fighter) {
+	if (currentMode_ == PlayerMode::Fighter) {
 		targetFov = 0.60f + (speed * 0.15f);
 		targetFov = std::clamp(targetFov, 0.60f, 0.78f);
 	}
@@ -199,7 +197,7 @@ void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const 
 	camera->SetFovY(currentFov + (targetFov - currentFov) * 0.1f);
 
 	Vector3 cameraBackOffset = Scale(cameraDirection, -backDistance);
-	Vector3 playerOBBCenter = player.GetOBB().center;
+	Vector3 playerOBBCenter = GetOBB().center;
 	const Vector3 desiredCameraPosition = {
 		playerOBBCenter.x + cameraBackOffset.x,
 		playerOBBCenter.y + heightOffset + cameraBackOffset.y,
@@ -211,13 +209,13 @@ void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const 
 	constexpr float kNormalCameraFollowBlend = 0.16f;
 	constexpr float kLockOnCameraFollowBlend = 0.24f;
 	const float followBlend = isNormalLockOnCamera ? kLockOnCameraFollowBlend : kNormalCameraFollowBlend;
-	if (!player.isCameraFollowInitialized_) {
-		player.cameraFollowPosition_ = desiredCameraPosition;
-		player.isCameraFollowInitialized_ = true;
+	if (!isCameraFollowInitialized_) {
+		cameraFollowPosition_ = desiredCameraPosition;
+		isCameraFollowInitialized_ = true;
 	} else {
-		player.cameraFollowPosition_ = Lerp(player.cameraFollowPosition_, desiredCameraPosition, followBlend);
+		cameraFollowPosition_ = Lerp(cameraFollowPosition_, desiredCameraPosition, followBlend);
 	}
-	const Vector3 camPos = player.cameraFollowPosition_;
+	const Vector3 camPos = cameraFollowPosition_;
 	Vector3 lookForward = NormalizeOrZero({
 		lookTarget.x - camPos.x,
 		lookTarget.y - camPos.y,
@@ -228,7 +226,7 @@ void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const 
 	}
 	Quaternion cameraRotation = MakeNoRollLookQuaternion(lookForward);
 
-	if (player.currentMode_ == PlayerMode::Fighter) {
+	if (currentMode_ == PlayerMode::Fighter) {
 		static float currentCameraRoll = 0.0f;
 		if (!allowInput) {
 			// タイトル背景などではA/Dをカメラのバンクへ渡さない。
@@ -254,33 +252,33 @@ void PlayerCameraController::UpdateCamera(Player& player, Camera* camera, const 
 	camera->SetQuaternion(cameraRotation);
 }
 
-Vector3 PlayerCameraController::GetForwardVector(const Player& player) const {
-	Vector3 bodyForward = MyMath::RotateVector({ 0.0f, 0.0f, 1.0f }, player.quaternion_);
-	if (player.currentMode_ == PlayerMode::Fighter) {
+Vector3 Player::GetForwardVector() const {
+	Vector3 bodyForward = MyMath::RotateVector({ 0.0f, 0.0f, 1.0f }, quaternion_);
+	if (currentMode_ == PlayerMode::Fighter) {
 		return bodyForward;
 	}
 
-	return MakeForwardFromFlatAndPitch(bodyForward, player.cameraPitch_);
+	return MakeForwardFromFlatAndPitch(bodyForward, cameraPitch_);
 }
 
-Vector3 PlayerCameraController::GetAttackDirection(const Player& player) const {
-	if (!player.isSpecialAttackActive_) {
-		return GetForwardVector(player);
+Vector3 Player::GetAttackDirection() const {
+	if (!isSpecialAttackActive_) {
+		return GetForwardVector();
 	}
 
 	const Vector3 flatAimForward = {
-		std::sin(player.specialAttackCameraYaw_),
+		std::sin(specialAttackCameraYaw_),
 		0.0f,
-		std::cos(player.specialAttackCameraYaw_)
+		std::cos(specialAttackCameraYaw_)
 	};
-	return MakeForwardFromFlatAndPitch(flatAimForward, player.specialAttackCameraPitch_);
+	return MakeForwardFromFlatAndPitch(flatAimForward, specialAttackCameraPitch_);
 }
 
-void PlayerCameraController::SyncRotationToLastCameraDirection(Player& player) const {
-	if (LengthSq(player.lastCameraDirection_) > 0.0001f) {
-		float pitch = -std::asin(std::clamp(player.lastCameraDirection_.y, -1.0f, 1.0f));
-		float yaw = std::atan2(player.lastCameraDirection_.x, player.lastCameraDirection_.z);
+void Player::SyncRotationToLastCameraDirection() {
+	if (LengthSq(lastCameraDirection_) > 0.0001f) {
+		float pitch = -std::asin(std::clamp(lastCameraDirection_.y, -1.0f, 1.0f));
+		float yaw = std::atan2(lastCameraDirection_.x, lastCameraDirection_.z);
 		// Update pitch and yaw based on last camera direction (keep roll as 0 to snap flat)
-		player.SetRotation({ pitch, yaw, 0.0f });
+		SetRotation({ pitch, yaw, 0.0f });
 	}
 }

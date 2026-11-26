@@ -20,8 +20,7 @@ void CollisionManager::CheckAllCollisions() {
             Collider *colB = *itB;
 
             // 1. 属性とマスクのチェック（当たらない設定ならスキップ）
-            if (!(colA->collisionAttribute_ & colB->collisionMask_) ||
-                !(colB->collisionAttribute_ & colA->collisionMask_)) {
+            if (!colA->CanCollideWith(*colB)) {
                 continue;
             }
 

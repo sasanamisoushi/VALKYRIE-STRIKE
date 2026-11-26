@@ -110,10 +110,6 @@ public:
 	bool IsCinematicDebrisActive() const { return cinematicDebrisActive_; }
 
 private:
-    friend class BossCinematicDebrisController;
-    friend class BossSideShieldController;
-    friend class BossTurretController;
-
     void FireMachineGun(const Vector3 &playerPos, EnemyBulletManager *bulletManager);
     void FireMainBeam(const Vector3 &playerPos, EnemyBulletManager *bulletManager, size_t turretIndex);
     void FireForwardTurret(const Vector3 &playerPos, EnemyBulletManager *bulletManager, size_t turretIndex);

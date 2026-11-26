@@ -1,7 +1,4 @@
 #include "Boss.h"
-#include "BossCinematicDebrisController.h"
-#include "BossSideShieldController.h"
-#include "BossTurretController.h"
 #include "3D/ModelManager.h"
 #include "3D/Object3dCommon.h"
 #include "Game/enemy/EnemyBulletManager.h"
@@ -147,10 +144,12 @@ void Boss::Initialize(const Vector3 &position) {
     if (!modelManager->FindModel(kBossBodyModel)) {
         modelManager->LoadModel(kBossBodyModel);
     }
-    object_->SetModel(kBossBodyModel);
-    if (object_->GetModel()) {
-        object_->GetModel()->SetColor({ 0.20f, 0.33f, 0.39f, 1.0f });
-        object_->GetModel()->SetShininess(96.0f);
+    if (Object3d* obj = GetObject3d()) {
+        obj->SetModel(kBossBodyModel);
+        if (obj->GetModel()) {
+            obj->GetModel()->SetColor({ 0.20f, 0.33f, 0.39f, 1.0f });
+            obj->GetModel()->SetShininess(96.0f);
+        }
     }
     if (!modelManager->FindModel("BossSmallDebris")) {
         modelManager->CreateBoxModel("BossSmallDebris");
@@ -246,7 +245,7 @@ void Boss::Initialize(const Vector3 &position) {
     // 本体と砲台が同じ戦艦スケールを使用するよう、描画だけでなく当たり判定の
     // 基準になる Enemy::scale_ も同期する。
     SetScale(kBossScale);
-    hp_ = tuning_.maxHP;
+    SetHP(tuning_.maxHP);
     SetScale(kBossScale);
     // 艦首をプレイヤーの進行方向に対して横へ向ける。
     SetRotation({ 0.0f, kBossSidewaysYaw, 0.0f });
@@ -271,11 +270,11 @@ void Boss::Initialize(const Vector3 &position) {
 }
 
 void Boss::Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles) {
-    if (isDead_) return;
+    if (IsDead()) return;
 
-    const Vector3 prevPos = position_;
+    const Vector3 prevPos = GetPosition();
     ++actionTimer_;
-    position_.y += std::sin(static_cast<float>(actionTimer_) * 0.012f) * 0.008f;
+    MoveBy({ 0.0f, std::sin(static_cast<float>(actionTimer_) * 0.012f) * 0.008f, 0.0f });
     UpdateTurretAim(playerPos);
     // 以前の4秒周期では同時弾数が多過ぎたため、5秒周期へ広げて各砲の間隔も空ける。
     const int cycle = actionTimer_ % 300;
@@ -293,17 +292,19 @@ void Boss::Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, c
     if (cycle == 295) summonRequests_ += 2;
 
     CheckCollision(obstacles);
-    velocity_ = {
-        (position_.x - prevPos.x) * 60.0f,
-        (position_.y - prevPos.y) * 60.0f,
-        (position_.z - prevPos.z) * 60.0f,
-    };
+    const Vector3 currentPos = GetPosition();
+    SetVelocity({
+        (currentPos.x - prevPos.x) * 60.0f,
+        (currentPos.y - prevPos.y) * 60.0f,
+        (currentPos.z - prevPos.z) * 60.0f,
+    });
     UpdateRearThrusters();
     UpdateModel();
 }
 
 Vector3 Boss::DirectionTo(const Vector3 &target) const {
-    Vector3 d{ target.x - position_.x, target.y - position_.y, target.z - position_.z };
+    const Vector3 pos = GetPosition();
+    Vector3 d{ target.x - pos.x, target.y - pos.y, target.z - pos.z };
     const float length = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
     return length > 0.0001f ? ScaleVector(d, 1.0f / length) : Vector3{ 0.0f, 0.0f, -1.0f };
 }
@@ -314,23 +315,11 @@ Vector3 Boss::LocalPointToWorld(const Vector3 &localPoint) const {
         localPoint.y * kBossScale.y,
         localPoint.z * kBossScale.z,
     };
-    return AddVector(position_, MyMath::RotateVector(scaled, MakeEulerQuaternion(rotation_)));
-}
-
-void Boss::FireMachineGun(const Vector3 &playerPos, EnemyBulletManager *bulletManager) {
-    BossTurretController{}.FireMachineGun(*this, playerPos, bulletManager);
-}
-
-void Boss::FireMainBeam(const Vector3 &playerPos, EnemyBulletManager *bulletManager, size_t turretIndex) {
-    BossTurretController{}.FireMainBeam(*this, playerPos, bulletManager, turretIndex);
-}
-
-void Boss::FireForwardTurret(const Vector3 &playerPos, EnemyBulletManager *bulletManager, size_t turretIndex) {
-    BossTurretController{}.FireForwardTurret(*this, playerPos, bulletManager, turretIndex);
+    return AddVector(GetPosition(), MyMath::RotateVector(scaled, MakeEulerQuaternion(GetRotation())));
 }
 
 void Boss::TakeDamageAt(int damage, const Vector3 &hitPosition, const Vector3 &hitDirection, float impactRadius) {
-    if (damage <= 0 || isDead_) return;
+    if (damage <= 0 || IsDead()) return;
 
     size_t shieldFace = 0;
     if (TryGetSideShieldFaceAtWorldPosition(hitPosition, impactRadius, shieldFace) &&
@@ -366,7 +355,7 @@ void Boss::TakeDamageAt(int damage, const Vector3 &hitPosition, const Vector3 &h
 
 void Boss::TakeDamageAtTargetPoint(int damage, const Vector3& targetPoint,
     const Vector3& hitPosition, const Vector3& hitDirection, float impactRadius) {
-    if (damage <= 0 || isDead_) return;
+    if (damage <= 0 || IsDead()) return;
 
     size_t shieldFace = 0;
     if (TryGetSideShieldFaceAtWorldPosition(hitPosition, impactRadius, shieldFace) &&
@@ -435,9 +424,10 @@ OBB Boss::GetOBB() const {
     obb.center = GetBodyLockOnPosition();
     obb.size = GetWorldHalfExtents();
 
+    const Vector3 rot = GetRotation();
     const Matrix4x4 rotationMatrix = MyMath::Multiply(
-        MyMath::Multiply(MyMath::MakeRoteXMatrix(rotation_.x), MyMath::MakeRotateYMatrix(rotation_.y)),
-        MyMath::MakeRotateZMatrix(rotation_.z));
+        MyMath::Multiply(MyMath::MakeRoteXMatrix(rot.x), MyMath::MakeRotateYMatrix(rot.y)),
+        MyMath::MakeRotateZMatrix(rot.z));
     obb.orientations[0] = MyMath::Normalize(Vector3{ rotationMatrix.m[0][0], rotationMatrix.m[0][1], rotationMatrix.m[0][2] });
     obb.orientations[1] = MyMath::Normalize(Vector3{ rotationMatrix.m[1][0], rotationMatrix.m[1][1], rotationMatrix.m[1][2] });
     obb.orientations[2] = MyMath::Normalize(Vector3{ rotationMatrix.m[2][0], rotationMatrix.m[2][1], rotationMatrix.m[2][2] });
@@ -461,7 +451,7 @@ bool Boss::IsLockOnPartAvailable(size_t partIndex) const {
 Vector3 Boss::GetLockOnPartPosition(size_t partIndex) const {
     if (partIndex < kTurretCount) return GetTurretLockOnPosition(partIndex);
     const size_t face = partIndex - kTurretCount;
-    if (face >= kSideShieldGeneratorCount) return position_;
+    if (face >= kSideShieldGeneratorCount) return GetPosition();
     return LocalPointToWorld(kSideShieldPlaneCenters[face]);
 }
 
@@ -482,27 +472,16 @@ int Boss::GetLockOnPartMaxHP(size_t partIndex) const {
         (partIndex < GetLockOnPartCount() ? kSideShieldGeneratorMaxHP : 0);
 }
 
-bool Boss::ApplySideShieldGeneratorDamage(size_t face, int damage) {
-    return BossSideShieldController{}.ApplyGeneratorDamage(*this, face, damage);
-}
-
-bool Boss::GetActiveSideShieldImpact(const Vector3& hitPosition, float impactRadius, Vector3& outNormal) const {
-    return BossSideShieldController{}.GetActiveImpact(*this, hitPosition, impactRadius, outNormal);
-}
-
-bool Boss::TryGetSideShieldFaceAtWorldPosition(const Vector3& worldPosition, float radius, size_t& outFace) const {
-    return BossSideShieldController{}.TryGetFaceAtWorldPosition(*this, worldPosition, radius, outFace);
-}
-
 Vector3 Boss::GetBodyLockOnPosition() const {
     // ボス OBJ は原点が船体下側にあるため、そのまま position_ を使うと
     // ロックオンとカメラの注視点がモデルより下へずれる。
-    if (!object_ || !object_->GetModel()) return position_;
-    return LocalPointToWorld(object_->GetModel()->GetBoundsCenter());
+    const Object3d* obj = GetObject3d();
+    if (!obj || !obj->GetModel()) return GetPosition();
+    return LocalPointToWorld(obj->GetModel()->GetBoundsCenter());
 }
 
 Vector3 Boss::GetTurretLockOnPosition(size_t turretIndex) const {
-    if (!IsTurretAlive(turretIndex)) return position_;
+    if (!IsTurretAlive(turretIndex)) return GetPosition();
     return LocalPointToWorld(GetTurretPivot(turretIndex));
 }
 
@@ -525,7 +504,7 @@ void Boss::SetTuning(const Tuning& tuning) {
     tuning_.maxHP = std::clamp(tuning_.maxHP, 1, 1000000);
     // HP設定を変更した時だけ満タンにする。外観調整で戦闘中のHPを回復させない。
     if (previousMaxHP != tuning_.maxHP && !IsDead()) {
-        hp_ = tuning_.maxHP;
+        SetHP(tuning_.maxHP);
     }
     // 縦レール移動は廃止。旧JSONでtrueでも、砲台は必ずピッチ回転で照準する。
     tuning_.forwardTurretsVerticalSlide = false;
@@ -545,81 +524,13 @@ void Boss::SetTuning(const Tuning& tuning) {
     UpdateRearThrusters();
 }
 
-void Boss::SetCinematicWreckPresentation(float burnRatio) {
-    BossCinematicDebrisController{}.SetWreckPresentation(*this, burnRatio);
-}
-
 Vector3 Boss::GetRearThrusterWorldPosition(size_t thrusterIndex) const {
-    if (thrusterIndex >= GetRearThrusterCount()) return position_;
+    if (thrusterIndex >= GetRearThrusterCount()) return GetPosition();
     return rearThrusterOrigins_[thrusterIndex];
-}
-
-Vector3 Boss::GetTurretPivot(size_t turretIndex) const {
-    return BossTurretController{}.GetTurretPivot(turretIndex);
-}
-
-float Boss::GetTurretHitRadius(size_t turretIndex) const {
-    return BossTurretController{}.GetTurretHitRadius(turretIndex);
-}
-
-void Boss::UpdateTurretAim(const Vector3& playerPos) {
-    BossTurretController{}.UpdateAim(*this, playerPos);
-}
-
-void Boss::BeginCinematicDebris() {
-    BossCinematicDebrisController{}.Begin(*this);
-}
-
-void Boss::SetCinematicDebrisRestPlane(float worldY) {
-    BossCinematicDebrisController{}.SetRestPlane(*this, worldY);
-}
-
-void Boss::StepCinematicDebris(float deltaTime) {
-    BossCinematicDebrisController{}.Step(*this, deltaTime);
-}
-
-std::vector<Vector3> Boss::GetCinematicWreckageWorldPositions() const {
-    return BossCinematicDebrisController{}.GetWreckageWorldPositions(*this);
 }
 
 void Boss::UpdateCinematicDebris() {
     StepCinematicDebris(1.0f / 60.0f);
-}
-
-std::vector<Vector3> Boss::GetCinematicDebrisWorldPositions() const {
-    return BossCinematicDebrisController{}.GetDebrisWorldPositions(*this);
-}
-
-void Boss::UpdateTurretModels() {
-    BossTurretController{}.UpdateModels(*this);
-}
-
-void Boss::InitializeSideShields() {
-    BossSideShieldController{}.Initialize(*this);
-}
-
-bool Boss::IsSideShieldVisible() const {
-    return BossSideShieldController{}.IsVisible(*this);
-}
-
-bool Boss::IsSideShieldProtectingFace(size_t face) const {
-    return BossSideShieldController{}.IsProtectingFace(*this, face);
-}
-
-bool Boss::IsSideShieldGeneratorVulnerable(size_t face) const {
-    return BossSideShieldController{}.IsGeneratorVulnerable(*this, face);
-}
-
-void Boss::AdvanceSideShieldState() {
-    BossSideShieldController{}.AdvanceState(*this);
-}
-
-void Boss::UpdateSideShields() {
-    BossSideShieldController{}.Update(*this);
-}
-
-void Boss::DrawSideShields() {
-    BossSideShieldController{}.Draw(*this);
 }
 
 void Boss::InitializeRearThrusters() {
@@ -664,7 +575,7 @@ void Boss::DrawRearThrusters() {
     Camera* camera = object3dCommon->GetDefaultCamera();
     if (!camera) return;
 
-    const Vector3 exhaustDirection = RotatePitchYaw(kRearThrusterDirection, 0.0f, rotation_.y);
+    const Vector3 exhaustDirection = RotatePitchYaw(kRearThrusterDirection, 0.0f, GetRotation().y);
     object3dCommon->SetThrusterDrawSettings();
     for (size_t index = 0; index < static_cast<size_t>(tuning_.rearThrusterCount); ++index) {
         Trail* trail = rearThrusterTrails_[index].get();
@@ -712,10 +623,12 @@ int Boss::ConsumeSummonRequests() {
 
 void Boss::UpdateModel() {
     Enemy::UpdateModel();
-    if (cinematicDebrisActive_ && object_) {
-        // Enemy::UpdateModel() は通常船体のスケールを復元するため、撃破中だけ隠し直す。
-        object_->SetScale({ 0.0f, 0.0f, 0.0f });
-        object_->Update();
+    if (cinematicDebrisActive_) {
+        if (Object3d* obj = GetObject3d()) {
+            // Enemy::UpdateModel() は通常船体のスケールを復元するため、撃破中だけ隠し直す。
+            obj->SetScale({ 0.0f, 0.0f, 0.0f });
+            obj->Update();
+        }
     }
     UpdateRearThrusters();
     UpdateTurretModels();

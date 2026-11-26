@@ -8,6 +8,7 @@
 #include "EnemySpawnManager.h"
 #include "Game/Player/Player.h"
 #include "Game/Scene/ResultData.h"
+#include "engine/Scene/SceneManager.h"
 #include "Game/Scene/TitleScene.h"
 #include "Game/bullet/MissileManager.h"
 #include "Game/enemy/Enemy.h"
@@ -432,7 +433,7 @@ bool GameplaySessionFlowController::UpdateTutorial(const TutorialSessionContext&
 		context.tutorialGoalMarker->Activate(context.player, *context.obstacles);
 	}
 	if (result.clearMission && context.player) {
-		MissionResultStore::Set({
+		SceneManager::GetInstance()->SetMissionResult({
 			MissionResultOutcome::Clear,
 			context.defeatedEnemyCount,
 			context.player->GetHP(),

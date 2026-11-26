@@ -236,3 +236,17 @@ void Object3d::SetModel(const std::string &filepath) {
 	//モデルを検索してセットする
 	model = ModelManager::GetInstance()->FindModel(filepath);
 }
+
+void Object3d::CreateSkinCluster(const Skeleton& skeleton) {
+	if (!model) {
+		return;
+	}
+	skinCluster = model->CreateSkinCluster(skeleton);
+}
+
+void Object3d::UpdateSkinCluster(const Skeleton& skeleton) {
+	if (!model || !skinCluster.isValid) {
+		return;
+	}
+	model->UpdateSkinCluster(skinCluster, skeleton);
+}

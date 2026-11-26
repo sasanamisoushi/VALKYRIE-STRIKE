@@ -420,7 +420,7 @@ void GamePlayUIManager::UpdateUI() {
 			ModelManager::GetInstance()->LoadModel(loadFile);
 			myModelObject->SetModel(loadFile);
 			if (myModelObject->GetModel()) {
-				myModelObject->skinCluster = myModelObject->GetModel()->CreateSkinCluster(skeleton);
+				myModelObject->CreateSkinCluster(skeleton);
 			}
 			showModel = true;
 			enableSkinning = true;

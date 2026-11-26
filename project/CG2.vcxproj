@@ -181,7 +181,6 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
     <ClCompile Include="Game\enemy\EnemyEventManager.cpp" />
     <ClCompile Include="engine\Particle\ExplosionManager.cpp" />
     <ClCompile Include="Game\enemy\Enemy.cpp" />
-	<ClCompile Include="Game\enemy\EnemyActionController.cpp" />
     <ClCompile Include="Game\enemy\Boss.cpp" />
     <ClCompile Include="Game\enemy\BossCinematicDebrisController.cpp" />
     <ClCompile Include="Game\enemy\BossSideShieldController.cpp" />
@@ -424,11 +423,7 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
     <ClInclude Include="Game\enemy\EnemyEventManager.h" />
     <ClInclude Include="engine\Particle\ExplosionManager.h" />
     <ClInclude Include="Game\enemy\Enemy.h" />
-	<ClInclude Include="Game\enemy\EnemyActionController.h" />
     <ClInclude Include="Game\enemy\Boss.h" />
-    <ClInclude Include="Game\enemy\BossCinematicDebrisController.h" />
-    <ClInclude Include="Game\enemy\BossSideShieldController.h" />
-    <ClInclude Include="Game\enemy\BossTurretController.h" />
     <ClInclude Include="Game\enemy\JammerEnemy.h" />
     <ClInclude Include="Game\enemy\GroundEnemy.h" />
     <ClInclude Include="Game\enemy\GroundEnemyDestructionController.h" />
@@ -579,11 +574,6 @@ xcopy "$(ProjectDir)resources\*" "$(TargetDir)resources\" /E /I /Y /D
     <ClInclude Include="3D\ThrusterTrailMeshBuilder.h" />
     <ClInclude Include="Game\Player\Player.h" />
     <ClInclude Include="Game\Player\PlayerPresentationController.h" />
-    <ClInclude Include="Game\Player\PlayerMovementController.h" />
-    <ClInclude Include="Game\Player\PlayerActionController.h" />
-    <ClInclude Include="Game\Player\PlayerCollisionController.h" />
-    <ClInclude Include="Game\Player\PlayerCameraController.h" />
-    <ClInclude Include="Game\Player\PlayerAnimationController.h" />
     <ClInclude Include="Game\Player\BoosterEffect.h" />
     <ClInclude Include="Game\bullet\Missile.h" />
     <ClInclude Include="Game\bullet\MissileManager.h" />

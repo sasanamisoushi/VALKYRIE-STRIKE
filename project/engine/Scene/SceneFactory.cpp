@@ -1,4 +1,5 @@
 ﻿#include "SceneFactory.h"
+#include "SceneManager.h"
 #include "Game/Scene/TitleScene.h"
 #include "Game/Scene/GamePlayScene.h"
 #include "Game/Scene/GameOverScene.h"
@@ -21,9 +22,9 @@ std::unique_ptr<BaseScene> SceneFactory::CreateScene(const std::string &sceneNam
 	} else if (sceneName == "ATTRACT_DEMO") {
 		newScene = std::make_unique<GamePlayScene>(GamePlayScene::Mode::AttractDemo);
 	} else if (sceneName == "GAMEOVER") {
-		newScene = std::make_unique<GameOverScene>();
+		newScene = std::make_unique<GameOverScene>(SceneManager::GetInstance()->GetMissionResult());
 	} else if (sceneName == "CLEAR") {
-		newScene = std::make_unique<ClearScene>();
+		newScene = std::make_unique<ClearScene>(SceneManager::GetInstance()->GetMissionResult());
 	}
 
 	// 該当するシーン名がない場合はエラーで止める

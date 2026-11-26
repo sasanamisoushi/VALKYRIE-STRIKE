@@ -20,7 +20,7 @@ IDxcBlob* CompileParticleShader(
 	IDxcCompiler3* dxcCompiler,
 	IDxcIncludeHandler* includeHandler) {
 	std::string message = StringUtility::ConvertString(std::format(L"Begin CompileShader, path:{}, profile:{}\n", filePath, profile));
-	logger.Log(message);
+	GetLogger().Log(message);
 
 	ComPtr<IDxcBlobEncoding> shaderSource = nullptr;
 	HRESULT hr = dxcUtils->LoadFile(filePath.c_str(), nullptr, &shaderSource);
@@ -55,7 +55,7 @@ IDxcBlob* CompileParticleShader(
 
 	if (shaderError != nullptr && shaderError->GetStringLength() != 0) {
 		std::string errorMsg = shaderError->GetStringPointer();
-		logger.Log(errorMsg);
+		GetLogger().Log(errorMsg);
 		assert(false);
 	}
 
@@ -64,7 +64,7 @@ IDxcBlob* CompileParticleShader(
 	assert(SUCCEEDED(hr));
 
 	message = StringUtility::ConvertString(std::format(L"Compile Succeeded, path:{}, profile:{}\n", filePath, profile));
-	logger.Log(message);
+	GetLogger().Log(message);
 
 	return shaderBlob.Detach();
 }
@@ -134,7 +134,7 @@ void ParticlePipelineBuilder::CreateGraphicsRootSignature(
 	hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
 	if (FAILED(hr)) {
 		std::string errorMsg = reinterpret_cast<char*>(errorBlob->GetBufferPointer());
-		logger.Log(errorMsg);
+		GetLogger().Log(errorMsg);
 		assert(false);
 	}
 	hr = device->CreateRootSignature(
@@ -231,7 +231,7 @@ void ParticlePipelineBuilder::CreateGraphicsPipelineStates(
 
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&outGpuPipelineState));
 	if (FAILED(hr)) {
-		logger.Log("Failed to create GraphicsPipelineState for Particle.\n");
+		GetLogger().Log("Failed to create GraphicsPipelineState for Particle.\n");
 		assert(false);
 	}
 
@@ -244,7 +244,7 @@ void ParticlePipelineBuilder::CreateGraphicsPipelineStates(
 
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&outCpuPipelineState));
 	if (FAILED(hr)) {
-		logger.Log("Failed to create GraphicsPipelineState for CPU Particle.\n");
+		GetLogger().Log("Failed to create GraphicsPipelineState for CPU Particle.\n");
 		assert(false);
 	}
 
@@ -257,7 +257,7 @@ void ParticlePipelineBuilder::CreateGraphicsPipelineStates(
 	graphicsPipelineStateDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&outCpuAlphaPipelineState));
 	if (FAILED(hr)) {
-		logger.Log("Failed to create Alpha GraphicsPipelineState for CPU Particle.\n");
+		GetLogger().Log("Failed to create Alpha GraphicsPipelineState for CPU Particle.\n");
 		assert(false);
 	}
 }
@@ -315,7 +315,7 @@ void ParticlePipelineBuilder::CreateComputeRootSignature(
 	ComPtr<ID3DBlob> errorBlob = nullptr;
 	HRESULT hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
 	if (FAILED(hr)) {
-		logger.Log(reinterpret_cast<char*>(errorBlob->GetBufferPointer()));
+		GetLogger().Log(reinterpret_cast<char*>(errorBlob->GetBufferPointer()));
 		assert(false);
 	}
 	hr = device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&outComputeRootSignature));

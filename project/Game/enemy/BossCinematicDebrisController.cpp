@@ -1,5 +1,3 @@
-#include "BossCinematicDebrisController.h"
-
 #include "Boss.h"
 
 #include <algorithm>
@@ -24,8 +22,8 @@ Quaternion MakeEulerQuaternion(const Vector3& euler) {
 }
 }
 
-void BossCinematicDebrisController::SetWreckPresentation(Boss& boss, float burnRatio) const {
-	boss.cinematicWreckPresentation_ = true;
+void Boss::SetCinematicWreckPresentation(float burnRatio) {
+	cinematicWreckPresentation_ = true;
 	const float burn = std::clamp(burnRatio, 0.0f, 1.0f);
 	const Vector4 hullColor = {
 		0.20f * (1.0f - burn) + 0.025f * burn,
@@ -39,30 +37,30 @@ void BossCinematicDebrisController::SetWreckPresentation(Boss& boss, float burnR
 		0.48f * (1.0f - burn) + 0.018f * burn,
 		1.0f,
 	};
-	if (boss.object_ && boss.object_->GetModel()) boss.object_->GetModel()->SetColor(hullColor);
-	for (const auto& hullPart : boss.cinematicHullDebris_) {
+	if (Object3d* obj = GetObject3d(); obj && obj->GetModel()) obj->GetModel()->SetColor(hullColor);
+	for (const auto& hullPart : cinematicHullDebris_) {
 		if (hullPart && hullPart->GetModel()) hullPart->GetModel()->SetColor(hullColor);
 	}
-	for (const auto& turret : boss.mainTurrets_) {
+	for (const auto& turret : mainTurrets_) {
 		if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
 	}
-	for (const auto& turret : boss.miniTurretBases_) {
+	for (const auto& turret : miniTurretBases_) {
 		if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
 	}
-	for (const auto& barrel : boss.miniTurretBarrels_) {
+	for (const auto& barrel : miniTurretBarrels_) {
 		if (barrel && barrel->GetModel()) barrel->GetModel()->SetColor(wreckPartColor);
 	}
-	if (boss.machineGunTurret_ && boss.machineGunTurret_->GetModel()) boss.machineGunTurret_->GetModel()->SetColor(wreckPartColor);
-	for (const auto& turret : boss.forwardTurrets_) {
+	if (machineGunTurret_ && machineGunTurret_->GetModel()) machineGunTurret_->GetModel()->SetColor(wreckPartColor);
+	for (const auto& turret : forwardTurrets_) {
 		if (turret && turret->GetModel()) turret->GetModel()->SetColor(wreckPartColor);
 	}
 }
 
-void BossCinematicDebrisController::Begin(Boss& boss) const {
-	if (boss.cinematicDebrisActive_) return;
+void Boss::BeginCinematicDebris() {
+	if (cinematicDebrisActive_) return;
 
-	const Vector3 bossCenter = boss.GetBodyLockOnPosition();
-	const OBB bossObb = boss.GetOBB();
+	const Vector3 bossCenter = GetBodyLockOnPosition();
+	const OBB bossObb = GetOBB();
 	static std::mt19937 debrisRng(std::random_device{}());
 	std::uniform_real_distribution<float> distSigned(-1.0f, 1.0f);
 	std::uniform_real_distribution<float> distScaleXZ(0.28f, 0.92f);
@@ -71,22 +69,22 @@ void BossCinematicDebrisController::Begin(Boss& boss) const {
 	std::uniform_real_distribution<float> distRot(0.0f, 6.2831853f);
 	constexpr float kSpinPower = 10.5f;
 
-	boss.cinematicDebrisParts_.fill(nullptr);
-	boss.cinematicDebrisVelocities_.fill({});
-	boss.cinematicDebrisAngularVelocities_.fill({});
-	boss.cinematicSmallDebrisResting_.fill(false);
+	cinematicDebrisParts_.fill(nullptr);
+	cinematicDebrisVelocities_.fill({});
+	cinematicDebrisAngularVelocities_.fill({});
+	cinematicSmallDebrisResting_.fill(false);
 
 	// 大型の船体・砲塔ブロックは描画せず、爆発を覆わない細かいデブリだけを使う。
 
-	const size_t thrusterCount = boss.GetRearThrusterCount();
-	for (size_t i = 0; i < boss.cinematicSmallDebris_.size(); ++i) {
-		Object3d* part = boss.cinematicSmallDebris_[i].get();
+	const size_t thrusterCount = GetRearThrusterCount();
+	for (size_t i = 0; i < cinematicSmallDebris_.size(); ++i) {
+		Object3d* part = cinematicSmallDebris_[i].get();
 		if (!part) continue;
 
 		// 半数はエンジン付近、残りは船体各所の内部から飛び散らせる
 		Vector3 initialPos{};
 		if (thrusterCount > 0 && (i % 2 == 0)) {
-			const Vector3 enginePos = boss.GetRearThrusterWorldPosition(i % thrusterCount);
+			const Vector3 enginePos = GetRearThrusterWorldPosition(i % thrusterCount);
 			initialPos = {
 				enginePos.x + distSigned(debrisRng) * 1.4f,
 				enginePos.y + distSigned(debrisRng) * 0.9f,
@@ -126,76 +124,76 @@ void BossCinematicDebrisController::Begin(Boss& boss) const {
 		// すべてを空の彼方へ飛ばさず、約 1/7 は地面に残る焼けた残骸にする。
 		const bool leavesWreckage = (i % 7) == 0;
 		const float upwardDir = std::abs(direction.y) * 0.85f + 0.30f;
-		boss.cinematicSmallDebrisVelocities_[i] = {
+		cinematicSmallDebrisVelocities_[i] = {
 			direction.x * explosionPower * (leavesWreckage ? 0.32f : 1.0f),
 			leavesWreckage ? 2.0f + std::abs(direction.y) * 3.5f : upwardDir * explosionPower + 5.0f,
 			direction.z * explosionPower * (leavesWreckage ? 0.32f : 1.0f),
 		};
-		boss.cinematicSmallDebrisAngularVelocities_[i] = {
+		cinematicSmallDebrisAngularVelocities_[i] = {
 			distSigned(debrisRng) * kSpinPower,
 			distSigned(debrisRng) * kSpinPower,
 			distSigned(debrisRng) * kSpinPower,
 		};
 	}
 
-	boss.cinematicDebrisActive_ = true;
+	cinematicDebrisActive_ = true;
 
 	// 船体および砲塔をすべて非表示にし、細かい破片のみを描画する。
-	if (boss.object_) {
-		boss.object_->SetScale({ 0.0f, 0.0f, 0.0f });
-		boss.object_->Update();
+	if (Object3d* obj = GetObject3d()) {
+		obj->SetScale({ 0.0f, 0.0f, 0.0f });
+		obj->Update();
 	}
 }
 
-void BossCinematicDebrisController::SetRestPlane(Boss& boss, float worldY) const {
-	boss.cinematicDebrisRestPlaneY_ = worldY;
-	boss.hasCinematicDebrisRestPlane_ = true;
+void Boss::SetCinematicDebrisRestPlane(float worldY) {
+	cinematicDebrisRestPlaneY_ = worldY;
+	hasCinematicDebrisRestPlane_ = true;
 }
 
-void BossCinematicDebrisController::Step(Boss& boss, float deltaTime) const {
-	if (!boss.cinematicDebrisActive_ || deltaTime <= 0.0f) return;
+void Boss::StepCinematicDebris(float deltaTime) {
+	if (!cinematicDebrisActive_ || deltaTime <= 0.0f) return;
 	// 高速で飛び散る細かいデブリへ重力を適用し、爆発後に自然な放物線で落下させる。
 	constexpr float kDebrisGravity = 16.0f;
-	for (size_t index = 0; index < boss.cinematicDebrisParts_.size(); ++index) {
-		Object3d* part = boss.cinematicDebrisParts_[index];
+	for (size_t index = 0; index < cinematicDebrisParts_.size(); ++index) {
+		Object3d* part = cinematicDebrisParts_[index];
 		if (!part) continue;
 		Vector3 position = part->GetTranslate();
-		boss.cinematicDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
-		position.x += boss.cinematicDebrisVelocities_[index].x * deltaTime;
-		position.y += boss.cinematicDebrisVelocities_[index].y * deltaTime;
-		position.z += boss.cinematicDebrisVelocities_[index].z * deltaTime;
+		cinematicDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
+		position.x += cinematicDebrisVelocities_[index].x * deltaTime;
+		position.y += cinematicDebrisVelocities_[index].y * deltaTime;
+		position.z += cinematicDebrisVelocities_[index].z * deltaTime;
 		const Vector3 deltaEuler = {
-			boss.cinematicDebrisAngularVelocities_[index].x * deltaTime,
-			boss.cinematicDebrisAngularVelocities_[index].y * deltaTime,
-			boss.cinematicDebrisAngularVelocities_[index].z * deltaTime,
+			cinematicDebrisAngularVelocities_[index].x * deltaTime,
+			cinematicDebrisAngularVelocities_[index].y * deltaTime,
+			cinematicDebrisAngularVelocities_[index].z * deltaTime,
 		};
 		part->SetTranslate(position);
 		part->SetQuaternionRotate(MyMath::Normalize(
 			MyMath::Multiply(MakeEulerQuaternion(deltaEuler), part->GetQuaternionRotate())));
 		part->Update();
 	}
-	for (size_t index = 0; index < boss.cinematicSmallDebris_.size(); ++index) {
-		Object3d* part = boss.cinematicSmallDebris_[index].get();
+	for (size_t index = 0; index < cinematicSmallDebris_.size(); ++index) {
+		Object3d* part = cinematicSmallDebris_[index].get();
 		if (!part) continue;
-		if (boss.cinematicSmallDebrisResting_[index]) continue;
+		if (cinematicSmallDebrisResting_[index]) continue;
 		Vector3 position = part->GetTranslate();
-		boss.cinematicSmallDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
-		position.x += boss.cinematicSmallDebrisVelocities_[index].x * deltaTime;
-		position.y += boss.cinematicSmallDebrisVelocities_[index].y * deltaTime;
-		position.z += boss.cinematicSmallDebrisVelocities_[index].z * deltaTime;
+		cinematicSmallDebrisVelocities_[index].y -= kDebrisGravity * deltaTime;
+		position.x += cinematicSmallDebrisVelocities_[index].x * deltaTime;
+		position.y += cinematicSmallDebrisVelocities_[index].y * deltaTime;
+		position.z += cinematicSmallDebrisVelocities_[index].z * deltaTime;
 		const Vector3 deltaEuler = {
-			boss.cinematicSmallDebrisAngularVelocities_[index].x * deltaTime,
-			boss.cinematicSmallDebrisAngularVelocities_[index].y * deltaTime,
-			boss.cinematicSmallDebrisAngularVelocities_[index].z * deltaTime,
+			cinematicSmallDebrisAngularVelocities_[index].x * deltaTime,
+			cinematicSmallDebrisAngularVelocities_[index].y * deltaTime,
+			cinematicSmallDebrisAngularVelocities_[index].z * deltaTime,
 		};
 		const Quaternion nextRot = MyMath::Normalize(
 			MyMath::Multiply(MakeEulerQuaternion(deltaEuler), part->GetQuaternionRotate()));
-		if (boss.hasCinematicDebrisRestPlane_ && (index % 7) == 0 &&
-			boss.cinematicSmallDebrisVelocities_[index].y < 0.0f && position.y <= boss.cinematicDebrisRestPlaneY_) {
-			position.y = boss.cinematicDebrisRestPlaneY_;
-			boss.cinematicSmallDebrisVelocities_[index] = {};
-			boss.cinematicSmallDebrisAngularVelocities_[index] = {};
-			boss.cinematicSmallDebrisResting_[index] = true;
+		if (hasCinematicDebrisRestPlane_ && (index % 7) == 0 &&
+			cinematicSmallDebrisVelocities_[index].y < 0.0f && position.y <= cinematicDebrisRestPlaneY_) {
+			position.y = cinematicDebrisRestPlaneY_;
+			cinematicSmallDebrisVelocities_[index] = {};
+			cinematicSmallDebrisAngularVelocities_[index] = {};
+			cinematicSmallDebrisResting_[index] = true;
 		}
 		part->SetTranslate(position);
 		part->SetQuaternionRotate(nextRot);
@@ -203,27 +201,27 @@ void BossCinematicDebrisController::Step(Boss& boss, float deltaTime) const {
 	}
 }
 
-std::vector<Vector3> BossCinematicDebrisController::GetWreckageWorldPositions(const Boss& boss) const {
+std::vector<Vector3> Boss::GetCinematicWreckageWorldPositions() const {
 	std::vector<Vector3> positions;
-	if (!boss.cinematicDebrisActive_) return positions;
-	positions.reserve(boss.cinematicSmallDebris_.size() / 7 + 1);
-	for (size_t i = 0; i < boss.cinematicSmallDebris_.size(); ++i) {
-		if (boss.cinematicSmallDebrisResting_[i] && boss.cinematicSmallDebris_[i]) {
-			positions.push_back(boss.cinematicSmallDebris_[i]->GetTranslate());
+	if (!cinematicDebrisActive_) return positions;
+	positions.reserve(cinematicSmallDebris_.size() / 7 + 1);
+	for (size_t i = 0; i < cinematicSmallDebris_.size(); ++i) {
+		if (cinematicSmallDebrisResting_[i] && cinematicSmallDebris_[i]) {
+			positions.push_back(cinematicSmallDebris_[i]->GetTranslate());
 		}
 	}
 	return positions;
 }
 
-std::vector<Vector3> BossCinematicDebrisController::GetDebrisWorldPositions(const Boss& boss) const {
+std::vector<Vector3> Boss::GetCinematicDebrisWorldPositions() const {
 	std::vector<Vector3> positions;
-	if (!boss.cinematicDebrisActive_) return positions;
-	positions.reserve(boss.cinematicDebrisParts_.size() + 14);
-	for (const Object3d* part : boss.cinematicDebrisParts_) {
+	if (!cinematicDebrisActive_) return positions;
+	positions.reserve(cinematicDebrisParts_.size() + 14);
+	for (const Object3d* part : cinematicDebrisParts_) {
 		if (part) positions.push_back(part->GetTranslate());
 	}
-	for (size_t i = 0; i < boss.cinematicSmallDebris_.size(); i += 3) {
-		Object3d* part = boss.cinematicSmallDebris_[i].get();
+	for (size_t i = 0; i < cinematicSmallDebris_.size(); i += 3) {
+		Object3d* part = cinematicSmallDebris_[i].get();
 		if (part) {
 			positions.push_back(part->GetTranslate());
 		}

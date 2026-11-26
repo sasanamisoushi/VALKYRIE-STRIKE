@@ -1,6 +1,4 @@
 #include "GroundEnemy.h"
-#include "GroundEnemyDestructionController.h"
-#include "GroundEnemyMovementController.h"
 #include "3D/Object3dCommon.h"
 #include "Game/enemy/EnemyBulletManager.h"
 #include "Game/obstacle/Obstacle.h"
@@ -79,10 +77,12 @@ namespace {
 }
 
 void GroundEnemy::Initialize(const Vector3 &position) {
-    if (!object_) {
-        object_ = std::make_unique<Object3d>();
-        object_->Initialize(Object3dCommon::GetInstance());
+    if (!GetObject3d()) {
+        auto obj = std::make_unique<Object3d>();
+        obj->Initialize(Object3dCommon::GetInstance());
+        ResetObject3d(std::move(obj));
     }
+    Object3d* obj = GetObject3d();
 
     ModelManager* modelMgr = ModelManager::GetInstance();
     if (modelMgr) {
@@ -92,7 +92,7 @@ void GroundEnemy::Initialize(const Vector3 &position) {
             modelMgr->LoadModel(kGroundEnemyRiggedModel);
         }
         if (modelMgr->FindModel(kGroundEnemyRiggedModel)) {
-            object_->SetModel(kGroundEnemyRiggedModel);
+            obj->SetModel(kGroundEnemyRiggedModel);
             usesRiggedModel_ = true;
         } else {
             if (!modelMgr->FindModel(kGroundEnemyBodyModel)) {
@@ -106,22 +106,22 @@ void GroundEnemy::Initialize(const Vector3 &position) {
                     modelMgr->LoadModel(legModel);
                 }
             }
-            object_->SetModel(kGroundEnemyBodyModel);
+            obj->SetModel(kGroundEnemyBodyModel);
         }
     } else {
-        object_->SetModel("EnemyBox"); // 初期化順異常時だけの安全なフォールバック
+        obj->SetModel("EnemyBox"); // 初期化順異常時だけの安全なフォールバック
     }
 
-    if (object_->GetModel()) {
+    if (obj->GetModel()) {
         // 砂漠を疾走する獣型メカらしいオレンジ装甲と金属ハイライト。
-        object_->GetModel()->SetColor({ 0.92f, 0.38f, 0.08f, 1.0f });
-        object_->GetModel()->SetShininess(96.0f);
+        obj->GetModel()->SetColor({ 0.92f, 0.38f, 0.08f, 1.0f });
+        obj->GetModel()->SetShininess(96.0f);
     }
 
     // EnemyR の実寸（約 6 x 2.6 x 6.3）に合わせる。
-    scale_ = { 0.72f, 0.72f, 0.72f };
-    visualScale_ = scale_;
-    object_->SetScale(scale_);
+    const Vector3 initialScale = { 0.72f, 0.72f, 0.72f };
+    SetScale(initialScale);
+    visualScale_ = initialScale;
 
     if (!usesRiggedModel_ && modelMgr && modelMgr->FindModel(kGroundEnemyTurretModel)) {
         turret_ = std::make_unique<Object3d>();
@@ -145,13 +145,12 @@ void GroundEnemy::Initialize(const Vector3 &position) {
         }
     }
 
-    position_ = position;
     // モデルの中心ではなく底面（足元）が地面の上に立つようにY座標を調整
-    position_.y = position.y + scale_.y;
+    SetPosition({ position.x, position.y + initialScale.y, position.z });
     groundY_ = position.y;
-    rotation_ = { 0.0f, 0.0f, 0.0f };
-    forward_ = { 0.0f, 0.0f, 1.0f };
-    velocity_ = { 0.0f, 0.0f, 0.0f };
+    SetRotationAngles({ 0.0f, 0.0f, 0.0f });
+    SetForward({ 0.0f, 0.0f, 1.0f });
+    SetVelocity({ 0.0f, 0.0f, 0.0f });
     velocityY_ = 0.0f;
     isGrounded_ = true;
     jumpTimer_ = 0;
@@ -159,8 +158,8 @@ void GroundEnemy::Initialize(const Vector3 &position) {
     turretPitch_ = kTurretPitchMax;
     turretAimError_ = 0.0f;
 
-    isDead_ = false;
-    hp_ = kMaxHP;
+    MarkAlive();
+    SetHP(kMaxHP);
     destructionState_ = DestructionState::Alive;
     hitStopFrames_ = 0;
     hitReactionFrames_ = 0;
@@ -175,7 +174,7 @@ void GroundEnemy::Initialize(const Vector3 &position) {
     legDetached_.fill(false);
     pendingEffectEvents_.clear();
     // 地形への接地は維持したまま、ロックオンされていなくても自律的に追跡・攻撃する。
-    isChasingPlayer_ = true;
+    SetChasingPlayer(true);
 
     // 近接攻撃判定用ブロックの初期化
     meleeBox_ = std::make_unique<Object3d>();
@@ -194,14 +193,14 @@ void GroundEnemy::Initialize(const Vector3 &position) {
     attackSubState_ = GroundAttackState::Idle;
 
     rigBindPose_.clear();
-    if (usesRiggedModel_ && object_->GetModel()) {
-        rigSkeleton_ = CreateSkeleton(object_->GetModel()->GetModelData().rootNode);
+    if (usesRiggedModel_ && obj->GetModel()) {
+        rigSkeleton_ = CreateSkeleton(obj->GetModel()->GetModelData().rootNode);
         rigBindPose_.reserve(rigSkeleton_.joints.size());
         for (const Joint& joint : rigSkeleton_.joints) {
             rigBindPose_.push_back(joint.transform);
         }
-        object_->skinCluster = object_->GetModel()->CreateSkinCluster(rigSkeleton_);
-        if (!object_->skinCluster.isValid) {
+        obj->CreateSkinCluster(rigSkeleton_);
+        if (!obj->HasValidSkinCluster()) {
             // ここで OBJ フォールバックへ切り替えると、初期化済みの脚オブジェクトが
             // 無い状態になってしまう。スキン更新だけを止め、モデルはバインド姿勢で
             // 描画を継続する。
@@ -209,9 +208,7 @@ void GroundEnemy::Initialize(const Vector3 &position) {
         }
     }
 
-    object_->SetTranslate(position_);
-    object_->SetRotate(rotation_);
-    object_->Update();
+    SyncModelTransform();
 }
 
 void GroundEnemy::OnSpawned(const std::list<std::unique_ptr<Obstacle>>& obstacles) {
@@ -219,7 +216,7 @@ void GroundEnemy::OnSpawned(const std::list<std::unique_ptr<Obstacle>>& obstacle
 }
 
 void GroundEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletManager, const std::list<std::unique_ptr<Obstacle>> &obstacles) {
-    if (isDead_) return;
+    if (IsDead()) return;
 
     // 撃破後も即座に削除せず、慣性滑走と誘爆が完了するまで表示し続ける。
     if (destructionState_ != DestructionState::Alive) {
@@ -251,7 +248,7 @@ void GroundEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletMan
     // 照準対象をAIより先に更新する。これによりビーム開始フレームから砲塔は
     // 現在位置のプレイヤーへ旋回し、前フレームの位置へ向き続けない。
     turretTarget_ = playerPos;
-    if (isChasingPlayer_) {
+    if (IsChasingPlayer()) {
         UpdateAttackAI(playerPos, bulletManager);
     }
 
@@ -266,7 +263,7 @@ void GroundEnemy::Update(const Vector3 &playerPos, EnemyBulletManager *bulletMan
 }
 
 bool GroundEnemy::CanReceiveDamage() const {
-    return !isDead_ && destructionState_ == DestructionState::Alive;
+    return !IsDead() && destructionState_ == DestructionState::Alive;
 }
 
 std::vector<GroundEnemy::EffectEvent> GroundEnemy::ConsumeEffectEvents() {
@@ -280,53 +277,24 @@ void GroundEnemy::QueueEffect(EffectEvent::Type type, const Vector3 &position, c
     pendingEffectEvents_.push_back({ type, position, direction, destructionEffect });
 }
 
-void GroundEnemy::TakeDamage(int damage, const Vector3 &hitDirection) {
-    GroundEnemyDestructionController{}.TakeDamage(*this, damage, hitDirection);
-}
-
-void GroundEnemy::UpdateHitReaction(const std::list<std::unique_ptr<Obstacle>> &obstacles) {
-    GroundEnemyDestructionController{}.UpdateHitReaction(*this, obstacles);
-}
-
 Vector3 GroundEnemy::GetLocalPartPosition(const Vector3 &localPosition) const {
+    const Vector3 pos = GetPosition();
     const float yaw = visualRotation_.y;
     const float c = std::cos(yaw);
     const float s = std::sin(yaw);
     const float localX = localPosition.x * visualScale_.x;
     const float localZ = localPosition.z * visualScale_.z;
     return {
-        position_.x + localX * c + localZ * s,
-        position_.y + terrainClearance_ + visualHeightOffset_ + localPosition.y * visualScale_.y,
-        position_.z - localX * s + localZ * c,
+        pos.x + localX * c + localZ * s,
+        pos.y + terrainClearance_ + visualHeightOffset_ + localPosition.y * visualScale_.y,
+        pos.z - localX * s + localZ * c,
     };
 }
 
-void GroundEnemy::BeginDestruction(const Vector3 &hitDirection) {
-    GroundEnemyDestructionController{}.BeginDestruction(*this, hitDirection);
-}
-
-void GroundEnemy::UpdateDetachedParts() {
-    GroundEnemyDestructionController{}.UpdateDetachedParts(*this);
-}
-
-void GroundEnemy::UpdateDestruction() {
-    GroundEnemyDestructionController{}.UpdateDestruction(*this);
-}
-
-void GroundEnemy::UpdateDamageGlow() {
-    GroundEnemyDestructionController{}.UpdateDamageGlow(*this);
-}
-
-void GroundEnemy::UpdateGroundMovement(const Vector3 &playerPos, const std::list<std::unique_ptr<Obstacle>> &obstacles) {
-    GroundEnemyMovementController{}.UpdateGroundMovement(*this, playerPos, obstacles);
-}
-
-void GroundEnemy::UpdateTerrainPose(const std::list<std::unique_ptr<Obstacle>>& obstacles) {
-    GroundEnemyMovementController{}.UpdateTerrainPose(*this, obstacles);
-}
-
 void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *bulletManager) {
-    Vector3 diff = { playerPos.x - position_.x, playerPos.y - position_.y, playerPos.z - position_.z };
+    const Vector3 pos = GetPosition();
+    const Vector3 fwd = GetForward();
+    Vector3 diff = { playerPos.x - pos.x, playerPos.y - pos.y, playerPos.z - pos.z };
     float distSq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
     float dist = std::sqrt(distSq);
 
@@ -335,8 +303,7 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
         if (meleePhase_ == MeleePhase::Rising) {
             // 跳躍上昇フェーズ（前方に跳び上がりつつ上昇。HIT判定はまだ無し）
             isMeleeActive_ = false;
-            position_.x += forward_.x * (kGroundSpeed * 1.5f);
-            position_.z += forward_.z * (kGroundSpeed * 1.5f);
+            MoveBy({ fwd.x * (kGroundSpeed * 1.5f), 0.0f, fwd.z * (kGroundSpeed * 1.5f) });
 
             // 頂点付近（下降開始）に達したら急降下飛び蹴りフェーズへ
             if (velocityY_ <= 0.05f) {
@@ -346,8 +313,7 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
         else if (meleePhase_ == MeleePhase::Falling) {
             // 急降下・飛び蹴り中（降りてきたとき〜着地前までHIT判定ON！）
             isMeleeActive_ = true;
-            position_.x += forward_.x * (kGroundSpeed * 2.0f);
-            position_.z += forward_.z * (kGroundSpeed * 2.0f);
+            MoveBy({ fwd.x * (kGroundSpeed * 2.0f), 0.0f, fwd.z * (kGroundSpeed * 2.0f) });
             velocityY_ -= gravity_ * 0.6f;
 
             // 地面に足が届いて着地したら攻撃判定OFF＆着地硬直フェーズへ
@@ -386,14 +352,15 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
             // 写真2〜3で指定された動きは左右旋回ではなく、砲身を上下させる
             // ピッチ回転である。描画に使う砲身角から弾道も作り、見た目と弾を
             // 常に一致させる。
+            const float rotY = GetRotation().y;
             const Vector3 bodyForward = {
-                std::sin(rotation_.y), 0.0f, std::cos(rotation_.y)
+                std::sin(rotY), 0.0f, std::cos(rotY)
             };
             const Vector3 shootDir = NormalizeOrFallback({
                 bodyForward.x * std::cos(turretPitch_), -std::sin(turretPitch_),
                 bodyForward.z * std::cos(turretPitch_),
             }, bodyForward);
-            const Vector3 bodyRight = { std::cos(rotation_.y), 0.0f, -std::sin(rotation_.y) };
+            const Vector3 bodyRight = { std::cos(rotY), 0.0f, -std::sin(rotY) };
             const Vector3 turretPosition = GetLocalPartPosition(kTurretPivot);
             const Vector3 beamVelocity = { shootDir.x * 0.72f, shootDir.y * 0.72f, shootDir.z * 0.72f };
 
@@ -451,7 +418,10 @@ void GroundEnemy::UpdateAttackAI(const Vector3 &playerPos, EnemyBulletManager *b
 void GroundEnemy::UpdateLocomotionPose() {
     // 衝突形状は scale_ / rotation_ のまま固定し、描画だけに重心移動を加える。
     // そのため元OBJの各パーツを変形・分解せず、足元の接地判定も安定する。
-    const float horizontalSpeed = std::sqrt(velocity_.x * velocity_.x + velocity_.z * velocity_.z);
+    const Vector3 vel = GetVelocity();
+    const Vector3 rot = GetRotation();
+    const Vector3 fwd = GetForward();
+    const float horizontalSpeed = std::sqrt(vel.x * vel.x + vel.z * vel.z);
     const float targetLegMotion = horizontalSpeed > 0.025f && destructionState_ == DestructionState::Alive ? 1.0f : 0.0f;
     legMotionBlend_ += (targetLegMotion - legMotionBlend_) * 0.18f;
     // 完全停止時には位相も止める。振幅だけを先にゼロへ補間するため、足が急に折れない。
@@ -461,8 +431,8 @@ void GroundEnemy::UpdateLocomotionPose() {
 
     // EnemyR の長手方向(X)をゲーム内の前方(Z)へ揃える。
     // 地形の前後傾斜はモデルの長手方向まわりに、左右傾斜は横方向まわりに反映する。
-    visualRotation_ = { terrainRoll_, rotation_.y + kModelForwardYaw, terrainPitch_ };
-    visualScale_ = scale_;
+    visualRotation_ = { terrainRoll_, rot.y + kModelForwardYaw, terrainPitch_ };
+    visualScale_ = GetScale();
     visualHeightOffset_ = std::sin(gaitPhase_ * 0.5f) * 0.018f * legMotionBlend_;
 
     if (hitStopFrames_ > 0 || hitReactionFrames_ > 0) {
@@ -470,7 +440,7 @@ void GroundEnemy::UpdateLocomotionPose() {
         const float crouch = std::clamp(hitLean_, 0.0f, 1.0f);
         visualHeightOffset_ -= crouch * 0.14f;
         visualScale_.y *= 1.0f - crouch * 0.14f;
-        visualRotation_.z += (hitDirection_.x * forward_.z - hitDirection_.z * forward_.x) * crouch * 0.18f;
+        visualRotation_.z += (hitDirection_.x * fwd.z - hitDirection_.z * fwd.x) * crouch * 0.18f;
         visualRotation_.x += crouch * 0.11f;
     }
 
@@ -514,8 +484,8 @@ void GroundEnemy::UpdateLocomotionPose() {
         visualScale_.z *= 1.0f + trackBlend_ * 0.05f;
         visualHeightOffset_ -= trackBlend_ * 0.11f;
         trackUvOffset_ += horizontalSpeed * (0.20f + trackBlend_ * 0.80f);
-        if (object_ && object_->GetModel()) {
-            object_->GetModel()->SetUvTransform(MyMath::MakeTranslateMatrix({ trackUvOffset_, 0.0f, 0.0f }));
+        if (Object3d* obj = GetObject3d(); obj && obj->GetModel()) {
+            obj->GetModel()->SetUvTransform(MyMath::MakeTranslateMatrix({ trackUvOffset_, 0.0f, 0.0f }));
         }
     }
 
@@ -533,8 +503,9 @@ void GroundEnemy::UpdateLocomotionPose() {
 }
 
 void GroundEnemy::UpdateRiggedPose() {
-    if (!usesRiggedModel_ || !object_ || !object_->GetModel() ||
-        !object_->skinCluster.isValid || rigBindPose_.size() != rigSkeleton_.joints.size()) {
+    Object3d* obj = GetObject3d();
+    if (!usesRiggedModel_ || !obj || !obj->GetModel() ||
+        !obj->HasValidSkinCluster() || rigBindPose_.size() != rigSkeleton_.joints.size()) {
         return;
     }
 
@@ -544,7 +515,8 @@ void GroundEnemy::UpdateRiggedPose() {
         rigSkeleton_.joints[i].transform = rigBindPose_[i];
     }
 
-    const float horizontalSpeed = std::sqrt(velocity_.x * velocity_.x + velocity_.z * velocity_.z);
+    const Vector3 vel = GetVelocity();
+    const float horizontalSpeed = std::sqrt(vel.x * vel.x + vel.z * vel.z);
     const float runBlend = std::clamp(horizontalSpeed / kGroundSpeed, 0.0f, 1.0f) *
         (1.0f - trackBlend_) * legMotionBlend_;
     constexpr std::array<const char*, 4> kRigLegNames = {
@@ -588,7 +560,8 @@ void GroundEnemy::UpdateRiggedPose() {
 
     // Blenderで指定されたY回転は、glTFのゲーム座標では砲身の上下ピッチになる。
     // 胴体はプレイヤーへ正対したまま、背中の砲身だけを上下させて狙いを付ける。
-    const Vector3 toTarget = { turretTarget_.x - position_.x, turretTarget_.y - position_.y, turretTarget_.z - position_.z };
+    const Vector3 pos = GetPosition();
+    const Vector3 toTarget = { turretTarget_.x - pos.x, turretTarget_.y - pos.y, turretTarget_.z - pos.z };
     const float horizontalDistance = std::sqrt(toTarget.x * toTarget.x + toTarget.z * toTarget.z);
     if (horizontalDistance > 0.001f) {
         const float targetPitch = std::clamp(
@@ -606,13 +579,14 @@ void GroundEnemy::UpdateRiggedPose() {
     }
 
     ::Update(rigSkeleton_);
-    object_->GetModel()->UpdateSkinCluster(object_->skinCluster, rigSkeleton_);
+    obj->UpdateSkinCluster(rigSkeleton_);
 }
 
 void GroundEnemy::UpdateTurretPose() {
     if (!turret_ || turretDetached_) return;
 
-    const Vector3 toTarget = { turretTarget_.x - position_.x, turretTarget_.y - position_.y, turretTarget_.z - position_.z };
+    const Vector3 pos = GetPosition();
+    const Vector3 toTarget = { turretTarget_.x - pos.x, turretTarget_.y - pos.y, turretTarget_.z - pos.z };
     const float horizontalDistance = std::sqrt(toTarget.x * toTarget.x + toTarget.z * toTarget.z);
     if (horizontalDistance > 0.001f) {
         const float targetPitch = std::clamp(
@@ -629,9 +603,9 @@ void GroundEnemy::UpdateTurretPose() {
     const float pivotX = kTurretPivot.x * visualScale_.x;
     const float pivotZ = kTurretPivot.z * visualScale_.z;
     const Vector3 turretPosition = {
-        position_.x + pivotX * c + pivotZ * s,
-        position_.y + terrainClearance_ + visualHeightOffset_ + kTurretPivot.y * visualScale_.y,
-        position_.z - pivotX * s + pivotZ * c
+        pos.x + pivotX * c + pivotZ * s,
+        pos.y + terrainClearance_ + visualHeightOffset_ + kTurretPivot.y * visualScale_.y,
+        pos.z - pivotX * s + pivotZ * c
     };
     Vector3 turretRotation = visualRotation_;
     turretRotation.z += turretPitch_;
@@ -644,6 +618,7 @@ void GroundEnemy::UpdateTurretPose() {
 void GroundEnemy::UpdateLegsPose() {
     // 脚フレーム・膝装甲・足先は同じ脚モデルに含まれる。別オブジェクトへ分けて
     // 回転すると接続が外れるので、脚一本を常に単一の剛体として扱う。
+    const Vector3 pos = GetPosition();
     const float c = std::cos(visualRotation_.y);
     const float s = std::sin(visualRotation_.y);
     for (size_t i = 0; i < legs_.size(); ++i) {
@@ -660,9 +635,9 @@ void GroundEnemy::UpdateLegsPose() {
         hipAngle += (i < 2 ? -0.60f : 0.42f) * trackBlend_;
 
         Vector3 legPosition = {
-            position_.x + kLegPivots[i].x * visualScale_.x * c + kLegPivots[i].z * visualScale_.z * s,
-            position_.y + terrainClearance_ + visualHeightOffset_ + kLegPivots[i].y * visualScale_.y,
-            position_.z - kLegPivots[i].x * visualScale_.x * s + kLegPivots[i].z * visualScale_.z * c,
+            pos.x + kLegPivots[i].x * visualScale_.x * c + kLegPivots[i].z * visualScale_.z * s,
+            pos.y + terrainClearance_ + visualHeightOffset_ + kLegPivots[i].y * visualScale_.y,
+            pos.z - kLegPivots[i].x * visualScale_.x * s + kLegPivots[i].z * visualScale_.z * c,
         };
         if (hitStopFrames_ > 0 || hitReactionFrames_ > 0) {
             // 前脚ほど大きく屈服させ、被弾の荷重が脚へ落ちたように見せる。
@@ -685,11 +660,12 @@ void GroundEnemy::UpdateLegsPose() {
 void GroundEnemy::UpdateModel() {
     UpdateLocomotionPose();
     UpdateRiggedPose();
-    if (object_) {
-        object_->SetTranslate({ position_.x, position_.y + terrainClearance_ + visualHeightOffset_, position_.z });
-        object_->SetRotate(visualRotation_);
-        object_->SetScale(visualScale_);
-        object_->Update();
+    const Vector3 pos = GetPosition();
+    if (Object3d* obj = GetObject3d()) {
+        obj->SetTranslate({ pos.x, pos.y + terrainClearance_ + visualHeightOffset_, pos.z });
+        obj->SetRotate(visualRotation_);
+        obj->SetScale(visualScale_);
+        obj->Update();
     }
     if (!usesRiggedModel_) {
         UpdateLegsPose();
@@ -698,22 +674,23 @@ void GroundEnemy::UpdateModel() {
 
     // 近接飛び蹴り攻撃用判定ブロックのトランスフォーム更新（降りてきた急降下中〜着地前）
     if (isMeleeActive_ && meleeBox_) {
+        const Vector3 fwd = GetForward();
         // 前方斜め下（飛び蹴り脚の先）に突き出す
         meleeBoxPos_ = {
-            position_.x + forward_.x * 0.55f,
-            position_.y - 0.08f,
-            position_.z + forward_.z * 0.55f
+            pos.x + fwd.x * 0.55f,
+            pos.y - 0.08f,
+            pos.z + fwd.z * 0.55f
         };
         meleeBox_->SetTranslate(meleeBoxPos_);
-        meleeBox_->SetRotate(rotation_);
+        meleeBox_->SetRotate(GetRotation());
         meleeBox_->SetScale(meleeBoxScale_);
         meleeBox_->Update();
     }
 }
 
 void GroundEnemy::Draw() {
-    if (object_) {
-        object_->Draw();
+    if (Object3d* obj = GetObject3d()) {
+        obj->Draw();
     }
     if (turret_) {
         turret_->Draw();
@@ -735,25 +712,14 @@ OBB GroundEnemy::GetMeleeBoxOBB() const {
     obb.center = meleeBoxPos_;
     obb.size = { meleeBoxScale_.x * 0.5f, meleeBoxScale_.y * 0.5f, meleeBoxScale_.z * 0.5f };
 
+    const Vector3 rot = GetRotation();
     Matrix4x4 rotationMatrix = MyMath::Multiply(
-        MyMath::Multiply(MyMath::MakeRoteXMatrix(rotation_.x), MyMath::MakeRotateYMatrix(rotation_.y)),
-        MyMath::MakeRotateZMatrix(rotation_.z));
+        MyMath::Multiply(MyMath::MakeRoteXMatrix(rot.x), MyMath::MakeRotateYMatrix(rot.y)),
+        MyMath::MakeRotateZMatrix(rot.z));
 
     obb.orientations[0] = MyMath::Normalize(Vector3{ rotationMatrix.m[0][0], rotationMatrix.m[0][1], rotationMatrix.m[0][2] });
     obb.orientations[1] = MyMath::Normalize(Vector3{ rotationMatrix.m[1][0], rotationMatrix.m[1][1], rotationMatrix.m[1][2] });
     obb.orientations[2] = MyMath::Normalize(Vector3{ rotationMatrix.m[2][0], rotationMatrix.m[2][1], rotationMatrix.m[2][2] });
 
     return obb;
-}
-
-void GroundEnemy::SnapToGround(const std::list<std::unique_ptr<Obstacle>> &obstacles) {
-    GroundEnemyMovementController{}.SnapToGround(*this, obstacles);
-}
-
-float GroundEnemy::GetFootOffset() const {
-    return GroundEnemyMovementController{}.GetFootOffset(*this);
-}
-
-void GroundEnemy::UpdateFlightPathMovement() {
-    GroundEnemyMovementController{}.UpdateFlightPathMovement(*this);
 }

@@ -1,5 +1,3 @@
-#include "PlayerCollisionController.h"
-
 #include "Player.h"
 #include "Game/obstacle/Obstacle.h"
 
@@ -66,77 +64,75 @@ namespace {
 	}
 }
 
-Vector3 PlayerCollisionController::GetWorldHalfExtents(const Player& player) const {
-	if (!player.object_ || !player.object_->GetModel()) {
+Vector3 Player::GetWorldHalfExtents() const {
+	if (!object_ || !object_->GetModel()) {
 		return { 0.2f, 0.2f, 0.2f };
 	}
-	if (player.IsTransformPlayerModel()) {
-		if (player.currentMode_ == PlayerMode::Fighter) return { 0.72f, 0.20f, 0.88f };
-		if (player.currentMode_ == PlayerMode::Gerwalk) return { 0.58f, 0.65f, 0.52f };
+	if (IsTransformPlayerModel()) {
+		if (currentMode_ == PlayerMode::Fighter) return { 0.72f, 0.20f, 0.88f };
+		if (currentMode_ == PlayerMode::Gerwalk) return { 0.58f, 0.65f, 0.52f };
 		return { 0.42f, 1.12f, 0.34f };
 	}
 
-	if (player.modelName_.find("vf-15c") != std::string::npos) {
-		const float scale = player.modelScale_.x; // 0.08f
-		if (player.currentMode_ == PlayerMode::Fighter) {
+	if (modelName_.find("vf-15c") != std::string::npos) {
+		const float scale = modelScale_.x; // 0.08f
+		if (currentMode_ == PlayerMode::Fighter) {
 			return { 2.8f * scale, 0.8f * scale, 3.0f * scale }; // { 0.224f, 0.064f, 0.24f }
-		} else if (player.currentMode_ == PlayerMode::Gerwalk) {
+		} else if (currentMode_ == PlayerMode::Gerwalk) {
 			return { 2.8f * scale, 2.8f * scale, 2.8f * scale }; // { 0.224f, 0.224f, 0.224f }
 		} else {
 			return { 2.2f * scale, 4.5f * scale, 2.2f * scale }; // { 0.176f, 0.36f, 0.176f }
 		}
 	}
 
-	const Vector3 localHalf = player.object_->GetModel()->GetHalfExtents();
-	const Vector3 scale = AbsVector(player.object_->GetScale());
+	const Vector3 localHalf = object_->GetModel()->GetHalfExtents();
+	const Vector3 scale = AbsVector(object_->GetScale());
 	return { localHalf.x * scale.x, localHalf.y * scale.y, localHalf.z * scale.z };
 }
 
-float PlayerCollisionController::GetCollisionRadius(const Player& player) const {
-	const Vector3 halfExtents = GetWorldHalfExtents(player);
+float Player::GetCollisionRadius() const {
+	const Vector3 halfExtents = GetWorldHalfExtents();
 	float radius = halfExtents.x;
 	if (halfExtents.y > radius) radius = halfExtents.y;
 	if (halfExtents.z > radius) radius = halfExtents.z;
 	return radius;
 }
 
-OBB PlayerCollisionController::GetOBB(const Player& player) const {
+OBB Player::GetOBB() const {
 	OBB obb{};
-	obb.center = player.position_;
-	obb.size = GetWorldHalfExtents(player);
+	obb.center = position_;
+	obb.size = GetWorldHalfExtents();
 
-	Matrix4x4 rotationMatrix = MyMath::MakeRotateMatrix(player.quaternion_);
+	Matrix4x4 rotationMatrix = MyMath::MakeRotateMatrix(quaternion_);
 	obb.orientations[0] = MyMath::Normalize(Vector3{ rotationMatrix.m[0][0], rotationMatrix.m[0][1], rotationMatrix.m[0][2] });
 	obb.orientations[1] = MyMath::Normalize(Vector3{ rotationMatrix.m[1][0], rotationMatrix.m[1][1], rotationMatrix.m[1][2] });
 	obb.orientations[2] = MyMath::Normalize(Vector3{ rotationMatrix.m[2][0], rotationMatrix.m[2][1], rotationMatrix.m[2][2] });
 
-	if (player.object_ && player.object_->GetModel()) {
-		Vector3 localCenter = player.object_->GetModel()->GetBoundsCenter();
+	if (object_ && object_->GetModel()) {
+		Vector3 localCenter = object_->GetModel()->GetBoundsCenter();
 
 		// vf-15cモデルの場合はアニメーションによる変形を考慮して、形態ごとの適切なオフセットを設定する
-		if (player.modelName_.find("vf-15c") != std::string::npos) {
-			if (player.currentMode_ == PlayerMode::Fighter) {
+		if (modelName_.find("vf-15c") != std::string::npos) {
+			if (currentMode_ == PlayerMode::Fighter) {
 				localCenter.y -= 0.0f;
-			} else if (player.currentMode_ == PlayerMode::Gerwalk) {
+			} else if (currentMode_ == PlayerMode::Gerwalk) {
 				localCenter.y -= 0.8f; // 中心を下げて脚部をカバーする
 			} else {
 				localCenter.y -= 1.2f; // 中心を下げて人型の長身をカバーする
 			}
 		}
 
-		const Vector3 scale = player.object_->GetScale();
+		const Vector3 scale = object_->GetScale();
 		const Vector3 scaledCenter = { localCenter.x * scale.x, localCenter.y * scale.y, localCenter.z * scale.z };
 		const Vector3 rotatedCenter = MyMath::Transform(scaledCenter, rotationMatrix);
-		obb.center = Add(player.position_, rotatedCenter);
+		obb.center = Add(position_, rotatedCenter);
 	}
 
 	return obb;
 }
 
-void PlayerCollisionController::ResolveCollisions(
-	Player& player,
-	const std::list<std::unique_ptr<Obstacle>>& obstacles) const {
-	OBB playerOBB = GetOBB(player);
+void Player::CheckCollision(const std::list<std::unique_ptr<Obstacle>>& obstacles) {
+	OBB playerOBB = GetOBB();
 
 	for (const auto& obstacle : obstacles) {
 		if (!obstacle || !obstacle->IsCollisionEnabled()) {
@@ -147,15 +143,15 @@ void PlayerCollisionController::ResolveCollisions(
 			const std::vector<Triangle>& triangles = obstacle->GetWorldTriangles();
 
 			std::vector<Sphere> playerSpheres;
-			const float scale = player.modelScale_.x; // 0.08f
+			const float scale = modelScale_.x; // 0.08f
 
-			if (player.modelName_.find("vf-15c") != std::string::npos) {
-				if (player.currentMode_ == PlayerMode::Fighter) {
+			if (modelName_.find("vf-15c") != std::string::npos) {
+				if (currentMode_ == PlayerMode::Fighter) {
 					Sphere s;
 					s.center = playerOBB.center;
 					s.radius = 1.2f * scale;
 					playerSpheres.push_back(s);
-				} else if (player.currentMode_ == PlayerMode::Gerwalk) {
+				} else if (currentMode_ == PlayerMode::Gerwalk) {
 					// ガウォーク形態: 2つの球を縦に並べる（上部と足元）
 					float r = 2.0f * scale;
 					Sphere sTop;
@@ -193,7 +189,7 @@ void PlayerCollisionController::ResolveCollisions(
 			} else {
 				Sphere s;
 				s.center = playerOBB.center;
-				s.radius = GetCollisionRadius(player);
+				s.radius = GetCollisionRadius();
 				playerSpheres.push_back(s);
 			}
 
@@ -201,13 +197,13 @@ void PlayerCollisionController::ResolveCollisions(
 			float maxTerrainY = -99999.0f;
 			bool foundTerrain = false;
 			Sphere terrainSample{};
-			terrainSample.center = player.position_;
+			terrainSample.center = position_;
 			terrainSample.radius = 0.25f;
 			for (const size_t triangleIndex : obstacle->GetNearbyWorldTriangleIndices(terrainSample)) {
 				const Triangle& tri = triangles[triangleIndex];
 				if (std::abs(tri.normal.y) > 0.15f) {
 					float triY = 0.0f;
-					if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], player.position_.x, player.position_.z, triY)) {
+					if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], position_.x, position_.z, triY)) {
 						if (triY > maxTerrainY) {
 							maxTerrainY = triY;
 							foundTerrain = true;
@@ -216,21 +212,21 @@ void PlayerCollisionController::ResolveCollisions(
 				}
 			}
 
-			const Vector3 halfExtents = GetWorldHalfExtents(player);
+			const Vector3 halfExtents = GetWorldHalfExtents();
 			const float minRequiredY = maxTerrainY + halfExtents.y;
 
-			if (foundTerrain && player.position_.y < minRequiredY) {
-				const float lift = minRequiredY - player.position_.y;
-				player.position_.y = minRequiredY;
-				if (player.velocity_.y < 0.0f) {
-					player.velocity_.y = 0.0f;
+			if (foundTerrain && position_.y < minRequiredY) {
+				const float lift = minRequiredY - position_.y;
+				position_.y = minRequiredY;
+				if (velocity_.y < 0.0f) {
+					velocity_.y = 0.0f;
 				}
 				// 高さ補正後も判定球を旧位置に残さず、次の三角形判定で
 				// 横方向へ押し戻される一瞬の停止を防ぐ。
 				for (Sphere& playerSphere : playerSpheres) {
 					playerSphere.center.y += lift;
 				}
-				playerOBB = GetOBB(player);
+				playerOBB = GetOBB();
 			}
 
 			for (auto& playerSphere : playerSpheres) {
@@ -278,17 +274,17 @@ void PlayerCollisionController::ResolveCollisions(
 							}
 							// 低空ファイターは地形の斜面法線で横速度まで失わないよう、
 							// なだらかな地面では真上にだけ押し戻す。
-							if (player.currentMode_ == PlayerMode::Fighter && groundNormal.y >= 0.65f) {
+							if (currentMode_ == PlayerMode::Fighter && groundNormal.y >= 0.65f) {
 								pushVector = { 0.0f, pushLen, 0.0f };
 							} else {
 								pushVector = MyMath::Multiply(pushLen, groundNormal);
 							}
 						}
 
-						player.position_.x += pushVector.x;
-						player.position_.y += pushVector.y;
-						player.position_.z += pushVector.z;
-						CancelVerticalVelocityIntoPush(player.velocity_, pushVector);
+						position_.x += pushVector.x;
+						position_.y += pushVector.y;
+						position_.z += pushVector.z;
+						CancelVerticalVelocityIntoPush(velocity_, pushVector);
 
 						for (auto& otherSphere : playerSpheres) {
 							otherSphere.center.x += pushVector.x;
@@ -301,19 +297,19 @@ void PlayerCollisionController::ResolveCollisions(
 						playerOBB.center.z += pushVector.z;
 
 						Vector3 pushNormal = MyMath::Normalize(pushVector);
-						float dot = MyMath::Dot(player.velocity_, pushNormal);
+						float dot = MyMath::Dot(velocity_, pushNormal);
 						if (dot < 0.0f) {
-							player.velocity_.x -= dot * pushNormal.x;
-							player.velocity_.y -= dot * pushNormal.y;
-							player.velocity_.z -= dot * pushNormal.z;
+							velocity_.x -= dot * pushNormal.x;
+							velocity_.y -= dot * pushNormal.y;
+							velocity_.z -= dot * pushNormal.z;
 						}
 					}
 				}
 			}
-			if (foundTerrain && player.position_.y < minRequiredY) {
-				player.position_.y = minRequiredY;
-				if (player.velocity_.y < 0.0f) {
-					player.velocity_.y = 0.0f;
+			if (foundTerrain && position_.y < minRequiredY) {
+				position_.y = minRequiredY;
+				if (velocity_.y < 0.0f) {
+					velocity_.y = 0.0f;
 				}
 			}
 			continue;
@@ -339,7 +335,7 @@ void PlayerCollisionController::ResolveCollisions(
 		if (obstacle->IsStageBounds()) {
 			Vector3 localPushOut = { 0.0f, 0.0f, 0.0f };
 
-			const float warningThreshold = player.boundaryWarningThreshold_;
+			const float warningThreshold = boundaryWarningThreshold_;
 			float minDistanceToSideWall = 99999.0f;
 			Vector3 closestSideWallNormal = { 0.0f, 0.0f, 1.0f };
 			float distanceToCeiling = 99999.0f;
@@ -382,11 +378,11 @@ void PlayerCollisionController::ResolveCollisions(
 			}
 
 			auto registerBoundaryAlert = [&](float intensity, const Vector3& position, const Vector3& normal) {
-				if (intensity > player.boundaryWarningIntensity_) {
-					player.isNearBoundary_ = true;
-					player.boundaryWarningIntensity_ = intensity;
-					player.boundaryAlertPosition_ = position;
-					player.boundaryAlertNormal_ = normal;
+				if (intensity > boundaryWarningIntensity_) {
+					isNearBoundary_ = true;
+					boundaryWarningIntensity_ = intensity;
+					boundaryAlertPosition_ = position;
+					boundaryAlertNormal_ = normal;
 				}
 			};
 
@@ -398,11 +394,11 @@ void PlayerCollisionController::ResolveCollisions(
 
 			// 警告フラグの更新
 			if (minDistanceToSideWall < warningThreshold) {
-				player.isNearWallBoundary_ = true;
-				player.wallBoundaryWarningIntensity_ = 1.0f - (std::max)(0.0f, minDistanceToSideWall) / warningThreshold;
-				player.wallBoundaryAlertNormal_ = closestSideWallNormal;
+				isNearWallBoundary_ = true;
+				wallBoundaryWarningIntensity_ = 1.0f - (std::max)(0.0f, minDistanceToSideWall) / warningThreshold;
+				wallBoundaryAlertNormal_ = closestSideWallNormal;
 
-				player.wallBoundaryAlertPosition_ = {
+				wallBoundaryAlertPosition_ = {
 					playerOBB.center.x + closestSideWallNormal.x * minDistanceToSideWall,
 					playerOBB.center.y + closestSideWallNormal.y * minDistanceToSideWall,
 					playerOBB.center.z + closestSideWallNormal.z * minDistanceToSideWall
@@ -410,27 +406,27 @@ void PlayerCollisionController::ResolveCollisions(
 
 				if (distanceToCeiling < warningThreshold) {
 					constexpr float kBoundaryAlertHalfHeight = 2.0f;
-					player.wallBoundaryAlertPosition_.y = (std::min)(player.wallBoundaryAlertPosition_.y, ceilingPosition.y - kBoundaryAlertHalfHeight);
+					wallBoundaryAlertPosition_.y = (std::min)(wallBoundaryAlertPosition_.y, ceilingPosition.y - kBoundaryAlertHalfHeight);
 				}
 
-				registerBoundaryAlert(player.wallBoundaryWarningIntensity_, player.wallBoundaryAlertPosition_, player.wallBoundaryAlertNormal_);
+				registerBoundaryAlert(wallBoundaryWarningIntensity_, wallBoundaryAlertPosition_, wallBoundaryAlertNormal_);
 			}
 
 			if (distanceToCeiling < warningThreshold) {
-				player.isNearCeilingBoundary_ = true;
-				player.ceilingBoundaryWarningIntensity_ = 1.0f - (std::max)(0.0f, distanceToCeiling) / warningThreshold;
-				player.ceilingBoundaryAlertNormal_ = ceilingNormal;
-				player.ceilingBoundaryAlertPosition_ = ceilingPosition;
+				isNearCeilingBoundary_ = true;
+				ceilingBoundaryWarningIntensity_ = 1.0f - (std::max)(0.0f, distanceToCeiling) / warningThreshold;
+				ceilingBoundaryAlertNormal_ = ceilingNormal;
+				ceilingBoundaryAlertPosition_ = ceilingPosition;
 
-				registerBoundaryAlert(player.ceilingBoundaryWarningIntensity_, player.ceilingBoundaryAlertPosition_, player.ceilingBoundaryAlertNormal_);
+				registerBoundaryAlert(ceilingBoundaryWarningIntensity_, ceilingBoundaryAlertPosition_, ceilingBoundaryAlertNormal_);
 			}
 
 			if (localPushOut.x != 0.0f || localPushOut.y != 0.0f || localPushOut.z != 0.0f) {
 				Vector3 worldPushOut = ComposeFromAxes(obsOBB, localPushOut);
-				player.position_.x += worldPushOut.x;
-				player.position_.y += worldPushOut.y;
-				player.position_.z += worldPushOut.z;
-				CancelVerticalVelocityIntoPush(player.velocity_, worldPushOut);
+				position_.x += worldPushOut.x;
+				position_.y += worldPushOut.y;
+				position_.z += worldPushOut.z;
+				CancelVerticalVelocityIntoPush(velocity_, worldPushOut);
 				playerOBB.center = Add(playerOBB.center, worldPushOut);
 			}
 		} else {
@@ -454,10 +450,10 @@ void PlayerCollisionController::ResolveCollisions(
 				}
 
 				Vector3 worldPushOut = ComposeFromAxes(obsOBB, localPushOut);
-				player.position_.x += worldPushOut.x;
-				player.position_.y += worldPushOut.y;
-				player.position_.z += worldPushOut.z;
-				CancelVerticalVelocityIntoPush(player.velocity_, worldPushOut);
+				position_.x += worldPushOut.x;
+				position_.y += worldPushOut.y;
+				position_.z += worldPushOut.z;
+				CancelVerticalVelocityIntoPush(velocity_, worldPushOut);
 				playerOBB.center = Add(playerOBB.center, worldPushOut);
 			}
 		}

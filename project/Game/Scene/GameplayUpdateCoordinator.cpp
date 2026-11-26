@@ -13,6 +13,7 @@
 #include "TitleBackgroundEnemyWeaponController.h"
 #include "Game/Player/Player.h"
 #include "Game/Scene/ResultData.h"
+#include "engine/Scene/SceneManager.h"
 #include "Game/bullet/MissileManager.h"
 #include "Game/enemy/Enemy.h"
 #include "Game/enemy/GroundEnemy.h"
@@ -171,7 +172,7 @@ bool GameplayUpdateCoordinator::UpdateGameOverPhase(
 		if (context.cancelPauseForCinematic) {
 			context.cancelPauseForCinematic();
 		}
-		MissionResultStore::Set({
+		SceneManager::GetInstance()->SetMissionResult({
 			MissionResultOutcome::Failed,
 			context.defeatedEnemyCount,
 			context.player->GetHP(),
@@ -249,7 +250,7 @@ void GameplayUpdateCoordinator::UpdateDebugAnimationAndBones(const GameplayDebug
 		ApplyAnimation(*context.skeleton, *context.animationData, *context.animationTime);
 		::Update(*context.skeleton);
 		if (context.enableSkinning && context.myModelObject && context.myModelObject->GetModel()) {
-			context.myModelObject->GetModel()->UpdateSkinCluster(context.myModelObject->skinCluster, *context.skeleton);
+			context.myModelObject->UpdateSkinCluster(*context.skeleton);
 		}
 
 		if (!context.skeleton->joints.empty()) {
@@ -259,7 +260,7 @@ void GameplayUpdateCoordinator::UpdateDebugAnimationAndBones(const GameplayDebug
 			context.myBox->SetScale(rootTransform.scale);
 
 			if (context.myModelObject && context.myModelObject->GetModel()) {
-				if (!context.myModelObject->skinCluster.isValid) {
+				if (!context.myModelObject->HasValidSkinCluster()) {
 					context.myModelObject->SetTranslate(rootTransform.translate);
 					context.myModelObject->SetQuaternionRotate(rootTransform.rotate);
 					context.myModelObject->SetScale(rootTransform.scale);

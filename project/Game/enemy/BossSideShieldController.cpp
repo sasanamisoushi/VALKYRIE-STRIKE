@@ -1,5 +1,3 @@
-#include "BossSideShieldController.h"
-
 #include "Boss.h"
 #include "3D/ModelManager.h"
 #include "3D/Object3dCommon.h"
@@ -53,7 +51,7 @@ float SmoothStep01(float value) {
 }
 }
 
-void BossSideShieldController::Initialize(Boss& boss) const {
+void Boss::InitializeSideShields() {
 	ModelManager* modelManager = ModelManager::GetInstance();
 	for (const char* modelName : kSideShieldModels) {
 		// 初期状態はほぼ閉じた円弧。Update() で左右から開く角度へ更新する。
@@ -70,10 +68,10 @@ void BossSideShieldController::Initialize(Boss& boss) const {
 		model->SetColor({ 0.30f, 0.78f, 1.00f, 0.0f });
 	}
 
-	for (size_t index = 0; index < boss.sideShieldSegments_.size(); ++index) {
-		boss.sideShieldSegments_[index] = std::make_unique<Object3d>();
-		boss.sideShieldSegments_[index]->Initialize(Object3dCommon::GetInstance());
-		boss.sideShieldSegments_[index]->SetModel(kSideShieldModels[index]);
+	for (size_t index = 0; index < sideShieldSegments_.size(); ++index) {
+		sideShieldSegments_[index] = std::make_unique<Object3d>();
+		sideShieldSegments_[index]->Initialize(Object3dCommon::GetInstance());
+		sideShieldSegments_[index]->SetModel(kSideShieldModels[index]);
 	}
 
 	for (size_t face = 0; face < Boss::kSideShieldGeneratorCount; ++face) {
@@ -81,10 +79,10 @@ void BossSideShieldController::Initialize(Boss& boss) const {
 		if (!modelManager->FindModel(modelName)) {
 			modelManager->LoadModel(modelName);
 		}
-		boss.sideShieldGenerators_[face] = std::make_unique<Object3d>();
-		boss.sideShieldGenerators_[face]->Initialize(Object3dCommon::GetInstance());
-		boss.sideShieldGenerators_[face]->SetModel(modelName);
-		if (Model* model = boss.sideShieldGenerators_[face]->GetModel()) {
+		sideShieldGenerators_[face] = std::make_unique<Object3d>();
+		sideShieldGenerators_[face]->Initialize(Object3dCommon::GetInstance());
+		sideShieldGenerators_[face]->SetModel(modelName);
+		if (Model* model = sideShieldGenerators_[face]->GetModel()) {
 			model->SetEnableLighting(true);
 			model->SetShininess(112.0f);
 			model->SetColor({ 0.25f, 0.48f, 0.56f, 1.0f });
@@ -92,51 +90,49 @@ void BossSideShieldController::Initialize(Boss& boss) const {
 	}
 }
 
-bool BossSideShieldController::IsVisible(const Boss& boss) const {
-	return boss.sideShieldState_ == Boss::SideShieldState::Deploying ||
-		boss.sideShieldState_ == Boss::SideShieldState::Active ||
-		boss.sideShieldState_ == Boss::SideShieldState::Warning;
+bool Boss::IsSideShieldVisible() const {
+	return sideShieldState_ == Boss::SideShieldState::Deploying ||
+		sideShieldState_ == Boss::SideShieldState::Active ||
+		sideShieldState_ == Boss::SideShieldState::Warning;
 }
 
-bool BossSideShieldController::IsProtectingFace(const Boss& boss, size_t face) const {
-	return face < Boss::kSideShieldGeneratorCount && !boss.sideShieldGeneratorDestroyed_[face] && IsVisible(boss);
+bool Boss::IsSideShieldProtectingFace(size_t face) const {
+	return face < Boss::kSideShieldGeneratorCount && !sideShieldGeneratorDestroyed_[face] && IsSideShieldVisible();
 }
 
-bool BossSideShieldController::IsGeneratorVulnerable(const Boss& boss, size_t face) const {
-	return face < Boss::kSideShieldGeneratorCount && !boss.sideShieldGeneratorDestroyed_[face] &&
-		(boss.sideShieldState_ == Boss::SideShieldState::Charging || boss.sideShieldState_ == Boss::SideShieldState::Cooldown);
+bool Boss::IsSideShieldGeneratorVulnerable(size_t face) const {
+	return face < Boss::kSideShieldGeneratorCount && !sideShieldGeneratorDestroyed_[face] &&
+		(sideShieldState_ == Boss::SideShieldState::Charging || sideShieldState_ == Boss::SideShieldState::Cooldown);
 }
 
-bool BossSideShieldController::ApplyGeneratorDamage(Boss& boss, size_t face, int damage) const {
-	if (!IsGeneratorVulnerable(boss, face) || damage <= 0) return false;
-	boss.sideShieldGeneratorHP_[face] = (std::max)(0, boss.sideShieldGeneratorHP_[face] - damage);
-	boss.sideShieldGeneratorDestroyed_[face] = boss.sideShieldGeneratorHP_[face] == 0;
+bool Boss::ApplySideShieldGeneratorDamage(size_t face, int damage) {
+	if (!IsSideShieldGeneratorVulnerable(face) || damage <= 0) return false;
+	sideShieldGeneratorHP_[face] = (std::max)(0, sideShieldGeneratorHP_[face] - damage);
+	sideShieldGeneratorDestroyed_[face] = sideShieldGeneratorHP_[face] == 0;
 	return true;
 }
 
-bool BossSideShieldController::GetActiveImpact(
-	const Boss& boss,
+bool Boss::GetActiveSideShieldImpact(
 	const Vector3& hitPosition,
 	float impactRadius,
 	Vector3& outNormal) const {
 	size_t face = 0;
-	if (!TryGetFaceAtWorldPosition(boss, hitPosition, impactRadius, face) ||
-		!IsProtectingFace(boss, face)) {
+	if (!TryGetSideShieldFaceAtWorldPosition(hitPosition, impactRadius, face) ||
+		!IsSideShieldProtectingFace(face)) {
 		return false;
 	}
 
 	const float outwardDirection = face == 0 ? 1.0f : -1.0f;
-	outNormal = MyMath::RotateVector({ outwardDirection, 0.0f, 0.0f }, MakeEulerQuaternion(boss.rotation_));
+	outNormal = MyMath::RotateVector({ outwardDirection, 0.0f, 0.0f }, MakeEulerQuaternion(GetRotation()));
 	return true;
 }
 
-bool BossSideShieldController::TryGetFaceAtWorldPosition(
-	const Boss& boss,
+bool Boss::TryGetSideShieldFaceAtWorldPosition(
 	const Vector3& worldPosition,
 	float radius,
 	size_t& outFace) const {
-	const Vector3 relative = SubtractVector(worldPosition, boss.position_);
-	const Quaternion hull = MakeEulerQuaternion(boss.rotation_);
+	const Vector3 relative = SubtractVector(worldPosition, GetPosition());
+	const Quaternion hull = MakeEulerQuaternion(GetRotation());
 	const Quaternion inverseHull = { -hull.x, -hull.y, -hull.z, hull.w };
 	const Vector3 scaledLocal = MyMath::RotateVector(relative, inverseHull);
 	const Vector3 local = {
@@ -164,70 +160,70 @@ bool BossSideShieldController::TryGetFaceAtWorldPosition(
 	return false;
 }
 
-void BossSideShieldController::AdvanceState(Boss& boss) const {
-	const bool hasGenerator = std::any_of(boss.sideShieldGeneratorDestroyed_.begin(), boss.sideShieldGeneratorDestroyed_.end(),
+void Boss::AdvanceSideShieldState() {
+	const bool hasGenerator = std::any_of(sideShieldGeneratorDestroyed_.begin(), sideShieldGeneratorDestroyed_.end(),
 		[](bool destroyed) { return !destroyed; });
 	if (!hasGenerator) {
-		boss.sideShieldState_ = Boss::SideShieldState::Cooldown;
-		boss.sideShieldStateTimer_ = 0;
+		sideShieldState_ = Boss::SideShieldState::Cooldown;
+		sideShieldStateTimer_ = 0;
 		return;
 	}
 
-	++boss.sideShieldStateTimer_;
+	++sideShieldStateTimer_;
 	int duration = kSideShieldChargingFrames;
-	switch (boss.sideShieldState_) {
+	switch (sideShieldState_) {
 	case Boss::SideShieldState::Charging: duration = kSideShieldChargingFrames; break;
 	case Boss::SideShieldState::Deploying: duration = kSideShieldDeployFrames; break;
 	case Boss::SideShieldState::Active: duration = kSideShieldActiveFrames; break;
 	case Boss::SideShieldState::Warning: duration = kSideShieldWarningFrames; break;
 	case Boss::SideShieldState::Cooldown: duration = kSideShieldCooldownFrames; break;
 	}
-	if (boss.sideShieldStateTimer_ < duration) return;
+	if (sideShieldStateTimer_ < duration) return;
 
-	boss.sideShieldStateTimer_ = 0;
-	switch (boss.sideShieldState_) {
-	case Boss::SideShieldState::Charging: boss.sideShieldState_ = Boss::SideShieldState::Deploying; break;
-	case Boss::SideShieldState::Deploying: boss.sideShieldState_ = Boss::SideShieldState::Active; break;
-	case Boss::SideShieldState::Active: boss.sideShieldState_ = Boss::SideShieldState::Warning; break;
-	case Boss::SideShieldState::Warning: boss.sideShieldState_ = Boss::SideShieldState::Cooldown; break;
-	case Boss::SideShieldState::Cooldown: boss.sideShieldState_ = Boss::SideShieldState::Charging; break;
+	sideShieldStateTimer_ = 0;
+	switch (sideShieldState_) {
+	case Boss::SideShieldState::Charging: sideShieldState_ = Boss::SideShieldState::Deploying; break;
+	case Boss::SideShieldState::Deploying: sideShieldState_ = Boss::SideShieldState::Active; break;
+	case Boss::SideShieldState::Active: sideShieldState_ = Boss::SideShieldState::Warning; break;
+	case Boss::SideShieldState::Warning: sideShieldState_ = Boss::SideShieldState::Cooldown; break;
+	case Boss::SideShieldState::Cooldown: sideShieldState_ = Boss::SideShieldState::Charging; break;
 	}
 }
 
-void BossSideShieldController::Update(Boss& boss) const {
-	AdvanceState(boss);
+void Boss::UpdateSideShields() {
+	AdvanceSideShieldState();
 
-	if (boss.sideShieldState_ == Boss::SideShieldState::Deploying) {
-		boss.sideShieldDeployProgress_ = SmoothStep01(
-			static_cast<float>(boss.sideShieldStateTimer_) / static_cast<float>(kSideShieldDeployFrames));
-	} else if (boss.sideShieldState_ == Boss::SideShieldState::Active) {
-		boss.sideShieldDeployProgress_ = 1.0f;
-	} else if (boss.sideShieldState_ == Boss::SideShieldState::Warning) {
+	if (sideShieldState_ == Boss::SideShieldState::Deploying) {
+		sideShieldDeployProgress_ = SmoothStep01(
+			static_cast<float>(sideShieldStateTimer_) / static_cast<float>(kSideShieldDeployFrames));
+	} else if (sideShieldState_ == Boss::SideShieldState::Active) {
+		sideShieldDeployProgress_ = 1.0f;
+	} else if (sideShieldState_ == Boss::SideShieldState::Warning) {
 		// 解除予告の点滅と同時に、外端から中央へ畳んで消す。
-		boss.sideShieldDeployProgress_ = 1.0f - SmoothStep01(
-			static_cast<float>(boss.sideShieldStateTimer_) / static_cast<float>(kSideShieldWarningFrames));
+		sideShieldDeployProgress_ = 1.0f - SmoothStep01(
+			static_cast<float>(sideShieldStateTimer_) / static_cast<float>(kSideShieldWarningFrames));
 	} else {
-		boss.sideShieldDeployProgress_ = 0.0f;
+		sideShieldDeployProgress_ = 0.0f;
 	}
 
-	float alpha = boss.tuning_.sideShieldOpacity;
+	float alpha = tuning_.sideShieldOpacity;
 	Vector4 shieldColor = { 0.30f, 0.78f, 1.00f, alpha };
 	Vector4 generatorColor = { 0.25f, 0.48f, 0.56f, 1.0f };
-	switch (boss.sideShieldState_) {
+	switch (sideShieldState_) {
 	case Boss::SideShieldState::Charging: {
-		const float pulse = 0.62f + 0.38f * std::sin(static_cast<float>(boss.sideShieldStateTimer_) * 0.40f);
+		const float pulse = 0.62f + 0.38f * std::sin(static_cast<float>(sideShieldStateTimer_) * 0.40f);
 		generatorColor = { 0.20f + 0.30f * pulse, 0.64f + 0.28f * pulse, 0.92f + 0.08f * pulse, 1.0f };
 		break;
 	}
 	case Boss::SideShieldState::Deploying:
-		alpha *= 0.35f + 0.65f * boss.sideShieldDeployProgress_;
+		alpha *= 0.35f + 0.65f * sideShieldDeployProgress_;
 		generatorColor = { 0.24f, 0.74f, 1.00f, 1.0f };
 		break;
 	case Boss::SideShieldState::Active:
 		generatorColor = { 0.18f, 0.68f, 1.00f, 1.0f };
 		break;
 	case Boss::SideShieldState::Warning: {
-		const float blink = 0.25f + 0.75f * (0.5f + 0.5f * std::sin(static_cast<float>(boss.sideShieldStateTimer_) * 1.30f));
+		const float blink = 0.25f + 0.75f * (0.5f + 0.5f * std::sin(static_cast<float>(sideShieldStateTimer_) * 1.30f));
 		alpha *= blink;
 		generatorColor = blink > 0.62f
 			? Vector4{ 1.00f, 0.34f, 0.06f, 1.0f }
@@ -239,29 +235,29 @@ void BossSideShieldController::Update(Boss& boss) const {
 		break;
 	}
 
-	const float arcAngle = kSideShieldArcHalfAngle * (std::max)(0.001f, boss.sideShieldDeployProgress_);
+	const float arcAngle = kSideShieldArcHalfAngle * (std::max)(0.001f, sideShieldDeployProgress_);
 	const float endpointInset = kSideShieldArcRadius * 0.70710678f;
-	const bool needsMeshRebuild = std::abs(boss.sideShieldBuiltProgress_ - boss.sideShieldDeployProgress_) > 0.0001f;
-	if (needsMeshRebuild) boss.sideShieldBuiltProgress_ = boss.sideShieldDeployProgress_;
-	const Quaternion hullQuaternion = MakeEulerQuaternion(boss.rotation_);
+	const bool needsMeshRebuild = std::abs(sideShieldBuiltProgress_ - sideShieldDeployProgress_) > 0.0001f;
+	if (needsMeshRebuild) sideShieldBuiltProgress_ = sideShieldDeployProgress_;
+	const Quaternion hullQuaternion = MakeEulerQuaternion(GetRotation());
 
 	for (size_t face = 0; face < Boss::kSideShieldGeneratorCount; ++face) {
-		Object3d* generator = boss.sideShieldGenerators_[face].get();
-		if (generator && !boss.sideShieldGeneratorDestroyed_[face]) {
+		Object3d* generator = sideShieldGenerators_[face].get();
+		if (generator && !sideShieldGeneratorDestroyed_[face]) {
 			if (Model* model = generator->GetModel()) {
 				model->SetColor(generatorColor);
 			}
 			// 切り出した OBJ はボス原点基準の頂点座標を持つため、船体と同じ変換だけを適用する。
-			generator->SetTranslate(boss.position_);
+			generator->SetTranslate(GetPosition());
 			generator->SetQuaternionRotate(hullQuaternion);
 			generator->SetScale(kBossScale);
 			generator->Update();
 		}
 
-		if (boss.sideShieldGeneratorDestroyed_[face]) continue;
+		if (sideShieldGeneratorDestroyed_[face]) continue;
 		const float outwardDirection = face == 0 ? 1.0f : -1.0f;
 		for (size_t half = 0; half < 2; ++half) {
-			Object3d* segment = boss.sideShieldSegments_[face * 2 + half].get();
+			Object3d* segment = sideShieldSegments_[face * 2 + half].get();
 			if (!segment) continue;
 
 			// 2枚とも中央から外端へ広げる。Warning では progress が 1→0 になるため、
@@ -288,23 +284,23 @@ void BossSideShieldController::Update(Boss& boss) const {
 			Vector3 localPosition = kSideShieldPlaneCenters[face];
 			localPosition.x += outwardDirection * (kSideShieldAnchorOffset - endpointInset);
 			localPosition.y -= kSideShieldHeight * 0.5f;
-			segment->SetTranslate(boss.LocalPointToWorld(localPosition));
-			segment->SetRotate({ 0.0f, boss.rotation_.y, 0.0f });
+			segment->SetTranslate(LocalPointToWorld(localPosition));
+			segment->SetRotate({ 0.0f, GetRotation().y, 0.0f });
 			segment->SetScale(kBossScale);
 			segment->Update();
 		}
 	}
 }
 
-void BossSideShieldController::Draw(const Boss& boss) const {
-	if (!IsVisible(boss) || boss.sideShieldDeployProgress_ <= 0.001f) return;
+void Boss::DrawSideShields() {
+	if (!IsSideShieldVisible() || sideShieldDeployProgress_ <= 0.001f) return;
 
 	Object3dCommon* object3dCommon = Object3dCommon::GetInstance();
 	object3dCommon->SetAlphaBlendDrawSettings();
 	for (size_t face = 0; face < Boss::kSideShieldGeneratorCount; ++face) {
-		if (boss.sideShieldGeneratorDestroyed_[face]) continue;
+		if (sideShieldGeneratorDestroyed_[face]) continue;
 		for (size_t half = 0; half < 2; ++half) {
-			if (const std::unique_ptr<Object3d>& segment = boss.sideShieldSegments_[face * 2 + half]) {
+			if (const std::unique_ptr<Object3d>& segment = sideShieldSegments_[face * 2 + half]) {
 				segment->Draw();
 			}
 		}

@@ -1,5 +1,3 @@
-#include "PlayerMovementController.h"
-
 #include "Player.h"
 #include "Game/base/GameSettings.h"
 
@@ -75,25 +73,7 @@ namespace {
 	}
 }
 
-void PlayerMovementController::Update(Player& player, bool rotationLocked) const {
-	auto& currentMode_ = player.currentMode_;
-	auto& modeParams_ = player.modeParams_;
-	auto& isGuarding_ = player.isGuarding_;
-	auto& isBattroidWalking_ = player.isBattroidWalking_;
-	auto& battroidWalkTime_ = player.battroidWalkTime_;
-	auto& dodgeCooldownTimer_ = player.dodgeCooldownTimer_;
-	auto& dodgeTimer_ = player.dodgeTimer_;
-	auto& dodgeDirection_ = player.dodgeDirection_;
-	auto& cameraPitch_ = player.cameraPitch_;
-	auto& quaternion_ = player.quaternion_;
-	auto& isSongActive_ = player.isSongActive_;
-	auto& velocity_ = player.velocity_;
-	auto& position_ = player.position_;
-	auto& isMeleeAttacking_ = player.isMeleeAttacking_;
-	auto& meleeTimer_ = player.meleeTimer_;
-	const auto ChangeMode = [&player](PlayerMode mode) { player.ChangeMode(mode); };
-	const auto GetForwardVector = [&player]() { return player.GetForwardVector(); };
-	const auto PlayActionAnimation = [&player](const std::string& actionName) { player.PlayActionAnimation(actionName); };
+void Player::Move(bool rotationLocked) {
 	auto input = Input::GetInstance();
 
 	if (input->TriggerAction(PlayerAction::TransformFighter)) ChangeMode(PlayerMode::Fighter);
@@ -112,7 +92,7 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 	const bool moveUp = input->PushAction(PlayerAction::MoveUp);
 	const bool moveDown = input->PushAction(PlayerAction::MoveDown);
 	const bool guardInput = input->PushAction(PlayerAction::Guard);
-	isGuarding_ = guardInput && p.canGuard && !player.IsSpecialAttackActive();
+	isGuarding_ = guardInput && p.canGuard && !IsSpecialAttackActive();
 	isBattroidWalking_ = currentMode_ == PlayerMode::Battroid && (moveForward || moveBackward);
 	if (!isBattroidWalking_) {
 		battroidWalkTime_ = 0.0f;
@@ -381,26 +361,26 @@ void PlayerMovementController::Update(Player& player, bool rotationLocked) const
 	}
 }
 
-void PlayerMovementController::UpdateLockOnRotation(Player& player, const Vector3& targetPos) const {
+void Player::UpdateLockOnRotation(const Vector3& targetPos) {
 	Vector3 toTarget = {
-		targetPos.x - player.position_.x,
-		targetPos.y - player.position_.y,
-		targetPos.z - player.position_.z,
+		targetPos.x - position_.x,
+		targetPos.y - position_.y,
+		targetPos.z - position_.z,
 	};
 	if (LengthSq(toTarget) < 0.0001f) return;
 
 	const Vector3 targetForward = NormalizeOrZero(toTarget);
-	if (player.currentMode_ == PlayerMode::Fighter) {
+	if (currentMode_ == PlayerMode::Fighter) {
 		// カメラと同じ方向へ即時固定し、機体の正面側へカメラが回り込むのを防ぐ。
-		player.quaternion_ = MakeNoRollLookQuaternion(targetForward);
+		quaternion_ = MakeNoRollLookQuaternion(targetForward);
 	} else {
 		// 分離ピッチを使う形態では、機体は水平旋回、上下方向はカメラピッチに保持する。
-		player.quaternion_ = MakeYawQuaternionFromForward(targetForward);
-		player.cameraPitch_ = CameraPitchFromForward(targetForward);
+		quaternion_ = MakeYawQuaternionFromForward(targetForward);
+		cameraPitch_ = CameraPitchFromForward(targetForward);
 	}
 
-	if (player.object_) {
-		player.object_->SetQuaternionRotate(player.quaternion_);
-		player.object_->Update();
+	if (object_) {
+		object_->SetQuaternionRotate(quaternion_);
+		object_->Update();
 	}
 }

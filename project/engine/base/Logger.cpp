@@ -4,7 +4,10 @@
 #include <filesystem>
 #include <Windows.h>
 
-Logger logger;
+Logger& GetLogger() {
+	static Logger instance;
+	return instance;
+}
 
 void Logger::Initialize() {
 	//ログの出力用のフォルダ

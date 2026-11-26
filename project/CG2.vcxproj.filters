@@ -531,9 +531,6 @@
     <ClCompile Include="Game\enemy\Enemy.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-	<ClCompile Include="Game\enemy\EnemyActionController.cpp">
-	  <Filter>ソース ファイル</Filter>
-	</ClCompile>
     <ClCompile Include="Game\enemy\Boss.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -1025,21 +1022,6 @@
     <ClInclude Include="Game\Player\PlayerPresentationController.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
-    <ClInclude Include="Game\Player\PlayerMovementController.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\Player\PlayerActionController.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\Player\PlayerCollisionController.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\Player\PlayerCameraController.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\Player\PlayerAnimationController.h">
-      <Filter>Game\Player</Filter>
-    </ClInclude>
     <ClInclude Include="Game\Player\BoosterEffect.h">
       <Filter>Game\Player</Filter>
     </ClInclude>
@@ -1052,19 +1034,7 @@
     <ClInclude Include="Game\enemy\Enemy.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-	<ClInclude Include="Game\enemy\EnemyActionController.h">
-	  <Filter>ヘッダー ファイル</Filter>
-	</ClInclude>
     <ClInclude Include="Game\enemy\Boss.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\enemy\BossCinematicDebrisController.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\enemy\BossSideShieldController.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Game\enemy\BossTurretController.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="Game\enemy\GroundEnemy.h">

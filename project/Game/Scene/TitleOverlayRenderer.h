@@ -6,7 +6,4 @@ class TitleScene;
 class TitleOverlayRenderer {
 public:
 	void DrawAttractDemoStartPrompt(const TitleScene& scene, float screenWidth, float screenHeight) const;
-	void DrawWarpCloudLayers(const TitleScene& scene, float screenWidth, float screenHeight, int launchDurationFrames) const;
-	void DrawFoldTransition(const TitleScene& scene, float screenWidth, float screenHeight, int launchDurationFrames) const;
-	void DrawMenuOverlay(const TitleScene& scene, float screenWidth, float screenHeight, float opacity) const;
 };

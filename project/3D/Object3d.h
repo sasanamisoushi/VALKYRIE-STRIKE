@@ -67,9 +67,6 @@ public:
 	// データ作成関数
 	void CreateEnvMapParamData();
 
-	EulerTransform transform;
-	//Transform cameraTransform;
-
 	//セッター
 	void SetModel(const std::string &filepath);
 	void SetModelPointer(Model* modelPtr) { this->model = modelPtr; }
@@ -95,6 +92,10 @@ public:
 		}
 	}
 
+	void CreateSkinCluster(const Skeleton& skeleton);
+	bool HasValidSkinCluster() const { return skinCluster.isValid; }
+	void UpdateSkinCluster(const Skeleton& skeleton);
+
 	//ゲッター
 	const Vector3 &GetScale()const { return transform.scale; }
 	const Vector3 &GetRotate()const { return transform.rotate; }
@@ -103,9 +104,9 @@ public:
 	DirectionalLight *GetDirectionalLightData() const { return directionLightData; }
 	Model* GetModel() const { return model; }
 
-	SkinCluster skinCluster;
-
 private:
+	EulerTransform transform{};
+	SkinCluster skinCluster{};
 
 	Object3dCommon *object3dCommon = nullptr;
 

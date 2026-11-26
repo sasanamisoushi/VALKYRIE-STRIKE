@@ -335,18 +335,19 @@ bool BossClearSequenceController::Update(
 			const Vector3 camRight = cameraState_.RefreshSlideDirectionFromAnchor();
 			const Vector3& anchorPos = cameraState_.GetAnchorPosition();
 
-			playerExitState_.Position() = {
-				anchorPos.x + camForward.x * 15.0f - camRight.x * 7.5f,
-				anchorPos.y + camForward.y * 15.0f - 2.0f,
-				anchorPos.z + camForward.z * 15.0f - camRight.z * 7.5f,
-			};
-			playerExitState_.Direction() = MyMath::Normalize(Vector3{
-				camRight.x * 0.84f - camForward.x * 0.24f,
-				0.38f,
-				camRight.z * 0.84f - camForward.z * 0.24f,
-			});
-			playerExitState_.Speed() = 0.58f;
-			playerExitState_.Roll() = -0.16f;
+			playerExitState_.Set(
+				{
+					anchorPos.x + camForward.x * 15.0f - camRight.x * 7.5f,
+					anchorPos.y + camForward.y * 15.0f - 2.0f,
+					anchorPos.z + camForward.z * 15.0f - camRight.z * 7.5f,
+				},
+				MyMath::Normalize(Vector3{
+					camRight.x * 0.84f - camForward.x * 0.24f,
+					0.38f,
+					camRight.z * 0.84f - camForward.z * 0.24f,
+				}),
+				0.58f,
+				-0.16f);
 
 			if (player) {
 				player->ChangeMode(PlayerMode::Fighter);
@@ -406,14 +407,15 @@ bool BossClearSequenceController::Update(
 			playerPosition.x += cameraRight.x * avoidSide;
 			playerPosition.y += cameraRight.y * avoidSide + avoidHeight;
 			playerPosition.z += cameraRight.z * avoidSide;
-			playerExitState_.Position() = playerPosition;
-			playerExitState_.Direction() = MyMath::Normalize(Vector3{
-				cameraRight.x * (0.90f + exitProgress * 0.08f) - cameraForward.x * 0.30f,
-				-0.22f + avoidHeight * 0.18f - exitProgress * 0.34f,
-				cameraRight.z * (0.90f + exitProgress * 0.08f) - cameraForward.z * 0.30f,
-			});
-			playerExitState_.Speed() = 0.82f + exitProgress * 0.30f;
-			playerExitState_.Roll() = 0.08f + exitProgress * 0.20f;
+			playerExitState_.Set(
+				playerPosition,
+				MyMath::Normalize(Vector3{
+					cameraRight.x * (0.90f + exitProgress * 0.08f) - cameraForward.x * 0.30f,
+					-0.22f + avoidHeight * 0.18f - exitProgress * 0.34f,
+					cameraRight.z * (0.90f + exitProgress * 0.08f) - cameraForward.z * 0.30f,
+				}),
+				0.82f + exitProgress * 0.30f,
+				0.08f + exitProgress * 0.20f);
 
 			const float horizLen = std::hypot(playerExitState_.GetDirection().x, playerExitState_.GetDirection().z);
 			const float yaw = std::atan2(playerExitState_.GetDirection().x, playerExitState_.GetDirection().z);

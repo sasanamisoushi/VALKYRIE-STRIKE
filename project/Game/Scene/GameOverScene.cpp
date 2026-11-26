@@ -31,7 +31,7 @@ void GameOverScene::Initialize() {
 	transitionFadeSprite_->SetAnchorPoint({ 0.0f, 0.0f });
 	transitionFadeAlpha_ = 1.0f;
 	isReturningToTitle_ = false;
-	isAttractDemoResult_ = MissionResultStore::Get().isAttractDemo;
+	isAttractDemoResult_ = missionResult_.isAttractDemo;
 	returnToTitleFrame_ = 0;
 
 	// 地図・格子・雲状の模様は1枚の流動レイヤーとして横へ送る。機体だけは別レイヤーで固定する。
@@ -211,7 +211,7 @@ void GameOverScene::Draw() {
 	// ImGui のリザルト UI はポストエフェクト後段で描かれるため、黒いマスクで
 	// 隠すと画面に黒枠が残る。遷移開始と同時に UI 自体を描かない。
 	if (!isReturningToTitle_) {
-		ResultOverlay::Draw(MissionResultStore::Get(), resultAnimationFrame_);
+		ResultOverlay::Draw(missionResult_, resultAnimationFrame_);
 	}
 	if (transitionFadeSprite_ && !isReturningToTitle_ && transitionFadeAlpha_ > 0.0f) {
 		transitionFadeSprite_->SetPosition({ 0.0f, 0.0f });

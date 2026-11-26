@@ -1,6 +1,7 @@
 #pragma once
 #include "Game/base/BaseScene.h"
 #include "Game/base/AbstractSceneFactory.h"
+#include "Game/Scene/ResultData.h"
 #include <memory>
 #include <string>
 
@@ -31,6 +32,9 @@ public:
 
 	//描画処理
 	void Draw();
+
+	void SetMissionResult(const MissionResultData& result) { missionResultStore_.Set(result); }
+	const MissionResultData& GetMissionResult() const { return missionResultStore_.Get(); }
 private:
 	SceneManager() = default;
 	~SceneManager() = default;
@@ -47,5 +51,7 @@ private:
 
 	//シーンファクトリー
 	AbstractSceneFactory *sceneFactory_ = nullptr;
+
+	MissionResultStore missionResultStore_;
 }; 
 

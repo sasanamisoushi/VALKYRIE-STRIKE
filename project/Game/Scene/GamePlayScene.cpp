@@ -538,7 +538,7 @@ void GamePlayScene::Update() {
 				explosionManager_.get(),
 				particles,
 				[this](Enemy* enemy) { ClearEnemyReferences(enemy); })) {
-			MissionResultStore::Set({ MissionResultOutcome::Clear, defeatedEnemyCount_, player_ ? player_->GetHP() : 0, gameplayElapsedFrames_,
+			SceneManager::GetInstance()->SetMissionResult({ MissionResultOutcome::Clear, defeatedEnemyCount_, player_ ? player_->GetHP() : 0, gameplayElapsedFrames_,
 				IsAttractDemoMode() });
 			SceneManager::GetInstance()->ChangeScene("CLEAR");
 			return;

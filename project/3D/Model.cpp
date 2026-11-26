@@ -131,7 +131,7 @@ void Model::Initialize(ModelCommon *modelCommon, const std::string &directorypat
 
 	textureFilePath_ = modelData.material.textureFilePath;
 	RecalculateBounds();
-	logger.Log(" [Model] Loaded: " + filename + " | isSkinned: " + (modelData.isSkinned ? "true" : "false") + " | vertices: " + std::to_string(modelData.vertices.size()) + " | center: (" + std::to_string(cachedBoundsCenter_.x) + ", " + std::to_string(cachedBoundsCenter_.y) + ", " + std::to_string(cachedBoundsCenter_.z) + ") | extents: (" + std::to_string(cachedHalfExtents_.x) + ", " + std::to_string(cachedHalfExtents_.y) + ", " + std::to_string(cachedHalfExtents_.z) + ")");
+	GetLogger().Log(" [Model] Loaded: " + filename + " | isSkinned: " + (modelData.isSkinned ? "true" : "false") + " | vertices: " + std::to_string(modelData.vertices.size()) + " | center: (" + std::to_string(cachedBoundsCenter_.x) + ", " + std::to_string(cachedBoundsCenter_.y) + ", " + std::to_string(cachedBoundsCenter_.z) + ") | extents: (" + std::to_string(cachedHalfExtents_.x) + ", " + std::to_string(cachedHalfExtents_.y) + ", " + std::to_string(cachedHalfExtents_.z) + ")");
 }
 
 

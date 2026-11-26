@@ -1,9 +1,4 @@
 #include "Player.h"
-#include "PlayerMovementController.h"
-#include "PlayerActionController.h"
-#include "PlayerAnimationController.h"
-#include "PlayerCameraController.h"
-#include "PlayerCollisionController.h"
 #include "Game/base/GameSettings.h"
 #include "3D/Object3dCommon.h"
 #include "3D/ModelManager.h"
@@ -195,7 +190,7 @@ void Player::Initialize(const std::string &modelName) {
 		if (!skeleton_.joints.empty()) {
 			enableSkinning_ = true;
 			if (object_ && object_->GetModel()) {
-				object_->skinCluster = object_->GetModel()->CreateSkinCluster(skeleton_);
+				object_->CreateSkinCluster(skeleton_);
 			}
 		}
 	}
@@ -409,18 +404,6 @@ void Player::ClearPresentationClipPlane() {
 	presentationController_.ClearClipPlane(object_.get());
 }
 
-void Player::UpdateModel(bool allowInput, bool advanceState) {
-	PlayerAnimationController{}.UpdateModel(*this, allowInput, advanceState);
-}
-
-void Player::ApplyBattroidProceduralWalk() {
-	PlayerAnimationController{}.ApplyBattroidProceduralWalk(*this);
-}
-
-void Player::ApplyGuardPose(float blendWeight) {
-	PlayerAnimationController{}.ApplyGuardPose(*this, blendWeight);
-}
-
 void Player::Draw(Camera* camera, bool drawEffects) {
 	const bool isFadingIn = presentationController_.GetPresentationAlpha() < 0.999f;
 	if (isFadingIn) {
@@ -459,33 +442,6 @@ void Player::DrawEffects(Camera* camera) {
 	}
 }
 
-Vector3 Player::GetWorldHalfExtents() const {
-	return PlayerCollisionController{}.GetWorldHalfExtents(*this);
-}
-
-float Player::GetCollisionRadius() const {
-	return PlayerCollisionController{}.GetCollisionRadius(*this);
-}
-
-OBB Player::GetOBB() const {
-	return PlayerCollisionController{}.GetOBB(*this);
-}
-
-void Player::UpdateCamera(Camera *camera, const Vector3 *targetPos, bool allowInput) {
-	PlayerCameraController{}.UpdateCamera(*this, camera, targetPos, allowInput);
-}
-
-Vector3 Player::GetForwardVector() const {
-	return PlayerCameraController{}.GetForwardVector(*this);
-}
-
-Vector3 Player::GetAttackDirection() const {
-	return PlayerCameraController{}.GetAttackDirection(*this);
-}
-
-void Player::SyncRotationToLastCameraDirection() {
-	PlayerCameraController{}.SyncRotationToLastCameraDirection(*this);
-}
 void Player::SetRotation(const Vector3 &eulerRotation) {
 	Quaternion qPitch = MyMath::MakeAxisAngle({ 1.0f, 0.0f, 0.0f }, eulerRotation.x);
 	Quaternion qYaw = MyMath::MakeAxisAngle({ 0.0f, 1.0f, 0.0f }, eulerRotation.y);
@@ -510,33 +466,8 @@ void Player::SetRotation(const Vector3 &eulerRotation) {
 
 void Player::OnCollision() {
 	if (isSpecialAttackActive_ || IsDodging() || IsGuarding()) return;
-	PlayerActionController{}.Destroy(*this);
+	Destroy();
 }
-
-void Player::TakeDamage(int damage) {
-	PlayerActionController{}.TakeDamage(*this, damage);
-}
-
-void Player::Move(bool rotationLocked) {
-	PlayerMovementController{}.Update(*this, rotationLocked);
-}
-
-void Player::UpdateLockOnRotation(const Vector3& targetPos) {
-	PlayerMovementController{}.UpdateLockOnRotation(*this, targetPos);
-}
-
-void Player::SetSpecialAttackActive(bool active) {
-	PlayerActionController{}.SetSpecialAttackActive(*this, active);
-}
-
-void Player::SetSongActive(bool active) {
-	PlayerActionController{}.SetSongActive(*this, active);
-}
-
-void Player::CheckCollision(const std::list<std::unique_ptr<Obstacle>> &obstacles) {
-	PlayerCollisionController{}.ResolveCollisions(*this, obstacles);
-}
-
 
 void Player::PlayActionAnimation(const std::string& actionName) {
     if (actionAnimations_.count(actionName)) {

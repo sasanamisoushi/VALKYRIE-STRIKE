@@ -2,10 +2,12 @@
 #include "engine/Camera/Camera.h"
 #include "2D/Sprite.h"
 #include "Game/base/BaseScene.h"
+#include "Game/Scene/ResultData.h"
 #include <memory>
 
 class GameOverScene : public BaseScene {
 public:
+	explicit GameOverScene(const MissionResultData& result = {}) : missionResult_(result) {}
 	void Initialize() override;
 
 	void Finalize() override;
@@ -14,6 +16,7 @@ public:
 
 	void Draw() override;
 private:
+	MissionResultData missionResult_{};
 	std::unique_ptr<Camera> camera_;
 	std::unique_ptr<Sprite> resultBackgroundSprite_;
 	std::unique_ptr<Sprite> resultFlowingWorldPrimarySprite_;

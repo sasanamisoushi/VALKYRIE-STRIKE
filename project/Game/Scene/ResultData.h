@@ -26,17 +26,14 @@ struct MissionResultData {
 
 class MissionResultStore {
 public:
-	static void Set(const MissionResultData& result) {
-		GetMutable() = result;
+	void Set(const MissionResultData& result) {
+		result_ = result;
 	}
 
-	static const MissionResultData& Get() {
-		return GetMutable();
+	const MissionResultData& Get() const {
+		return result_;
 	}
 
 private:
-	static MissionResultData& GetMutable() {
-		static MissionResultData result;
-		return result;
-	}
+	MissionResultData result_{};
 };

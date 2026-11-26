@@ -1,5 +1,3 @@
-#include "GroundEnemyDestructionController.h"
-
 #include "GroundEnemy.h"
 
 #include <algorithm>
@@ -23,86 +21,88 @@ Vector3 NormalizeOrFallback(const Vector3& v, const Vector3& fallback) {
 }
 }
 
-void GroundEnemyDestructionController::TakeDamage(
-	GroundEnemy& enemy,
-	int damage,
-	const Vector3& hitDirection) const {
-	if (!enemy.CanReceiveDamage() || damage <= 0) {
+void GroundEnemy::TakeDamage(int damage, const Vector3& hitDirection) {
+	if (!CanReceiveDamage() || damage <= 0) {
 		return;
 	}
 
+	const Vector3 currentPos = GetPosition();
+	const Vector3 currentForward = GetForward();
+	const Vector3 currentVel = GetVelocity();
+
 	// 弾丸の進行方向が取れない攻撃は、現在の進行方向を安全な代替に使う。
-	enemy.hitDirection_ = NormalizeOrFallback(hitDirection, enemy.forward_);
+	hitDirection_ = NormalizeOrFallback(hitDirection, currentForward);
 	// 中心座標ではなく弾が入射した側の装甲表面に置く。
 	// これで胴体に隠れず、どの方向から撃っても火花が見える。
-	const float armorRadius = std::clamp(enemy.GetCollisionRadius() * 0.62f, 0.80f, 1.45f);
+	const float armorRadius = std::clamp(GetCollisionRadius() * 0.62f, 0.80f, 1.45f);
 	const Vector3 impactPosition = {
-		enemy.position_.x - enemy.hitDirection_.x * armorRadius,
-		enemy.position_.y - enemy.hitDirection_.y * armorRadius + 0.18f,
-		enemy.position_.z - enemy.hitDirection_.z * armorRadius,
+		currentPos.x - hitDirection_.x * armorRadius,
+		currentPos.y - hitDirection_.y * armorRadius + 0.18f,
+		currentPos.z - hitDirection_.z * armorRadius,
 	};
-	enemy.QueueEffect(GroundEnemy::EffectEvent::Type::ArmorSpark, impactPosition, enemy.hitDirection_);
+	QueueEffect(EffectEvent::Type::ArmorSpark, impactPosition, hitDirection_);
 
 	// 装甲に弾かれた反動。履帯時だけ横滑りの慣性を強める。
-	enemy.hitStopFrames_ = 4;
-	enemy.hitReactionFrames_ = 20;
-	enemy.hitLean_ = 1.0f;
-	const float side = enemy.forward_.x * enemy.hitDirection_.z - enemy.forward_.z * enemy.hitDirection_.x;
-	enemy.skidYawVelocity_ = std::clamp(side * 0.055f, -0.055f, 0.055f);
-	enemy.skidVelocity_ = {
-		enemy.velocity_.x * 0.82f + enemy.hitDirection_.x * 0.045f,
+	hitStopFrames_ = 4;
+	hitReactionFrames_ = 20;
+	hitLean_ = 1.0f;
+	const float side = currentForward.x * hitDirection_.z - currentForward.z * hitDirection_.x;
+	skidYawVelocity_ = std::clamp(side * 0.055f, -0.055f, 0.055f);
+	skidVelocity_ = {
+		currentVel.x * 0.82f + hitDirection_.x * 0.045f,
 		0.0f,
-		enemy.velocity_.z * 0.82f + enemy.hitDirection_.z * 0.045f,
+		currentVel.z * 0.82f + hitDirection_.z * 0.045f,
 	};
-	if (enemy.trackBlend_ > 0.15f) {
-		enemy.QueueEffect(GroundEnemy::EffectEvent::Type::TrackSkid, enemy.position_, enemy.skidVelocity_);
+	if (trackBlend_ > 0.15f) {
+		QueueEffect(EffectEvent::Type::TrackSkid, currentPos, skidVelocity_);
 	}
 
-	enemy.hp_ -= damage;
-	if (enemy.hp_ <= 0) {
-		enemy.hp_ = 0;
-		BeginDestruction(enemy, enemy.hitDirection_);
+	ApplyDamage(damage);
+	if (GetHP() <= 0) {
+		BeginDestruction(hitDirection_);
 	}
 }
 
-void GroundEnemyDestructionController::UpdateHitReaction(
-	GroundEnemy& enemy,
-	const std::list<std::unique_ptr<Obstacle>>& obstacles) const {
-	enemy.position_.x += enemy.skidVelocity_.x;
-	enemy.position_.z += enemy.skidVelocity_.z;
-	enemy.skidVelocity_.x *= enemy.trackBlend_ > 0.1f ? 0.91f : 0.78f;
-	enemy.skidVelocity_.z *= enemy.trackBlend_ > 0.1f ? 0.91f : 0.78f;
-	enemy.rotation_.y += enemy.skidYawVelocity_;
-	enemy.skidYawVelocity_ *= 0.80f;
-	enemy.forward_ = { std::sin(enemy.rotation_.y), 0.0f, std::cos(enemy.rotation_.y) };
-	enemy.hitLean_ *= 0.87f;
-	--enemy.hitReactionFrames_;
-	enemy.UpdateTerrainPose(obstacles);
+void GroundEnemy::UpdateHitReaction(const std::list<std::unique_ptr<Obstacle>>& obstacles) {
+	MoveBy({ skidVelocity_.x, 0.0f, skidVelocity_.z });
+	skidVelocity_.x *= trackBlend_ > 0.1f ? 0.91f : 0.78f;
+	skidVelocity_.z *= trackBlend_ > 0.1f ? 0.91f : 0.78f;
+	Vector3 rot = GetRotation();
+	rot.y += skidYawVelocity_;
+	SetRotationAngles(rot);
+	skidYawVelocity_ *= 0.80f;
+	SetForward({ std::sin(rot.y), 0.0f, std::cos(rot.y) });
+	hitLean_ *= 0.87f;
+	--hitReactionFrames_;
+	UpdateTerrainPose(obstacles);
 }
 
-void GroundEnemyDestructionController::BeginDestruction(GroundEnemy& enemy, const Vector3& hitDirection) const {
-	enemy.destructionState_ = GroundEnemy::DestructionState::Sliding;
-	enemy.destructionFrames_ = 0;
-	enemy.isChasingPlayer_ = false;
-	enemy.isMeleeActive_ = false;
-	enemy.attackSubState_ = GroundEnemy::GroundAttackState::Idle;
-	enemy.hitStopFrames_ = 0;
-	enemy.hitReactionFrames_ = 0;
-	enemy.hitLean_ = 1.0f;
-	enemy.velocity_ = {
-		enemy.velocity_.x + hitDirection.x * 0.055f,
+void GroundEnemy::BeginDestruction(const Vector3& hitDirection) {
+	destructionState_ = DestructionState::Sliding;
+	destructionFrames_ = 0;
+	SetChasingPlayer(false);
+	isMeleeActive_ = false;
+	attackSubState_ = GroundAttackState::Idle;
+	hitStopFrames_ = 0;
+	hitReactionFrames_ = 0;
+	hitLean_ = 1.0f;
+	const Vector3 currentVel = GetVelocity();
+	Vector3 nextVel = {
+		currentVel.x + hitDirection.x * 0.055f,
 		0.0f,
-		enemy.velocity_.z + hitDirection.z * 0.055f,
+		currentVel.z + hitDirection.z * 0.055f,
 	};
-	if (std::abs(enemy.velocity_.x) + std::abs(enemy.velocity_.z) < 0.03f) {
-		enemy.velocity_.x = enemy.forward_.x * 0.10f;
-		enemy.velocity_.z = enemy.forward_.z * 0.10f;
+	if (std::abs(nextVel.x) + std::abs(nextVel.z) < 0.03f) {
+		const Vector3 fwd = GetForward();
+		nextVel.x = fwd.x * 0.10f;
+		nextVel.z = fwd.z * 0.10f;
 	}
-	enemy.QueueEffect(GroundEnemy::EffectEvent::Type::TrackSkid, enemy.position_, enemy.velocity_);
+	SetVelocity(nextVel);
+	QueueEffect(EffectEvent::Type::TrackSkid, GetPosition(), nextVel);
 }
 
-void GroundEnemyDestructionController::UpdateDetachedParts(GroundEnemy& enemy) const {
-	const float floorY = enemy.groundY_ + 0.08f;
+void GroundEnemy::UpdateDetachedParts() {
+	const float floorY = groundY_ + 0.08f;
 	auto updatePart = [floorY](Vector3& partPosition, Vector3& partVelocity, Vector3& partRotation) {
 		partVelocity.y -= 0.018f;
 		partPosition.x += partVelocity.x;
@@ -119,84 +119,89 @@ void GroundEnemyDestructionController::UpdateDetachedParts(GroundEnemy& enemy) c
 		}
 	};
 
-	if (enemy.turretDetached_) {
-		updatePart(enemy.turretDebrisPosition_, enemy.turretDebrisVelocity_, enemy.turretDebrisRotation_);
-		if (enemy.turret_) {
-			enemy.turret_->SetTranslate(enemy.turretDebrisPosition_);
-			enemy.turret_->SetRotate(enemy.turretDebrisRotation_);
-			enemy.turret_->SetScale(enemy.visualScale_);
-			enemy.turret_->Update();
+	if (turretDetached_) {
+		updatePart(turretDebrisPosition_, turretDebrisVelocity_, turretDebrisRotation_);
+		if (turret_) {
+			turret_->SetTranslate(turretDebrisPosition_);
+			turret_->SetRotate(turretDebrisRotation_);
+			turret_->SetScale(visualScale_);
+			turret_->Update();
 		}
 	}
-	for (size_t i = 0; i < enemy.legs_.size(); ++i) {
-		if (!enemy.legDetached_[i]) continue;
-		updatePart(enemy.legDebrisPositions_[i], enemy.legDebrisVelocities_[i], enemy.legDebrisRotations_[i]);
-		if (enemy.legs_[i]) {
-			enemy.legs_[i]->SetTranslate(enemy.legDebrisPositions_[i]);
-			enemy.legs_[i]->SetRotate(enemy.legDebrisRotations_[i]);
-			enemy.legs_[i]->SetScale(enemy.visualScale_);
-			enemy.legs_[i]->Update();
+	for (size_t i = 0; i < legs_.size(); ++i) {
+		if (!legDetached_[i]) continue;
+		updatePart(legDebrisPositions_[i], legDebrisVelocities_[i], legDebrisRotations_[i]);
+		if (legs_[i]) {
+			legs_[i]->SetTranslate(legDebrisPositions_[i]);
+			legs_[i]->SetRotate(legDebrisRotations_[i]);
+			legs_[i]->SetScale(visualScale_);
+			legs_[i]->Update();
 		}
 	}
 }
 
-void GroundEnemyDestructionController::UpdateDestruction(GroundEnemy& enemy) const {
-	++enemy.destructionFrames_;
-	enemy.position_.x += enemy.velocity_.x;
-	enemy.position_.z += enemy.velocity_.z;
-	enemy.velocity_.x *= 0.925f;
-	enemy.velocity_.z *= 0.925f;
-	enemy.rotation_.y += enemy.skidYawVelocity_;
-	enemy.skidYawVelocity_ *= 0.86f;
-	enemy.forward_ = { std::sin(enemy.rotation_.y), 0.0f, std::cos(enemy.rotation_.y) };
+void GroundEnemy::UpdateDestruction() {
+	++destructionFrames_;
+	Vector3 vel = GetVelocity();
+	MoveBy({ vel.x, 0.0f, vel.z });
+	vel.x *= 0.925f;
+	vel.z *= 0.925f;
+	SetVelocity(vel);
 
-	if (enemy.destructionFrames_ == 8 && !enemy.turretDetached_) {
-		enemy.turretDetached_ = true;
-		enemy.turretDebrisPosition_ = enemy.GetLocalPartPosition(kTurretPivot);
-		enemy.turretDebrisVelocity_ = { enemy.velocity_.x + enemy.hitDirection_.x * 0.13f, 0.20f, enemy.velocity_.z + enemy.hitDirection_.z * 0.13f };
-		enemy.turretDebrisRotation_ = enemy.visualRotation_;
+	Vector3 rot = GetRotation();
+	rot.y += skidYawVelocity_;
+	SetRotationAngles(rot);
+	skidYawVelocity_ *= 0.86f;
+	const Vector3 fwd = { std::sin(rot.y), 0.0f, std::cos(rot.y) };
+	SetForward(fwd);
+
+	if (destructionFrames_ == 8 && !turretDetached_) {
+		turretDetached_ = true;
+		turretDebrisPosition_ = GetLocalPartPosition(kTurretPivot);
+		turretDebrisVelocity_ = { vel.x + hitDirection_.x * 0.13f, 0.20f, vel.z + hitDirection_.z * 0.13f };
+		turretDebrisRotation_ = visualRotation_;
 	}
-	if (enemy.turretDetached_ && (enemy.destructionFrames_ == 13 || enemy.destructionFrames_ == 25 || enemy.destructionFrames_ == 37)) {
-		const Vector3 misfireDirection = NormalizeOrFallback({ enemy.hitDirection_.z, 0.18f, -enemy.hitDirection_.x }, enemy.forward_);
-		enemy.QueueEffect(GroundEnemy::EffectEvent::Type::TurretMisfire, enemy.turretDebrisPosition_, misfireDirection);
+	if (turretDetached_ && (destructionFrames_ == 13 || destructionFrames_ == 25 || destructionFrames_ == 37)) {
+		const Vector3 misfireDirection = NormalizeOrFallback({ hitDirection_.z, 0.18f, -hitDirection_.x }, fwd);
+		QueueEffect(EffectEvent::Type::TurretMisfire, turretDebrisPosition_, misfireDirection);
 	}
-	if (enemy.destructionFrames_ == 20 || enemy.destructionFrames_ == 32) {
-		const size_t firstLeg = enemy.destructionFrames_ == 20 ? 0 : 2;
+	if (destructionFrames_ == 20 || destructionFrames_ == 32) {
+		const size_t firstLeg = destructionFrames_ == 20 ? 0 : 2;
 		for (size_t i = firstLeg; i < firstLeg + 2; ++i) {
-			enemy.legDetached_[i] = true;
-			enemy.legDebrisPositions_[i] = enemy.GetLocalPartPosition(kLegPivots[i]);
+			legDetached_[i] = true;
+			legDebrisPositions_[i] = GetLocalPartPosition(kLegPivots[i]);
 			const float side = (i % 2 == 0) ? 1.0f : -1.0f;
-			enemy.legDebrisVelocities_[i] = { enemy.velocity_.x + side * 0.11f, 0.13f + static_cast<float>(i) * 0.015f, enemy.velocity_.z - enemy.hitDirection_.z * 0.07f };
-			enemy.legDebrisRotations_[i] = enemy.visualRotation_;
+			legDebrisVelocities_[i] = { vel.x + side * 0.11f, 0.13f + static_cast<float>(i) * 0.015f, vel.z - hitDirection_.z * 0.07f };
+			legDebrisRotations_[i] = visualRotation_;
 		}
 	}
-	if (enemy.finalDestructionEffect_ == GroundEnemy::DestructionEffect::Standard &&
-		(enemy.destructionFrames_ == 14 || enemy.destructionFrames_ == 27 || enemy.destructionFrames_ == 40 || enemy.destructionFrames_ == 53)) {
-		enemy.destructionState_ = GroundEnemy::DestructionState::ChainDetonating;
-		const int index = enemy.destructionFrames_ / 13;
+	if (finalDestructionEffect_ == DestructionEffect::Standard &&
+		(destructionFrames_ == 14 || destructionFrames_ == 27 || destructionFrames_ == 40 || destructionFrames_ == 53)) {
+		destructionState_ = DestructionState::ChainDetonating;
+		const int index = destructionFrames_ / 13;
 		const Vector3 local = {
 			index % 2 == 0 ? -0.52f : 0.70f,
 			1.15f + static_cast<float>(index % 2) * 0.42f,
 			index % 3 == 0 ? -0.58f : 0.54f,
 		};
-		enemy.QueueEffect(GroundEnemy::EffectEvent::Type::ChainDetonation, enemy.GetLocalPartPosition(local), enemy.hitDirection_);
+		QueueEffect(EffectEvent::Type::ChainDetonation, GetLocalPartPosition(local), hitDirection_);
 	}
 
-	UpdateDetachedParts(enemy);
+	UpdateDetachedParts();
 
-	if (enemy.destructionFrames_ >= 66 && !enemy.finalExplosionQueued_) {
-		enemy.finalExplosionQueued_ = true;
-		enemy.QueueEffect(GroundEnemy::EffectEvent::Type::FinalExplosion, enemy.position_, enemy.hitDirection_, enemy.finalDestructionEffect_);
-		enemy.isDead_ = true;
+	if (destructionFrames_ >= 66 && !finalExplosionQueued_) {
+		finalExplosionQueued_ = true;
+		QueueEffect(EffectEvent::Type::FinalExplosion, GetPosition(), hitDirection_, finalDestructionEffect_);
+		MarkDead();
 	}
 }
 
-void GroundEnemyDestructionController::UpdateDamageGlow(GroundEnemy& enemy) const {
+void GroundEnemy::UpdateDamageGlow() {
 	float glow = 0.0f;
-	if (enemy.destructionState_ == GroundEnemy::DestructionState::ChainDetonating) {
-		glow = 0.65f + 0.55f * std::abs(std::sin(static_cast<float>(enemy.destructionFrames_) * 1.9f));
-	} else if (enemy.hitReactionFrames_ > 0 || enemy.hitStopFrames_ > 0) {
-		glow = 0.28f + enemy.hitLean_ * 0.50f;
+	if (destructionState_ == DestructionState::ChainDetonating) {
+		glow = 0.65f + 0.55f * std::abs(std::sin(static_cast<float>(destructionFrames_) * 1.9f));
+	} else if (hitReactionFrames_ > 0 || hitStopFrames_ > 0) {
+		glow = 0.28f + hitLean_ * 0.50f;
 	}
 
 	auto setGlow = [glow](Object3d* part) {
@@ -206,7 +211,7 @@ void GroundEnemyDestructionController::UpdateDamageGlow(GroundEnemy& enemy) cons
 			light->intensity = 1.0f + glow * 2.4f;
 		}
 	};
-	setGlow(enemy.object_.get());
-	setGlow(enemy.turret_.get());
-	for (const auto& leg : enemy.legs_) setGlow(leg.get());
+	setGlow(GetObject3d());
+	setGlow(turret_.get());
+	for (const auto& leg : legs_) setGlow(leg.get());
 }

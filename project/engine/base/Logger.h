@@ -16,5 +16,5 @@ private:
 	
 };
 
-extern Logger logger;
+Logger& GetLogger();
 

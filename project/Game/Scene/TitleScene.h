@@ -25,8 +25,11 @@ public:
 	static void StopAttractDemo() { isAttractDemoEnabled_ = false; }
 	// 配布ZIPでクリア演出デモが選ばれた時だけ、TABの再生内容を切り替える。
 	static bool ShouldPlayClearCinematicDemo() { return playClearCinematicDemo_; }
+	static bool IsAttractDemoAvailable() { return isAttractDemoAvailable_; }
+	static bool IsAttractDemoEnabled() { return isAttractDemoEnabled_; }
+	bool IsSettingsOpen() const { return isSettingsOpen_; }
 private:
-	friend class TitleOverlayRenderer;
+	static constexpr int kLaunchDurationFrames = 84;
 	static inline bool isPendingFadeIn_ = false;
 	// 配布ZIPの runtime_options.json で無効化できる。設定ファイルがない開発版は有効。
 	static inline bool isAttractDemoAvailable_ = true;

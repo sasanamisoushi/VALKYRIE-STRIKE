@@ -12,7 +12,6 @@ class Obstacle;
 
 
 class EnemyBulletManager;
-class EnemyActionController;
 
 // 敵の行動パターン（状態）を定義
 enum class EnemyState {
@@ -128,10 +127,37 @@ public:
     virtual OBB GetMeleeBoxOBB() const { return {}; }
 
 protected:
-	friend class EnemyActionController;
     void UpdateFlightPathAI(const Vector3 &playerPos, EnemyBulletManager *bulletManager);
     void BuildPathVisualizers();
 
+    void MoveBy(const Vector3 &delta);
+    void SetVelocity(const Vector3 &velocity) { velocity_ = velocity; }
+    void CancelVelocityAlong(const Vector3 &normal);
+    void SetRotationAngles(const Vector3 &rotation) { rotation_ = rotation; }
+    void SetForward(const Vector3 &forward) { forward_ = forward; }
+    const Vector3 &GetForward() const { return forward_; }
+
+    int GetAttackTimer() const { return attackTimer_; }
+    void AdvanceAttackTimer(int delta = 1) { attackTimer_ += delta; }
+    void ResetAttackTimer(int value = 0) { attackTimer_ = value; }
+
+    void SetHP(int hp);
+    void ApplyDamage(int damage);
+    void MarkDead() { isDead_ = true; }
+    void MarkAlive() { isDead_ = false; }
+
+    bool IsChasingPlayer() const { return isChasingPlayer_; }
+    void SetChasingPlayer(bool chasing) { isChasingPlayer_ = chasing; }
+
+    bool HasFlightPathPoints() const { return flightPathPoints_.size() >= 2; }
+    bool AdvanceGroundFlightPath(Vector3 &outTargetPos);
+
+    Object3d *GetObject3d() { return object_.get(); }
+    const Object3d *GetObject3d() const { return object_.get(); }
+    void ResetObject3d(std::unique_ptr<Object3d> object) { object_ = std::move(object); }
+    void SyncModelTransform();
+
+private:
     // AI用の変数
     EnemyState state_ = EnemyState::Approach; // 今の状態（最初は「接近」）
     int attackTimer_ = 0;                     // 攻撃の間隔を測るタイマー

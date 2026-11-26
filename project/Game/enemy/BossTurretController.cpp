@@ -1,5 +1,3 @@
-#include "BossTurretController.h"
-
 #include "Boss.h"
 #include "Game/enemy/EnemyBulletManager.h"
 
@@ -116,42 +114,42 @@ constexpr size_t kMiniTurretFirst = kMainTurretFirst + kMainWeaponMounts.size() 
 constexpr size_t kMachineGunTurretIndex = kMiniTurretFirst + kMiniTurretBarrelPivots.size();
 }
 
-void BossTurretController::FireMachineGun(const Boss& boss, const Vector3& playerPos, EnemyBulletManager* bulletManager) const {
-	if (!bulletManager || !boss.IsTurretAlive(kMachineGunTurretIndex)) return;
+void Boss::FireMachineGun(const Vector3& playerPos, EnemyBulletManager* bulletManager) {
+	if (!bulletManager || !IsTurretAlive(kMachineGunTurretIndex)) return;
 	(void)playerPos;
 	const float pitch = kMachineGunMount.modelPitchOffset;
-	const Vector3 pivotPosition = boss.LocalPointToWorld(kMachineGunMount.pivot);
+	const Vector3 pivotPosition = LocalPointToWorld(kMachineGunMount.pivot);
 	for (const Vector3& localMuzzle : kMachineGunMount.muzzles) {
 		const Vector3 rotatedMuzzle = AddVector(kMachineGunMount.pivot,
-			RotatePitchYaw(SubtractVector(localMuzzle, kMachineGunMount.pivot), pitch, boss.turretYaw_));
-		const Vector3 muzzlePosition = AddVector(boss.position_, RotatePitchYaw({
+			RotatePitchYaw(SubtractVector(localMuzzle, kMachineGunMount.pivot), pitch, turretYaw_));
+		const Vector3 muzzlePosition = AddVector(GetPosition(), RotatePitchYaw({
 			rotatedMuzzle.x * kBossScale.x, rotatedMuzzle.y * kBossScale.y, rotatedMuzzle.z * kBossScale.z
-		}, 0.0f, boss.rotation_.y));
-		const Vector3 localDirection = RotatePitchYaw(kMachineGunMount.barrelAxes[0], pitch, boss.turretYaw_);
-		const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, boss.rotation_.y);
+		}, 0.0f, GetRotation().y));
+		const Vector3 localDirection = RotatePitchYaw(kMachineGunMount.barrelAxes[0], pitch, turretYaw_);
+		const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, GetRotation().y);
 		if (!IsMuzzleFacingAwayFromPivot(pivotPosition, muzzlePosition, direction)) continue;
 		bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.70f));
 	}
 }
 
-void BossTurretController::FireMainBeam(const Boss& boss, const Vector3& playerPos, EnemyBulletManager* bulletManager, size_t turretIndex) const {
+void Boss::FireMainBeam(const Vector3& playerPos, EnemyBulletManager* bulletManager, size_t turretIndex) {
 	if (!bulletManager || turretIndex >= kMainWeaponMounts.size()) return;
-	if (turretIndex < boss.mainTurrets_.size() && !boss.IsTurretAlive(kMainTurretFirst + turretIndex)) return;
+	if (turretIndex < mainTurrets_.size() && !IsTurretAlive(kMainTurretFirst + turretIndex)) return;
 	(void)playerPos;
 	const WeaponMount& mount = kMainWeaponMounts[turretIndex];
 	// 主砲はヨーだけ。上部ミニ連装砲は台座ヨー + 砲身ピッチの二段旋回。
 	for (size_t muzzleIndex = 0; muzzleIndex < mount.muzzles.size(); ++muzzleIndex) {
-		if (turretIndex == boss.mainTurrets_.size() && !boss.IsTurretAlive(kMiniTurretFirst + muzzleIndex)) continue;
+		if (turretIndex == mainTurrets_.size() && !IsTurretAlive(kMiniTurretFirst + muzzleIndex)) continue;
 		const Vector3& localMuzzle = mount.muzzles[muzzleIndex];
 		Vector3 rotatedMuzzle{};
 		Vector3 pivotPosition{};
 		float pitch = mount.modelPitchOffset;
-		float yaw = turretIndex < boss.mainTurretYaws_.size()
-			? kMainTurretBaseYaws[turretIndex] + boss.mainTurretYaws_[turretIndex]
-			: boss.turretYaw_;
+		float yaw = turretIndex < mainTurretYaws_.size()
+			? kMainTurretBaseYaws[turretIndex] + mainTurretYaws_[turretIndex]
+			: turretYaw_;
 		if (turretIndex == 3) {
-			pitch = boss.miniTurretPitches_[muzzleIndex];
-			yaw = kMiniTurretBaseYaws[muzzleIndex] + boss.miniTurretYaws_[muzzleIndex];
+			pitch = miniTurretPitches_[muzzleIndex];
+			yaw = kMiniTurretBaseYaws[muzzleIndex] + miniTurretYaws_[muzzleIndex];
 			const Vector3& barrelPivot = kMiniTurretBarrelPivots[muzzleIndex];
 			const Vector3& basePivot = kMiniTurretBasePivots[muzzleIndex];
 			// 台座は横旋回のみ、砲身は自身のヒンジを中心に上下旋回する。
@@ -159,20 +157,20 @@ void BossTurretController::FireMainBeam(const Boss& boss, const Vector3& playerP
 				RotatePitchYaw(SubtractVector(barrelPivot, basePivot), 0.0f, yaw));
 			rotatedMuzzle = AddVector(rotatedBarrelPivot,
 				RotatePitchYaw(SubtractVector(localMuzzle, barrelPivot), pitch, yaw));
-			pivotPosition = AddVector(boss.position_, RotatePitchYaw({
+			pivotPosition = AddVector(GetPosition(), RotatePitchYaw({
 				rotatedBarrelPivot.x * kBossScale.x, rotatedBarrelPivot.y * kBossScale.y,
 				rotatedBarrelPivot.z * kBossScale.z
-			}, 0.0f, boss.rotation_.y));
+			}, 0.0f, GetRotation().y));
 		} else {
 			rotatedMuzzle = AddVector(mount.pivot,
 				RotatePitchYaw(SubtractVector(localMuzzle, mount.pivot), pitch, yaw));
-			pivotPosition = boss.LocalPointToWorld(mount.pivot);
+			pivotPosition = LocalPointToWorld(mount.pivot);
 		}
-		const Vector3 muzzlePosition = AddVector(boss.position_, RotatePitchYaw({
+		const Vector3 muzzlePosition = AddVector(GetPosition(), RotatePitchYaw({
 			rotatedMuzzle.x * kBossScale.x, rotatedMuzzle.y * kBossScale.y, rotatedMuzzle.z * kBossScale.z
-		}, 0.0f, boss.rotation_.y));
+		}, 0.0f, GetRotation().y));
 		const Vector3 localDirection = RotatePitchYaw(mount.barrelAxes[muzzleIndex], pitch, yaw);
-		const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, boss.rotation_.y);
+		const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, GetRotation().y);
 		if (!IsMuzzleFacingAwayFromPivot(pivotPosition, muzzlePosition, direction)) continue;
 		if (turretIndex == 3) {
 			bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.88f));
@@ -184,27 +182,27 @@ void BossTurretController::FireMainBeam(const Boss& boss, const Vector3& playerP
 	}
 }
 
-void BossTurretController::FireForwardTurret(const Boss& boss, const Vector3& playerPos, EnemyBulletManager* bulletManager, size_t turretIndex) const {
+void Boss::FireForwardTurret(const Vector3& playerPos, EnemyBulletManager* bulletManager, size_t turretIndex) {
 	if (!bulletManager || turretIndex >= kForwardWeaponMounts.size() ||
-		!boss.IsTurretAlive(kForwardTurretFirst + turretIndex)) return;
+		!IsTurretAlive(kForwardTurretFirst + turretIndex)) return;
 	(void)playerPos;
 
 	const ForwardWeaponMount& mount = kForwardWeaponMounts[turretIndex];
 	// 左右砲台（1, 2）は艦体に対する横向きを固定し、上下だけを回転する。
 	// 中央砲台（0）は横回転だけで追尾する。
-	const float yaw = turretIndex > 0 ? 0.0f : boss.turretYaw_;
-	const float pitch = turretIndex > 0 ? boss.turretPitch_ : 0.0f;
+	const float yaw = turretIndex > 0 ? 0.0f : turretYaw_;
+	const float pitch = turretIndex > 0 ? turretPitch_ : 0.0f;
 	const Vector3 rotatedMuzzle = AddVector(mount.pivot,
 		RotatePitchYaw(SubtractVector(mount.muzzle, mount.pivot), pitch, yaw));
-	const Vector3 muzzlePosition = boss.LocalPointToWorld(rotatedMuzzle);
-	const Vector3 pivotPosition = boss.LocalPointToWorld(mount.pivot);
+	const Vector3 muzzlePosition = LocalPointToWorld(rotatedMuzzle);
+	const Vector3 pivotPosition = LocalPointToWorld(mount.pivot);
 	const Vector3 localDirection = RotatePitchYaw({ 0.0f, 0.0f, 1.0f }, pitch, yaw);
-	const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, boss.rotation_.y);
+	const Vector3 direction = RotatePitchYaw(localDirection, 0.0f, GetRotation().y);
 	if (!IsMuzzleFacingAwayFromPivot(pivotPosition, muzzlePosition, direction)) return;
 	bulletManager->Shoot(muzzlePosition, ScaleVector(direction, 0.70f));
 }
 
-Vector3 BossTurretController::GetTurretPivot(size_t turretIndex) const {
+Vector3 Boss::GetTurretPivot(size_t turretIndex) const {
 	if (turretIndex < kForwardWeaponMounts.size()) return kForwardWeaponMounts[turretIndex].pivot;
 	if (turretIndex < kMiniTurretFirst) return kMainWeaponMounts[turretIndex - kMainTurretFirst].pivot;
 	if (turretIndex < kMachineGunTurretIndex) return kMiniTurretBasePivots[turretIndex - kMiniTurretFirst];
@@ -212,7 +210,7 @@ Vector3 BossTurretController::GetTurretPivot(size_t turretIndex) const {
 	return { 0.0f, 0.0f, 0.0f };
 }
 
-float BossTurretController::GetTurretHitRadius(size_t turretIndex) const {
+float Boss::GetTurretHitRadius(size_t turretIndex) const {
 	if (turretIndex < kForwardWeaponMounts.size()) return kForwardWeaponMounts[turretIndex].hitRadius;
 	if (turretIndex < kMiniTurretFirst) return 0.95f;
 	if (turretIndex < kMachineGunTurretIndex) return 0.58f;
@@ -220,15 +218,15 @@ float BossTurretController::GetTurretHitRadius(size_t turretIndex) const {
 	return 0.0f;
 }
 
-void BossTurretController::UpdateAim(Boss& boss, const Vector3& playerPos) const {
-	const Vector3 direction = boss.DirectionTo(playerPos);
+void Boss::UpdateTurretAim(const Vector3& playerPos) {
+	const Vector3 direction = DirectionTo(playerPos);
 	const float horizontalLength = std::sqrt(direction.x * direction.x + direction.z * direction.z);
 	if (horizontalLength <= 0.0001f) return;
 
-	const float requestedYaw = boss.tuning_.mainTurretYawTracking
-		? WrapAngle(std::atan2(direction.x, direction.z) - boss.rotation_.y) : 0.0f;
-	const float requestedPitch = boss.tuning_.mainTurretPitchTracking
-		? std::clamp(-std::atan2(direction.y, horizontalLength), -boss.tuning_.mainTurretMaxPitch, boss.tuning_.mainTurretMaxPitch) : 0.0f;
+	const float requestedYaw = tuning_.mainTurretYawTracking
+		? WrapAngle(std::atan2(direction.x, direction.z) - GetRotation().y) : 0.0f;
+	const float requestedPitch = tuning_.mainTurretPitchTracking
+		? std::clamp(-std::atan2(direction.y, horizontalLength), -tuning_.mainTurretMaxPitch, tuning_.mainTurretMaxPitch) : 0.0f;
 	constexpr float kQuarterPi = 0.78539816339f;
 	// ミニ連装砲は初期姿勢が上向き。+90度を基準にすることで砲身を前方へ倒し、
 	// プレイヤーが下にいる場合もさらに下向きまで追尾できる。
@@ -237,54 +235,54 @@ void BossTurretController::UpdateAim(Boss& boss, const Vector3& playerPos) const
 	constexpr float kIgelPitchMax = 2.45f;
 	// 左右の大型砲は担当する舷側と正面境界で反応する。
 	// 正面では左右・中央の3基が揃って発射し、右側では右砲だけ、左側では左砲だけが追尾する。
-	for (size_t index = 0; index < boss.mainTurretYaws_.size(); ++index) {
+	for (size_t index = 0; index < mainTurretYaws_.size(); ++index) {
 		const bool handlesTarget = index == 0 ? requestedYaw <= 0.08f
 			: index == 1 ? requestedYaw >= -0.08f
 			: std::abs(requestedYaw) <= 0.62f;
-		boss.mainTurretEngaged_[index] = handlesTarget;
+		mainTurretEngaged_[index] = handlesTarget;
 		const float desiredRelativeYaw = handlesTarget
 			? std::clamp(WrapAngle(requestedYaw - kMainTurretBaseYaws[index]),
 				kMainTurretYawMinimums[index], kMainTurretYawMaximums[index])
 			: 0.0f;
-		boss.mainTurretYaws_[index] += WrapAngle(desiredRelativeYaw - boss.mainTurretYaws_[index]) *
-			boss.tuning_.mainTurretYawFollow;
+		mainTurretYaws_[index] += WrapAngle(desiredRelativeYaw - mainTurretYaws_[index]) *
+			tuning_.mainTurretYawFollow;
 	}
 	// 既存の中央機銃・艦首中央砲は前方半円に限定する。
 	const float desiredYaw = std::clamp(requestedYaw, -1.57079632679f, 1.57079632679f);
-	boss.turretYaw_ += WrapAngle(desiredYaw - boss.turretYaw_) * boss.tuning_.mainTurretYawFollow;
-	boss.turretPitch_ += (requestedPitch - boss.turretPitch_) * boss.tuning_.mainTurretPitchFollow;
+	turretYaw_ += WrapAngle(desiredYaw - turretYaw_) * tuning_.mainTurretYawFollow;
+	turretPitch_ += (requestedPitch - turretPitch_) * tuning_.mainTurretPitchFollow;
 
 	// 上部ミニ連装砲は戦艦の機関砲と同じく、台座が横旋回・砲身が上下旋回する。
-	const float igelYawFollow = std::clamp(boss.tuning_.mainTurretYawFollow * 3.0f, 0.16f, 0.48f);
-	const float igelPitchFollow = std::clamp(boss.tuning_.mainTurretPitchFollow * 3.0f, 0.16f, 0.48f);
-	for (size_t index = 0; index < boss.miniTurretYaws_.size(); ++index) {
+	const float igelYawFollow = std::clamp(tuning_.mainTurretYawFollow * 3.0f, 0.16f, 0.48f);
+	const float igelPitchFollow = std::clamp(tuning_.mainTurretPitchFollow * 3.0f, 0.16f, 0.48f);
+	for (size_t index = 0; index < miniTurretYaws_.size(); ++index) {
 		// 各台座自身からプレイヤーを測る。ボス中心を共用しないため、近距離でも左右が同期しない。
-		const Vector3 miniPosition = boss.LocalPointToWorld(kMiniTurretBasePivots[index]);
+		const Vector3 miniPosition = LocalPointToWorld(kMiniTurretBasePivots[index]);
 		const Vector3 toPlayer = SubtractVector(playerPos, miniPosition);
 		const float miniHorizontalLength = std::sqrt(toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z);
 		if (miniHorizontalLength <= 0.0001f) continue;
-		const float miniRequestedYaw = WrapAngle(std::atan2(toPlayer.x, toPlayer.z) - boss.rotation_.y);
+		const float miniRequestedYaw = WrapAngle(std::atan2(toPlayer.x, toPlayer.z) - GetRotation().y);
 		const float miniRequestedPitch = std::clamp(-std::atan2(toPlayer.y, miniHorizontalLength),
-			-boss.tuning_.mainTurretMaxPitch, boss.tuning_.mainTurretMaxPitch);
+			-tuning_.mainTurretMaxPitch, tuning_.mainTurretMaxPitch);
 		// 左右の副砲を±90度へ配置し、それぞれ45度ずつの扇形を受け持たせる。
 		const float desiredRelativeYaw = std::clamp(
 			WrapAngle(miniRequestedYaw - kMiniTurretBaseYaws[index]), -kQuarterPi, kQuarterPi);
-		boss.miniTurretYaws_[index] += WrapAngle(desiredRelativeYaw - boss.miniTurretYaws_[index]) * igelYawFollow;
+		miniTurretYaws_[index] += WrapAngle(desiredRelativeYaw - miniTurretYaws_[index]) * igelYawFollow;
 		const float desiredPitch = std::clamp(kIgelForwardPitch + miniRequestedPitch,
 			kIgelPitchMin, kIgelPitchMax);
-		boss.miniTurretPitches_[index] += (desiredPitch - boss.miniTurretPitches_[index]) * igelPitchFollow;
+		miniTurretPitches_[index] += (desiredPitch - miniTurretPitches_[index]) * igelPitchFollow;
 	}
 }
 
-void BossTurretController::UpdateModels(Boss& boss) const {
-	if (boss.cinematicDebrisActive_) {
+void Boss::UpdateTurretModels() {
+	if (cinematicDebrisActive_) {
 		return;
 	}
-	const Quaternion hullQuat = MakeEulerQuaternion(boss.rotation_);
-	auto updateTurret = [&boss, &hullQuat](Object3d* turret, const Vector3& pivot, float pitch, float yaw,
+	const Quaternion hullQuat = MakeEulerQuaternion(GetRotation());
+	auto updateTurret = [this, &hullQuat](Object3d* turret, const Vector3& pivot, float pitch, float yaw,
 		float modelPitchOffset = 0.0f) {
 		if (!turret) return;
-		turret->SetTranslate(boss.LocalPointToWorld(pivot));
+		turret->SetTranslate(LocalPointToWorld(pivot));
 		const Quaternion localQuat = MakePitchYawQuaternion(pitch + modelPitchOffset, yaw);
 		// 行ベクトル規約では右辺が先に適用されるため、砲台ローカル回転の後に船体回転を掛ける。
 		turret->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(hullQuat, localQuat)));
@@ -292,47 +290,47 @@ void BossTurretController::UpdateModels(Boss& boss) const {
 		turret->Update();
 	};
 
-	for (size_t index = 0; index < boss.mainTurrets_.size(); ++index) {
-		if (boss.IsTurretAlive(kMainTurretFirst + index)) {
-			updateTurret(boss.mainTurrets_[index].get(), kMainWeaponMounts[index].pivot,
-				0.0f, kMainTurretBaseYaws[index] + boss.mainTurretYaws_[index],
+	for (size_t index = 0; index < mainTurrets_.size(); ++index) {
+		if (IsTurretAlive(kMainTurretFirst + index)) {
+			updateTurret(mainTurrets_[index].get(), kMainWeaponMounts[index].pivot,
+				0.0f, kMainTurretBaseYaws[index] + mainTurretYaws_[index],
 				kMainWeaponMounts[index].modelPitchOffset);
 		}
 	}
 	// ミニ砲台: 箱形の台座だけを横旋回する。
-	for (size_t index = 0; index < boss.miniTurretBases_.size(); ++index) {
-		if (boss.IsTurretAlive(kMiniTurretFirst + index)) {
-			updateTurret(boss.miniTurretBases_[index].get(), kMiniTurretBasePivots[index], 0.0f,
-				kMiniTurretBaseYaws[index] + boss.miniTurretYaws_[index]);
+	for (size_t index = 0; index < miniTurretBases_.size(); ++index) {
+		if (IsTurretAlive(kMiniTurretFirst + index)) {
+			updateTurret(miniTurretBases_[index].get(), kMiniTurretBasePivots[index], 0.0f,
+				kMiniTurretBaseYaws[index] + miniTurretYaws_[index]);
 		}
 	}
 	// ミニ砲身: 台座の横旋回に追従しつつ、各自のヒンジで上下へ動く。
-	for (size_t index = 0; index < boss.miniTurretBarrels_.size(); ++index) {
-		if (!boss.IsTurretAlive(kMiniTurretFirst + index)) continue;
-		Object3d* barrel = boss.miniTurretBarrels_[index].get();
+	for (size_t index = 0; index < miniTurretBarrels_.size(); ++index) {
+		if (!IsTurretAlive(kMiniTurretFirst + index)) continue;
+		Object3d* barrel = miniTurretBarrels_[index].get();
 		if (!barrel) continue;
 		const Vector3& barrelPivot = kMiniTurretBarrelPivots[index];
 		const Vector3& basePivot = kMiniTurretBasePivots[index];
-		const float yaw = kMiniTurretBaseYaws[index] + boss.miniTurretYaws_[index];
+		const float yaw = kMiniTurretBaseYaws[index] + miniTurretYaws_[index];
 		const Vector3 rotatedBarrelPivot = AddVector(basePivot,
 			RotatePitchYaw(SubtractVector(barrelPivot, basePivot), 0.0f, yaw));
-		barrel->SetTranslate(boss.LocalPointToWorld(rotatedBarrelPivot));
-		const Quaternion localQuat = MakePitchYawQuaternion(boss.miniTurretPitches_[index], yaw);
+		barrel->SetTranslate(LocalPointToWorld(rotatedBarrelPivot));
+		const Quaternion localQuat = MakePitchYawQuaternion(miniTurretPitches_[index], yaw);
 		barrel->SetQuaternionRotate(MyMath::Normalize(MyMath::Multiply(hullQuat, localQuat)));
 		barrel->SetScale(kBossScale);
 		barrel->Update();
 	}
 	// 通常の機銃も横回転だけ。上部ミニ連装砲とは別の砲台として扱う。
-	if (boss.IsTurretAlive(kMachineGunTurretIndex)) {
-		updateTurret(boss.machineGunTurret_.get(), kMachineGunMount.pivot, 0.0f, boss.turretYaw_,
+	if (IsTurretAlive(kMachineGunTurretIndex)) {
+		updateTurret(machineGunTurret_.get(), kMachineGunMount.pivot, 0.0f, turretYaw_,
 			kMachineGunMount.modelPitchOffset);
 	}
-	for (size_t index = 0; index < boss.forwardTurrets_.size(); ++index) {
-		if (boss.IsTurretAlive(kForwardTurretFirst + index)) {
+	for (size_t index = 0; index < forwardTurrets_.size(); ++index) {
+		if (IsTurretAlive(kForwardTurretFirst + index)) {
 			// 左右砲台だけはヨーを固定し、ピッチ回転だけにする。
-			const float yaw = index > 0 ? 0.0f : boss.turretYaw_;
-			const float pitch = index > 0 ? boss.turretPitch_ : 0.0f;
-			updateTurret(boss.forwardTurrets_[index].get(), kForwardWeaponMounts[index].pivot, pitch, yaw);
+			const float yaw = index > 0 ? 0.0f : turretYaw_;
+			const float pitch = index > 0 ? turretPitch_ : 0.0f;
+			updateTurret(forwardTurrets_[index].get(), kForwardWeaponMounts[index].pivot, pitch, yaw);
 		}
 	}
 }

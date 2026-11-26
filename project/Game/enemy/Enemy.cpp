@@ -1,5 +1,4 @@
 #include "Enemy.h"
-#include "EnemyActionController.h"
 #include "3D/Object3dCommon.h"
 #include "3D/Primitive.h"
 #include "engine/Math/MyMath.h"
@@ -315,11 +314,19 @@ bool Enemy::IsHitBy(const Sphere& attackSphere) const {
 
 // 当たった時の処理
 void Enemy::OnCollision() {
-    EnemyActionController{}.Destroy(*this);
+    isDead_ = true;
 }
 
 void Enemy::TakeDamage(int damage, const Vector3 &) {
-    EnemyActionController{}.TakeDamage(*this, damage);
+    if (isDead_ || damage <= 0) {
+        return;
+    }
+
+    StartChasingPlayer();
+    hp_ = (std::max)(0, hp_ - damage);
+    if (hp_ == 0) {
+        isDead_ = true;
+    }
 }
 
 void Enemy::TakeDamageAt(int damage, const Vector3 &, const Vector3 &hitDirection, float) {
@@ -332,7 +339,14 @@ void Enemy::TakeDamageAtTargetPoint(int damage, const Vector3&, const Vector3& h
 }
 
 void Enemy::StartChasingPlayer() {
-    EnemyActionController{}.StartChasing(*this);
+    if (isDead_) {
+        return;
+    }
+
+    isChasingPlayer_ = true;
+    state_ = EnemyState::Approach;
+    currentSpeed_ = currentSpeed_ > 0.0f ? currentSpeed_ : kEnemyCruiseSpeed;
+    velocity_ = Scale(forward_, currentSpeed_);
 }
 
 void Enemy::SetRotation(const Vector3 &rotation) {
@@ -674,6 +688,106 @@ void Enemy::CheckCollision(const std::list<std::unique_ptr<Obstacle>> &obstacles
             enemyOBB.center = Add(enemyOBB.center, worldPushOut);
         }
     }
+}
+
+void Enemy::MoveBy(const Vector3 &delta) {
+    position_.x += delta.x;
+    position_.y += delta.y;
+    position_.z += delta.z;
+}
+
+void Enemy::CancelVelocityAlong(const Vector3 &normal) {
+    const float dot = Dot(velocity_, normal);
+    if (dot < 0.0f) {
+        velocity_.x -= dot * normal.x;
+        velocity_.y -= dot * normal.y;
+        velocity_.z -= dot * normal.z;
+    }
+}
+
+void Enemy::SetHP(int hp) {
+    hp_ = (std::clamp)(hp, 0, GetMaxHP());
+}
+
+void Enemy::ApplyDamage(int damage) {
+    if (damage <= 0 || isDead_) {
+        return;
+    }
+    hp_ -= damage;
+    if (hp_ <= 0) {
+        hp_ = 0;
+    }
+}
+
+bool Enemy::AdvanceGroundFlightPath(Vector3 &outTargetPos) {
+    if (flightPathPoints_.size() < 2) {
+        return false;
+    }
+
+    const size_t segmentCount = flightPathLoop_ ? flightPathPoints_.size() : flightPathPoints_.size() - 1;
+    if (segmentCount == 0) {
+        return false;
+    }
+
+    float remainingDistance = flightPathSpeed_;
+    while (remainingDistance > 0.0f) {
+        const size_t nextIndex = ResolvePathIndex(
+            static_cast<int>(flightPathSegmentIndex_ + 1), flightPathPoints_.size(), flightPathLoop_);
+        const Vector3 segmentVector = {
+            flightPathPoints_[nextIndex].x - flightPathPoints_[flightPathSegmentIndex_].x,
+            0.0f,
+            flightPathPoints_[nextIndex].z - flightPathPoints_[flightPathSegmentIndex_].z
+        };
+        const float segmentLength = std::sqrt(
+            segmentVector.x * segmentVector.x + segmentVector.z * segmentVector.z);
+
+        if (segmentLength < 0.0001f) {
+            ++flightPathSegmentIndex_;
+            flightPathSegmentT_ = 0.0f;
+            if (flightPathSegmentIndex_ >= segmentCount) {
+                if (flightPathLoop_) {
+                    flightPathSegmentIndex_ = 0;
+                } else {
+                    flightPathSegmentIndex_ = segmentCount - 1;
+                    flightPathSegmentT_ = 1.0f;
+                    break;
+                }
+            }
+            continue;
+        }
+
+        const float distanceToSegmentEnd = segmentLength * (1.0f - flightPathSegmentT_);
+        if (remainingDistance >= distanceToSegmentEnd) {
+            remainingDistance -= distanceToSegmentEnd;
+            flightPathSegmentT_ = 0.0f;
+            ++flightPathSegmentIndex_;
+            if (flightPathSegmentIndex_ >= segmentCount) {
+                if (flightPathLoop_) {
+                    flightPathSegmentIndex_ = 0;
+                } else {
+                    flightPathSegmentIndex_ = segmentCount - 1;
+                    flightPathSegmentT_ = 1.0f;
+                    break;
+                }
+            }
+        } else {
+            flightPathSegmentT_ += remainingDistance / segmentLength;
+            remainingDistance = 0.0f;
+        }
+    }
+
+    outTargetPos = EvaluateFlightPath(flightPathPoints_, flightPathSegmentIndex_, flightPathSegmentT_, flightPathLoop_);
+    return true;
+}
+
+void Enemy::SyncModelTransform() {
+    if (!object_) {
+        return;
+    }
+    object_->SetTranslate(position_);
+    object_->SetRotate(rotation_);
+    object_->SetScale(scale_);
+    object_->Update();
 }
 
 

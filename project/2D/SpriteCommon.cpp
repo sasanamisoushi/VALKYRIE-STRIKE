@@ -92,7 +92,7 @@ void SpriteCommon::CreateRootSignature() {
 	ID3DBlob *errorBlob = nullptr;
 	HRESULT hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
 	if (FAILED(hr)) {
-		logger.Log( reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
+		GetLogger().Log( reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
 		assert(false);
 	}
 	//バイナリを元に生成

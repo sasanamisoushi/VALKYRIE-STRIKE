@@ -115,7 +115,7 @@ void DirectXCommon::CreateDevice() {
 		if (!(adapterDesc.Flags & DXGI_ADAPTER_FLAG3_SOFTWARE)) {
 
 			//採用したアダプタの情報をログに出力
-			logger.Log(su.ConvertString(std::format(L"Use Adapter: {}\n", adapterDesc.Description)));
+			GetLogger().Log(su.ConvertString(std::format(L"Use Adapter: {}\n", adapterDesc.Description)));
 			break;
 		}
 
@@ -141,14 +141,14 @@ void DirectXCommon::CreateDevice() {
 		//指定した機能レベルでデバイスを生成できたか確認
 		if (SUCCEEDED(hr)) {
 			//生成できたのでログ出力を行ってループを抜ける
-			logger.Log(std::format("FeatureLevel: {}\n", featureLevelStrings[i]));
+			GetLogger().Log(std::format("FeatureLevel: {}\n", featureLevelStrings[i]));
 			break;
 		}
 	}
 
 	//デバイスの生成が上手くいかなかったので起動できない
 	assert(device != nullptr);
-	logger.Log("Complete create D3D12Device!!!\n");
+	GetLogger().Log("Complete create D3D12Device!!!\n");
 
 
 #ifdef _DEBUG

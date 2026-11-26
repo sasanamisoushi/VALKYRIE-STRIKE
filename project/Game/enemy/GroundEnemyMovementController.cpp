@@ -1,5 +1,3 @@
-#include "GroundEnemyMovementController.h"
-
 #include "GroundEnemy.h"
 #include "Game/obstacle/Obstacle.h"
 
@@ -74,51 +72,22 @@ bool SampleTerrainHeight(const std::list<std::unique_ptr<Obstacle>>& obstacles, 
 	if (foundGround) outHeight = highest;
 	return foundGround;
 }
-
-size_t ResolvePathIndex(int index, size_t pointCount, bool loop) {
-	if (pointCount == 0) return 0;
-	if (loop) {
-		int count = static_cast<int>(pointCount);
-		int wrapped = index % count;
-		if (wrapped < 0) wrapped += count;
-		return static_cast<size_t>(wrapped);
-	}
-	int last = static_cast<int>(pointCount - 1);
-	return static_cast<size_t>(std::clamp(index, 0, last));
 }
 
-Vector3 CatmullRom(const Vector3& p0, const Vector3& p1, const Vector3& p2, const Vector3& p3, float t) {
-	float t2 = t * t;
-	float t3 = t2 * t;
-	return {
-		0.5f * ((2.0f * p1.x) + (-p0.x + p2.x) * t + (2.0f * p0.x - 5.0f * p1.x + 4.0f * p2.x - p3.x) * t2 + (-p0.x + 3.0f * p1.x - 3.0f * p2.x + p3.x) * t3),
-		0.5f * ((2.0f * p1.y) + (-p0.y + p2.y) * t + (2.0f * p0.y - 5.0f * p1.y + 4.0f * p2.y - p3.y) * t2 + (-p0.y + 3.0f * p1.y - 3.0f * p2.y + p3.y) * t3),
-		0.5f * ((2.0f * p1.z) + (-p0.z + p2.z) * t + (2.0f * p0.z - 5.0f * p1.z + 4.0f * p2.z - p3.z) * t2 + (-p0.z + 3.0f * p1.z - 3.0f * p2.z + p3.z) * t3)
-	};
-}
-
-Vector3 EvaluateFlightPath(const std::vector<Vector3>& points, size_t segmentIndex, float t, bool loop) {
-	int baseIndex = static_cast<int>(segmentIndex);
-	const Vector3& p0 = points[ResolvePathIndex(baseIndex - 1, points.size(), loop)];
-	const Vector3& p1 = points[ResolvePathIndex(baseIndex, points.size(), loop)];
-	const Vector3& p2 = points[ResolvePathIndex(baseIndex + 1, points.size(), loop)];
-	const Vector3& p3 = points[ResolvePathIndex(baseIndex + 2, points.size(), loop)];
-	return CatmullRom(p0, p1, p2, p3, t);
-}
-}
-
-void GroundEnemyMovementController::UpdateGroundMovement(
-	GroundEnemy& enemy,
+void GroundEnemy::UpdateGroundMovement(
 	const Vector3& playerPos,
-	const std::list<std::unique_ptr<Obstacle>>& obstacles) const {
+	const std::list<std::unique_ptr<Obstacle>>& obstacles) {
+	const Vector3 scale = GetScale();
+	Vector3 pos = GetPosition();
+
 	// 重力計算（落下）
-	enemy.velocityY_ -= enemy.gravity_;
-	enemy.position_.y += enemy.velocityY_;
+	velocityY_ -= gravity_;
+	pos.y += velocityY_;
 
 	// プレイヤーと完全に同等のメッシュコライダー（球 vs メッシュ三角形交差・押し出し）当たり判定
 	Sphere enemySphere;
-	enemySphere.center = enemy.position_;
-	enemySphere.radius = enemy.scale_.y;
+	enemySphere.center = pos;
+	enemySphere.radius = scale.y;
 
 	bool hitGroundThisFrame = false;
 
@@ -135,7 +104,7 @@ void GroundEnemyMovementController::UpdateGroundMovement(
 				const Triangle& tri = triangles[triangleIndex];
 				if (std::abs(tri.normal.y) > 0.2f) {
 					float triY = 0.0f;
-					if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], enemy.position_.x, enemy.position_.z, triY)) {
+					if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], pos.x, pos.z, triY)) {
 						if (triY > maxTerrainY) {
 							maxTerrainY = triY;
 							foundTerrain = true;
@@ -144,13 +113,13 @@ void GroundEnemyMovementController::UpdateGroundMovement(
 				}
 			}
 
-			const float footOffset = GetFootOffset(enemy);
-			if (foundTerrain && enemy.position_.y < maxTerrainY + footOffset) {
-				enemy.position_.y = maxTerrainY + footOffset;
-				if (enemy.velocityY_ < 0.0f) {
-					enemy.velocityY_ = 0.0f;
+			const float footOffset = GetFootOffset();
+			if (foundTerrain && pos.y < maxTerrainY + footOffset) {
+				pos.y = maxTerrainY + footOffset;
+				if (velocityY_ < 0.0f) {
+					velocityY_ = 0.0f;
 				}
-				enemySphere.center = enemy.position_;
+				enemySphere.center = pos;
 				hitGroundThisFrame = true;
 			}
 
@@ -161,100 +130,106 @@ void GroundEnemyMovementController::UpdateGroundMovement(
 				}
 				Vector3 pushVector;
 				if (MyMath::IsCollision(enemySphere, tri, pushVector)) {
-					enemy.position_.x += pushVector.x;
-					enemy.position_.y += pushVector.y;
-					enemy.position_.z += pushVector.z;
-					enemySphere.center = enemy.position_;
+					pos.x += pushVector.x;
+					pos.y += pushVector.y;
+					pos.z += pushVector.z;
+					enemySphere.center = pos;
 				}
 			}
 		} else {
 			OBB obsOBB = obs->GetOBB();
-			if (std::abs(enemy.position_.x - obsOBB.center.x) <= obsOBB.size.x + enemy.scale_.x * 0.5f &&
-				std::abs(enemy.position_.z - obsOBB.center.z) <= obsOBB.size.z + enemy.scale_.z * 0.5f) {
+			if (std::abs(pos.x - obsOBB.center.x) <= obsOBB.size.x + scale.x * 0.5f &&
+				std::abs(pos.z - obsOBB.center.z) <= obsOBB.size.z + scale.z * 0.5f) {
 				float topY = obsOBB.center.y + obsOBB.size.y;
-				if (enemy.position_.y <= topY + enemy.scale_.y) {
-					enemy.position_.y = topY + enemy.scale_.y;
+				if (pos.y <= topY + scale.y) {
+					pos.y = topY + scale.y;
 					hitGroundThisFrame = true;
 				}
 			}
 		}
 	}
 
+	SetPosition(pos);
+
 	if (hitGroundThisFrame) {
-		if (enemy.velocityY_ < 0.0f) {
-			enemy.velocityY_ = 0.0f;
+		if (velocityY_ < 0.0f) {
+			velocityY_ = 0.0f;
 		}
-		enemy.isGrounded_ = true;
+		isGrounded_ = true;
 	} else {
-		enemy.isGrounded_ = false;
+		isGrounded_ = false;
 	}
 
+	Vector3 vel = GetVelocity();
 	// スクリプト等で追跡を停止された場合だけ、Blenderで配置した位置を保つ。
-	if (!enemy.isChasingPlayer_) {
-		enemy.velocity_.x = 0.0f;
-		enemy.velocity_.z = 0.0f;
-		UpdateTerrainPose(enemy, obstacles);
+	if (!IsChasingPlayer()) {
+		vel.x = 0.0f;
+		vel.z = 0.0f;
+		SetVelocity(vel);
+		UpdateTerrainPose(obstacles);
 		return;
 	}
 
-	Vector3 toPlayerHorizontal = { playerPos.x - enemy.position_.x, 0.0f, playerPos.z - enemy.position_.z };
+	Vector3 toPlayerHorizontal = { playerPos.x - pos.x, 0.0f, playerPos.z - pos.z };
 	float distHorizontalSq = toPlayerHorizontal.x * toPlayerHorizontal.x + toPlayerHorizontal.z * toPlayerHorizontal.z;
 
 	if (distHorizontalSq > 0.001f) {
 		float distH = std::sqrt(distHorizontalSq);
 		Vector3 targetDir = { toPlayerHorizontal.x / distH, 0.0f, toPlayerHorizontal.z / distH };
 
-		enemy.locomotionMode_ = (enemy.attackSubState_ != GroundEnemy::GroundAttackState::Melee && distH > kQuadrupedEngageDistance)
-			? GroundEnemy::LocomotionMode::Track
-			: GroundEnemy::LocomotionMode::Quadruped;
-		const float targetTrackBlend = enemy.locomotionMode_ == GroundEnemy::LocomotionMode::Track ? 1.0f : 0.0f;
-		enemy.trackBlend_ += (targetTrackBlend - enemy.trackBlend_) * 0.12f;
+		locomotionMode_ = (attackSubState_ != GroundAttackState::Melee && distH > kQuadrupedEngageDistance)
+			? LocomotionMode::Track
+			: LocomotionMode::Quadruped;
+		const float targetTrackBlend = locomotionMode_ == LocomotionMode::Track ? 1.0f : 0.0f;
+		trackBlend_ += (targetTrackBlend - trackBlend_) * 0.12f;
 
-		const float turnRate = 0.08f - enemy.trackBlend_ * 0.05f;
-		enemy.forward_.x += (targetDir.x - enemy.forward_.x) * turnRate;
-		enemy.forward_.z += (targetDir.z - enemy.forward_.z) * turnRate;
-		enemy.forward_ = NormalizeOrFallback(enemy.forward_, { 0.0f, 0.0f, 1.0f });
+		const float turnRate = 0.08f - trackBlend_ * 0.05f;
+		Vector3 fwd = GetForward();
+		fwd.x += (targetDir.x - fwd.x) * turnRate;
+		fwd.z += (targetDir.z - fwd.z) * turnRate;
+		fwd = NormalizeOrFallback(fwd, { 0.0f, 0.0f, 1.0f });
+		SetForward(fwd);
 
-		enemy.rotation_.y = std::atan2(enemy.forward_.x, enemy.forward_.z);
-		enemy.rotation_.x = 0.0f;
-		enemy.rotation_.z = 0.0f;
+		SetRotationAngles({ 0.0f, std::atan2(fwd.x, fwd.z), 0.0f });
 
-		if (enemy.attackSubState_ == GroundEnemy::GroundAttackState::Melee) {
-			enemy.velocity_.x = 0.0f;
-			enemy.velocity_.z = 0.0f;
+		if (attackSubState_ == GroundAttackState::Melee) {
+			vel.x = 0.0f;
+			vel.z = 0.0f;
 		} else {
 			constexpr float kMinKeepDistance = 15.0f;
-			const float moveSpeed = kGroundSpeed + (kTrackSpeed - kGroundSpeed) * enemy.trackBlend_;
+			const float moveSpeed = kGroundSpeed + (kTrackSpeed - kGroundSpeed) * trackBlend_;
 			const float directionSign = distHorizontalSq < kMinKeepDistance * kMinKeepDistance ? -0.5f : 1.0f;
-			if (enemy.trackBlend_ > 0.01f) {
-				const Vector3 targetVelocity = { enemy.forward_.x * moveSpeed * directionSign, 0.0f, enemy.forward_.z * moveSpeed * directionSign };
-				const float traction = 0.08f + (1.0f - enemy.trackBlend_) * 0.20f;
-				enemy.velocity_.x += (targetVelocity.x - enemy.velocity_.x) * traction;
-				enemy.velocity_.z += (targetVelocity.z - enemy.velocity_.z) * traction;
+			if (trackBlend_ > 0.01f) {
+				const Vector3 targetVelocity = { fwd.x * moveSpeed * directionSign, 0.0f, fwd.z * moveSpeed * directionSign };
+				const float traction = 0.08f + (1.0f - trackBlend_) * 0.20f;
+				vel.x += (targetVelocity.x - vel.x) * traction;
+				vel.z += (targetVelocity.z - vel.z) * traction;
 			} else if (distHorizontalSq < kMinKeepDistance * kMinKeepDistance) {
-				enemy.velocity_.x = -enemy.forward_.x * kGroundSpeed * 0.5f;
-				enemy.velocity_.z = -enemy.forward_.z * kGroundSpeed * 0.5f;
+				vel.x = -fwd.x * kGroundSpeed * 0.5f;
+				vel.z = -fwd.z * kGroundSpeed * 0.5f;
 			} else {
-				enemy.velocity_.x = enemy.forward_.x * kGroundSpeed;
-				enemy.velocity_.z = enemy.forward_.z * kGroundSpeed;
+				vel.x = fwd.x * kGroundSpeed;
+				vel.z = fwd.z * kGroundSpeed;
 			}
 		}
 	}
 
-	if (!enemy.isGrounded_) {
-		enemy.velocity_.x *= 0.98f;
-		enemy.velocity_.z *= 0.98f;
+	if (!isGrounded_) {
+		vel.x *= 0.98f;
+		vel.z *= 0.98f;
 	}
 
-	enemy.position_.x += enemy.velocity_.x;
-	enemy.position_.z += enemy.velocity_.z;
+	SetVelocity(vel);
+	pos.x += vel.x;
+	pos.z += vel.z;
+	SetPosition(pos);
 
-	const bool isAirborneAttack = enemy.attackSubState_ == GroundEnemy::GroundAttackState::Melee &&
-		(enemy.meleePhase_ == GroundEnemy::MeleePhase::Rising || enemy.meleePhase_ == GroundEnemy::MeleePhase::Falling);
+	const bool isAirborneAttack = attackSubState_ == GroundAttackState::Melee &&
+		(meleePhase_ == MeleePhase::Rising || meleePhase_ == MeleePhase::Falling);
 	if (!isAirborneAttack) {
 		Sphere terrainProbe{};
-		terrainProbe.center = enemy.position_;
-		terrainProbe.radius = (std::max)(0.5f, (std::max)(enemy.scale_.x, enemy.scale_.z));
+		terrainProbe.center = pos;
+		terrainProbe.radius = (std::max)(0.5f, (std::max)(scale.x, scale.z));
 
 		float groundHeight = -99999.0f;
 		bool foundGroundAtDestination = false;
@@ -271,7 +246,7 @@ void GroundEnemyMovementController::UpdateGroundMovement(
 				}
 
 				float terrainY = 0.0f;
-				if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], enemy.position_.x, enemy.position_.z, terrainY) && terrainY > groundHeight) {
+				if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], pos.x, pos.z, terrainY) && terrainY > groundHeight) {
 					groundHeight = terrainY;
 					foundGroundAtDestination = true;
 				}
@@ -279,62 +254,65 @@ void GroundEnemyMovementController::UpdateGroundMovement(
 		}
 
 		if (foundGroundAtDestination) {
-			enemy.groundY_ = groundHeight;
-			enemy.position_.y = enemy.groundY_ + GetFootOffset(enemy);
-			enemy.velocityY_ = 0.0f;
-			enemy.isGrounded_ = true;
+			groundY_ = groundHeight;
+			pos.y = groundY_ + GetFootOffset();
+			SetPosition(pos);
+			velocityY_ = 0.0f;
+			isGrounded_ = true;
 		}
 	}
 
-	UpdateTerrainPose(enemy, obstacles);
+	UpdateTerrainPose(obstacles);
 }
 
-void GroundEnemyMovementController::UpdateTerrainPose(
-	GroundEnemy& enemy,
-	const std::list<std::unique_ptr<Obstacle>>& obstacles) const {
-	Vector3 flatForward = NormalizeOrFallback({ enemy.forward_.x, 0.0f, enemy.forward_.z }, { 0.0f, 0.0f, 1.0f });
+void GroundEnemy::UpdateTerrainPose(const std::list<std::unique_ptr<Obstacle>>& obstacles) {
+	const Vector3 pos = GetPosition();
+	const Vector3 fwd = GetForward();
+	const Vector3 rot = GetRotation();
+	const Vector3 scale = GetScale();
+
+	Vector3 flatForward = NormalizeOrFallback({ fwd.x, 0.0f, fwd.z }, { 0.0f, 0.0f, 1.0f });
 	Vector3 right = { flatForward.z, 0.0f, -flatForward.x };
 	constexpr float kProbeDistance = 1.0f;
 	float front = 0.0f, back = 0.0f, left = 0.0f, rightHeight = 0.0f;
-	const bool hasFront = SampleTerrainHeight(obstacles, { enemy.position_.x + flatForward.x * kProbeDistance, enemy.position_.y, enemy.position_.z + flatForward.z * kProbeDistance }, front);
-	const bool hasBack = SampleTerrainHeight(obstacles, { enemy.position_.x - flatForward.x * kProbeDistance, enemy.position_.y, enemy.position_.z - flatForward.z * kProbeDistance }, back);
-	const bool hasLeft = SampleTerrainHeight(obstacles, { enemy.position_.x - right.x * kProbeDistance, enemy.position_.y, enemy.position_.z - right.z * kProbeDistance }, left);
-	const bool hasRight = SampleTerrainHeight(obstacles, { enemy.position_.x + right.x * kProbeDistance, enemy.position_.y, enemy.position_.z + right.z * kProbeDistance }, rightHeight);
+	const bool hasFront = SampleTerrainHeight(obstacles, { pos.x + flatForward.x * kProbeDistance, pos.y, pos.z + flatForward.z * kProbeDistance }, front);
+	const bool hasBack = SampleTerrainHeight(obstacles, { pos.x - flatForward.x * kProbeDistance, pos.y, pos.z - flatForward.z * kProbeDistance }, back);
+	const bool hasLeft = SampleTerrainHeight(obstacles, { pos.x - right.x * kProbeDistance, pos.y, pos.z - right.z * kProbeDistance }, left);
+	const bool hasRight = SampleTerrainHeight(obstacles, { pos.x + right.x * kProbeDistance, pos.y, pos.z + right.z * kProbeDistance }, rightHeight);
 
 	const float pitchTarget = hasFront && hasBack ? std::atan2(front - back, kProbeDistance * 2.0f) : 0.0f;
 	const float rollTarget = hasLeft && hasRight ? std::atan2(rightHeight - left, kProbeDistance * 2.0f) : 0.0f;
-	enemy.terrainPitch_ += (pitchTarget - enemy.terrainPitch_) * 0.16f;
-	enemy.terrainRoll_ += (rollTarget - enemy.terrainRoll_) * 0.16f;
+	terrainPitch_ += (pitchTarget - terrainPitch_) * 0.16f;
+	terrainRoll_ += (rollTarget - terrainRoll_) * 0.16f;
 
 	const bool hasTerrain = hasFront || hasBack || hasLeft || hasRight;
 	if (hasTerrain) {
-		const Vector3 terrainRotation = { enemy.terrainRoll_, enemy.rotation_.y + kModelForwardYaw, enemy.terrainPitch_ };
+		const Vector3 terrainRotation = { terrainRoll_, rot.y + kModelForwardYaw, terrainPitch_ };
 		const Matrix4x4 terrainMatrix = MyMath::MakeAffineMatrix(
 			{ 1.0f, 1.0f, 1.0f }, terrainRotation, { 0.0f, 0.0f, 0.0f });
-		const float footOffset = GetFootOffset(enemy);
+		const float footOffset = GetFootOffset();
 		float lowestSupportY = 0.0f;
 		for (const Vector3& foot : kFootPositions) {
 			const Vector3 rotatedFoot = MyMath::Transform({
-				foot.x * enemy.scale_.x,
+				foot.x * scale.x,
 				-footOffset,
-				foot.z * enemy.scale_.z,
+				foot.z * scale.z,
 			}, terrainMatrix);
 			lowestSupportY = (std::min)(lowestSupportY, rotatedFoot.y);
 		}
 		const float clearanceTarget = std::clamp(-footOffset - lowestSupportY, 0.0f, 0.75f) + 0.025f;
-		enemy.terrainClearance_ += (clearanceTarget - enemy.terrainClearance_) * 0.28f;
+		terrainClearance_ += (clearanceTarget - terrainClearance_) * 0.28f;
 	} else {
-		enemy.terrainClearance_ *= 0.72f;
+		terrainClearance_ *= 0.72f;
 	}
 
-	for (float& legOffset : enemy.legGroundOffsets_) {
+	for (float& legOffset : legGroundOffsets_) {
 		legOffset += (0.0f - legOffset) * 0.35f;
 	}
 }
 
-void GroundEnemyMovementController::SnapToGround(
-	GroundEnemy& enemy,
-	const std::list<std::unique_ptr<Obstacle>>& obstacles) const {
+void GroundEnemy::SnapToGround(const std::list<std::unique_ptr<Obstacle>>& obstacles) {
+	Vector3 pos = GetPosition();
 	float maxGroundY = -99999.0f;
 	bool foundGround = false;
 
@@ -344,13 +322,13 @@ void GroundEnemyMovementController::SnapToGround(
 		if (obs->IsUseMeshCollider()) {
 			const auto& triangles = obs->GetWorldTriangles();
 			Sphere terrainSample{};
-			terrainSample.center = enemy.position_;
+			terrainSample.center = pos;
 			terrainSample.radius = 0.25f;
 			for (const size_t triangleIndex : obs->GetNearbyWorldTriangleIndices(terrainSample)) {
 				const Triangle& tri = triangles[triangleIndex];
 				if (std::abs(tri.normal.y) > 0.1f) {
 					float triY = 0.0f;
-					if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], enemy.position_.x, enemy.position_.z, triY)) {
+					if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], pos.x, pos.z, triY)) {
 						if (triY > maxGroundY) {
 							maxGroundY = triY;
 							foundGround = true;
@@ -367,14 +345,14 @@ void GroundEnemyMovementController::SnapToGround(
 			{ -6.0f, -6.0f }, { 6.0f, -6.0f }, { -6.0f, 6.0f }, { 6.0f, 6.0f }
 		};
 		for (int i = 0; i < 8; ++i) {
-			float sampleX = enemy.position_.x + offsets[i][0];
-			float sampleZ = enemy.position_.z + offsets[i][1];
+			float sampleX = pos.x + offsets[i][0];
+			float sampleZ = pos.z + offsets[i][1];
 			for (const auto& obs : obstacles) {
 				if (!obs || obs->IsStageBounds() || !obs->IsCollisionEnabled()) continue;
 				if (obs->IsUseMeshCollider()) {
 					const auto& triangles = obs->GetWorldTriangles();
 					Sphere terrainSample{};
-					terrainSample.center = { sampleX, enemy.position_.y, sampleZ };
+					terrainSample.center = { sampleX, pos.y, sampleZ };
 					terrainSample.radius = 0.25f;
 					for (const size_t triangleIndex : obs->GetNearbyWorldTriangleIndices(terrainSample)) {
 						const Triangle& tri = triangles[triangleIndex];
@@ -406,7 +384,7 @@ void GroundEnemyMovementController::SnapToGround(
 				}
 
 				float triY = 0.0f;
-				if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], enemy.position_.x, enemy.position_.z, triY) && triY > maxGroundY) {
+				if (GetTriangleY(tri.p[0], tri.p[1], tri.p[2], pos.x, pos.z, triY) && triY > maxGroundY) {
 					maxGroundY = triY;
 					foundGround = true;
 				}
@@ -414,102 +392,65 @@ void GroundEnemyMovementController::SnapToGround(
 		}
 	}
 
-	const float footOffset = GetFootOffset(enemy);
+	const float footOffset = GetFootOffset();
 	if (foundGround) {
-		enemy.position_.y = maxGroundY + footOffset;
+		pos.y = maxGroundY + footOffset;
 	} else {
-		enemy.position_.y = (std::max)(enemy.position_.y, footOffset);
+		pos.y = (std::max)(pos.y, footOffset);
 	}
+	SetPosition(pos);
 
-	enemy.velocityY_ = 0.0f;
-	enemy.isGrounded_ = true;
-	enemy.UpdateModel();
+	velocityY_ = 0.0f;
+	isGrounded_ = true;
+	UpdateModel();
 }
 
-float GroundEnemyMovementController::GetFootOffset(const GroundEnemy& enemy) const {
-	if (!enemy.object_ || !enemy.object_->GetModel()) {
-		return enemy.scale_.y;
+float GroundEnemy::GetFootOffset() const {
+	const Object3d* obj = GetObject3d();
+	const Vector3 scale = GetScale();
+	if (!obj || !obj->GetModel()) {
+		return scale.y;
 	}
 
-	const Vector3 center = enemy.object_->GetModel()->GetBoundsCenter();
-	const Vector3 halfExtents = enemy.object_->GetModel()->GetHalfExtents();
+	const Vector3 center = obj->GetModel()->GetBoundsCenter();
+	const Vector3 halfExtents = obj->GetModel()->GetHalfExtents();
 	float localBottomY = center.y - halfExtents.y;
 
-	for (size_t i = 0; i < enemy.legs_.size(); ++i) {
-		if (!enemy.legs_[i] || !enemy.legs_[i]->GetModel()) {
+	for (size_t i = 0; i < legs_.size(); ++i) {
+		if (!legs_[i] || !legs_[i]->GetModel()) {
 			continue;
 		}
-		const Vector3 legCenter = enemy.legs_[i]->GetModel()->GetBoundsCenter();
-		const Vector3 legHalfExtents = enemy.legs_[i]->GetModel()->GetHalfExtents();
+		const Vector3 legCenter = legs_[i]->GetModel()->GetBoundsCenter();
+		const Vector3 legHalfExtents = legs_[i]->GetModel()->GetHalfExtents();
 		localBottomY = (std::min)(localBottomY, kLegPivots[i].y + legCenter.y - legHalfExtents.y);
 	}
-	return (std::max)(0.0f, -localBottomY * std::abs(enemy.scale_.y)) + 0.025f;
+	return (std::max)(0.0f, -localBottomY * std::abs(scale.y)) + 0.025f;
 }
 
-void GroundEnemyMovementController::UpdateFlightPathMovement(GroundEnemy& enemy) const {
-	if (enemy.flightPathPoints_.size() < 2) return;
-
-	const size_t segmentCount = enemy.flightPathLoop_ ? enemy.flightPathPoints_.size() : enemy.flightPathPoints_.size() - 1;
-	if (segmentCount == 0) return;
-
-	Vector3 oldPosition = enemy.position_;
-	float remainingDistance = enemy.flightPathSpeed_;
-
-	while (remainingDistance > 0.0f) {
-		size_t nextIndex = ResolvePathIndex(static_cast<int>(enemy.flightPathSegmentIndex_ + 1), enemy.flightPathPoints_.size(), enemy.flightPathLoop_);
-		Vector3 segmentVector = {
-			enemy.flightPathPoints_[nextIndex].x - enemy.flightPathPoints_[enemy.flightPathSegmentIndex_].x,
-			0.0f,
-			enemy.flightPathPoints_[nextIndex].z - enemy.flightPathPoints_[enemy.flightPathSegmentIndex_].z
-		};
-		float segmentLength = std::sqrt(segmentVector.x * segmentVector.x + segmentVector.z * segmentVector.z);
-
-		if (segmentLength < 0.0001f) {
-			++enemy.flightPathSegmentIndex_;
-			enemy.flightPathSegmentT_ = 0.0f;
-			if (enemy.flightPathSegmentIndex_ >= segmentCount) {
-				if (enemy.flightPathLoop_) {
-					enemy.flightPathSegmentIndex_ = 0;
-				} else {
-					enemy.flightPathSegmentIndex_ = segmentCount - 1;
-					enemy.flightPathSegmentT_ = 1.0f;
-					break;
-				}
-			}
-			continue;
-		}
-
-		float distanceToSegmentEnd = segmentLength * (1.0f - enemy.flightPathSegmentT_);
-		if (remainingDistance >= distanceToSegmentEnd) {
-			remainingDistance -= distanceToSegmentEnd;
-			enemy.flightPathSegmentT_ = 0.0f;
-			++enemy.flightPathSegmentIndex_;
-			if (enemy.flightPathSegmentIndex_ >= segmentCount) {
-				if (enemy.flightPathLoop_) {
-					enemy.flightPathSegmentIndex_ = 0;
-				} else {
-					enemy.flightPathSegmentIndex_ = segmentCount - 1;
-					enemy.flightPathSegmentT_ = 1.0f;
-					break;
-				}
-			}
-		} else {
-			enemy.flightPathSegmentT_ += remainingDistance / segmentLength;
-			remainingDistance = 0.0f;
-		}
+void GroundEnemy::UpdateFlightPathMovement() {
+	Vector3 targetPos{};
+	if (!AdvanceGroundFlightPath(targetPos)) {
+		return;
 	}
 
-	Vector3 targetPos = EvaluateFlightPath(enemy.flightPathPoints_, enemy.flightPathSegmentIndex_, enemy.flightPathSegmentT_, enemy.flightPathLoop_);
-	enemy.position_.x = targetPos.x;
-	enemy.position_.z = targetPos.z;
+	const Vector3 oldPosition = GetPosition();
+	Vector3 nextPos = oldPosition;
+	nextPos.x = targetPos.x;
+	nextPos.z = targetPos.z;
+	SetPosition(nextPos);
 
-	Vector3 diff = { enemy.position_.x - oldPosition.x, 0.0f, enemy.position_.z - oldPosition.z };
-	float diffLen = std::sqrt(diff.x * diff.x + diff.z * diff.z);
+	const Vector3 diff = { nextPos.x - oldPosition.x, 0.0f, nextPos.z - oldPosition.z };
+	const float diffLen = std::sqrt(diff.x * diff.x + diff.z * diff.z);
 	if (diffLen > 0.001f) {
-		enemy.forward_ = { diff.x / diffLen, 0.0f, diff.z / diffLen };
-		enemy.rotation_.y = std::atan2(enemy.forward_.x, enemy.forward_.z);
+		const Vector3 fwd = { diff.x / diffLen, 0.0f, diff.z / diffLen };
+		SetForward(fwd);
+		Vector3 rot = GetRotation();
+		rot.y = std::atan2(fwd.x, fwd.z);
+		SetRotationAngles(rot);
 	}
 
-	enemy.velocity_.x = 0.0f;
-	enemy.velocity_.z = 0.0f;
+	Vector3 vel = GetVelocity();
+	vel.x = 0.0f;
+	vel.z = 0.0f;
+	SetVelocity(vel);
 }

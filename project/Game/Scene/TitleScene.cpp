@@ -595,15 +595,3 @@ void TitleScene::Draw() {
 void TitleScene::DrawAttractDemoStartPrompt(float screenWidth, float screenHeight) {
 	TitleOverlayRenderer{}.DrawAttractDemoStartPrompt(*this, screenWidth, screenHeight);
 }
-
-void TitleScene::DrawWarpCloudLayers(float screenWidth, float screenHeight) {
-	TitleOverlayRenderer{}.DrawWarpCloudLayers(*this, screenWidth, screenHeight, kLaunchDurationFrames);
-}
-
-void TitleScene::DrawFoldTransition(float screenWidth, float screenHeight) {
-	TitleOverlayRenderer{}.DrawFoldTransition(*this, screenWidth, screenHeight, kLaunchDurationFrames);
-}
-
-void TitleScene::DrawMenuOverlay(float screenWidth, float screenHeight, float opacity) {
-	TitleOverlayRenderer{}.DrawMenuOverlay(*this, screenWidth, screenHeight, opacity);
-}
